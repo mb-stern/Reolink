@@ -1,0 +1,13 @@
+{
+    "id": "{37A9DF25-CC0D-6EAB-1E0A-18EEB0D09E99}",
+    "name": "Reolink",
+    "type": 3,
+    "vendor": "",
+    "aliases": [
+        "Reolink"
+    ],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "REOCAM"
+}
