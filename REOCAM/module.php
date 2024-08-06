@@ -9,7 +9,7 @@ class Reolink extends IPSModule
         
         // Register properties
         $this->RegisterPropertyString('WebhookName', 'REOLINK');
-        //$this->RegisterPropertyString('SavePath', '/user/');
+        $this->RegisterPropertyString('SavePath', '/user/');
         $this->RegisterPropertyString('UserName', 'user');
         $this->RegisterPropertyString('Password', 'password');
         $this->RegisterHook($this->ReadPropertyString('WebhookName'));
