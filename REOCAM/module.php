@@ -20,8 +20,9 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Sicherstellen, dass das Bild-Medienobjekt existiert oder erstellt wird
-        $this->CreateOrUpdateMediaObject("Snapshot", "Kamera Snapshot");
+        // Sicherstellen, dass das Bild- und Stream-Medienobjekt existieren oder erstellt werden
+        $this->CreateOrUpdateMediaObject("Snapshot", "Kamera Snapshot", false);
+        $this->CreateOrUpdateMediaObject("StreamURL", "Kamera Stream", true);
     }
 
     private function RegisterHook($Hook)
@@ -56,96 +57,28 @@ class Reolink extends IPSModule
     {
         $rawData = file_get_contents("php://input");
         $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
-        $this->SendDebug('Raw POST Data', $rawData, 0);
-
-        // Überprüfen, ob Daten empfangen wurden
-        if (!empty($rawData)) {
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
-        } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
-        }
 
         // Snapshot-Bild bei jedem Webhook-Aufruf aktualisieren
         $this->UpdateSnapshot();
     }
 
-    private function ProcessData($data)
+    private function CreateOrUpdateMediaObject($ident, $name, $isStream)
     {
-        if (isset($data['alarm'])) {
-            foreach ($data['alarm'] as $key => $value) {
-                if ($key === 'alarmTime') {
-                    $dateTime = new DateTime($value);
-                    $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
-                    $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
-                    $this->updateVariable($key, $formattedAlarmTime, 3); // String
-                } else {
-                    $this->updateVariable($key, $value);
-                }
-            }
-        }
-    }
-
-    private function updateVariable($name, $value, $type = null)
-    {
-        $ident = $this->normalizeIdent($name);
-
-        if ($type === null) {
-            if (is_string($value)) {
-                $type = 3;
-            } elseif (is_int($value)) {
-                $type = 1;
-            } elseif (is_float($value)) {
-                $type = 2;
-            } elseif (is_bool($value)) {
-                $type = 0;
-            } else {
-                $type = 3;
-                $value = json_encode($value);
-            }
-        }
-
-        switch ($type) {
-            case 0: // Boolean
-                $this->RegisterVariableBoolean($ident, $name);
-                break;
-            case 1: // Integer
-                $this->RegisterVariableInteger($ident, $name);
-                break;
-            case 2: // Float
-                $this->RegisterVariableFloat($ident, $name);
-                break;
-            case 3: // String
-                $this->RegisterVariableString($ident, $name);
-                break;
-        }
-
-        $this->SetValue($ident, $value);
-    }
-
-    private function normalizeIdent($name)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32);
-    }
-
-    private function CreateOrUpdateMediaObject($ident, $name)
-    {
-        // Überprüfen, ob das Bild-Medienobjekt existiert
+        // Überprüfen, ob das Medienobjekt existiert
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
-            // Falls nicht vorhanden, Bild-Medienobjekt erstellen
-            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            // Falls nicht vorhanden, Medienobjekt erstellen
+            $mediaID = $isStream ? IPS_CreateMedia(3) : IPS_CreateMedia(1); // 3 für Stream, 1 für Bild
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
-            IPS_SetMediaCached($mediaID, false);
+            IPS_SetMediaCached($mediaID, true);
+        }
+
+        // Bei Stream-URL die Datei-URL setzen
+        if ($isStream) {
+            IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
         }
 
         return $mediaID;
@@ -154,7 +87,7 @@ class Reolink extends IPSModule
     private function UpdateSnapshot()
     {
         // Erstellen oder Abrufen des Medienobjekts für das Bild
-        $mediaID = $this->CreateOrUpdateMediaObject("Snapshot", "Kamera Snapshot");
+        $mediaID = $this->CreateOrUpdateMediaObject("Snapshot", "Kamera Snapshot", false);
 
         // URL zum Snapshot-Bild
         $snapshotUrl = $this->GetSnapshotURL();
@@ -167,6 +100,15 @@ class Reolink extends IPSModule
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
         }
+    }
+
+    public function GetStreamURL()
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+
+        return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
     }
 
     public function GetSnapshotURL()
