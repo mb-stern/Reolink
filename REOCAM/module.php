@@ -161,15 +161,10 @@ class Reolink extends IPSModule
         
         // Falls das Medienobjekt nicht existiert, wird es erstellt
         if ($mediaID === false) {
-            if ($isStream) {
-                $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
-                IPS_SetName($mediaID, "Kamera Stream");
-            } else {
-                $mediaID = IPS_CreateMedia(1); // 1 steht für Bild
-                IPS_SetName($mediaID, "Kamera Snapshot");
-            }
+            $mediaID = $isStream ? IPS_CreateMedia(3) : IPS_CreateMedia(1); // 3 für Stream, 1 für Bild
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $isStream ? "Kamera Stream" : "Kamera Snapshot");
             IPS_SetMediaCached($mediaID, true);
         }
 
