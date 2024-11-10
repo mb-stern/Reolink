@@ -20,7 +20,7 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Sicherstellen, dass das Bild-Medienobjekt existiert oder erstellt wird
+        // Bild-Medienobjekt erstellen oder sicherstellen, dass es vorhanden ist
         $this->CreateOrUpdateMediaObject("Snapshot", "Kamera Snapshot");
     }
 
@@ -56,82 +56,9 @@ class Reolink extends IPSModule
     {
         $rawData = file_get_contents("php://input");
         $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
-        $this->SendDebug('Raw POST Data', $rawData, 0);
-
-        // Überprüfen, ob Daten empfangen wurden
-        if (!empty($rawData)) {
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
-        } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
-        }
 
         // Snapshot-Bild bei jedem Webhook-Aufruf aktualisieren
         $this->UpdateSnapshot();
-    }
-
-    private function ProcessData($data)
-    {
-        if (isset($data['alarm'])) {
-            foreach ($data['alarm'] as $key => $value) {
-                if ($key === 'alarmTime') {
-                    $dateTime = new DateTime($value);
-                    $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
-                    $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
-                    $this->updateVariable($key, $formattedAlarmTime, 3); // String
-                } else {
-                    $this->updateVariable($key, $value);
-                }
-            }
-        }
-    }
-
-    private function updateVariable($name, $value, $type = null)
-    {
-        $ident = $this->normalizeIdent($name);
-
-        if ($type === null) {
-            if (is_string($value)) {
-                $type = 3;
-            } elseif (is_int($value)) {
-                $type = 1;
-            } elseif (is_float($value)) {
-                $type = 2;
-            } elseif (is_bool($value)) {
-                $type = 0;
-            } else {
-                $type = 3;
-                $value = json_encode($value);
-            }
-        }
-
-        switch ($type) {
-            case 0: // Boolean
-                $this->RegisterVariableBoolean($ident, $name);
-                break;
-            case 1: // Integer
-                $this->RegisterVariableInteger($ident, $name);
-                break;
-            case 2: // Float
-                $this->RegisterVariableFloat($ident, $name);
-                break;
-            case 3: // String
-                $this->RegisterVariableString($ident, $name);
-                break;
-        }
-
-        $this->SetValue($ident, $value);
-    }
-
-    private function normalizeIdent($name)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32);
     }
 
     private function CreateOrUpdateMediaObject($ident, $name)
