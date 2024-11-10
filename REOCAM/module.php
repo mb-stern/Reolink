@@ -19,30 +19,30 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
-        // Prüfen, ob das WebHook Control-Modul vorhanden ist
+        // Überprüfen, ob WebHook Control vorhanden ist
         $webhookControlID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
         
         if (count($webhookControlID) > 0) {
             $hookInstanceID = $webhookControlID[0];
 
-            // Erstellen eines Skripts für den Webhook
-            $hookScriptID = @IPS_GetObjectIDByIdent("ReolinkHookScript", $this->InstanceID);
-            if ($hookScriptID === false) {
-                // Neues Skript erstellen
-                $hookScriptID = IPS_CreateScript(0); // 0 = PHP-Skript
-                IPS_SetParent($hookScriptID, $hookInstanceID);
-                IPS_SetIdent($hookScriptID, "ReolinkHookScript");
-                IPS_SetName($hookScriptID, "Reolink Webhook Handler");
+            // Prüfen, ob der Hook bereits existiert
+            $scriptID = @IPS_GetObjectIDByIdent("ReolinkHookHandler", $this->InstanceID);
+            if ($scriptID === false) {
+                // Neues Skript für den Webhook erstellen
+                $scriptID = IPS_CreateScript(0); // 0 = PHP-Skript
+                IPS_SetParent($scriptID, $this->InstanceID);
+                IPS_SetIdent($scriptID, "ReolinkHookHandler");
+                IPS_SetName($scriptID, "Reolink Webhook Handler");
 
-                // Skriptinhalt festlegen
+                // Skriptinhalt festlegen, das den Hook verarbeitet
                 $scriptContent = '<?php Reolink_HookHandler($_IPS["TARGET"]);';
-                IPS_SetScriptContent($hookScriptID, $scriptContent);
+                IPS_SetScriptContent($scriptID, $scriptContent);
             }
 
-            // Webhook mit dem Skript verknüpfen
-            IPS_SetProperty($hookInstanceID, "Path", $Hook);
-            IPS_SetProperty($hookInstanceID, "ScriptID", $hookScriptID);
-            IPS_ApplyChanges($hookInstanceID);
+            // Webhook für das Skript im WebHook Control-Modul registrieren
+            if (IPS_HasInstanceChanges($hookInstanceID)) {
+                IPS_RegisterHook($hookInstanceID, $Hook, $scriptID);
+            }
         }
     }
 
