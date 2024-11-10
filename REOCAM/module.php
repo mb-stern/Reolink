@@ -48,74 +48,62 @@ class Reolink extends IPSModule
         if (!empty($rawData)) {
             $data = json_decode($rawData, true);
             if (is_array($data)) {
-                $categoryID = $this->createOrGetCategory("WebhookData");
-                foreach ($data as $key => $value) {
-                    if (is_array($value) || is_object($value)) {
-                        foreach ($value as $subKey => $subValue) {
-                            if ($subKey === 'alarmTime') {
-                                $dateTime = new DateTime($subValue);
-                                $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
-                                $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
-                                $this->setVariable($categoryID, $subKey, $formattedAlarmTime);
-                            } else {
-                                $this->setVariable($categoryID, $subKey, $subValue);
-                            }
-                        }
-                    } else {
-                        $this->setVariable($categoryID, $key, $value);
-                    }
-                }
+                $this->ProcessData($data);
             }
         } else {
             IPS_LogMessage("Reolink", "Keine rohen Daten empfangen oder der Datenstrom ist leer.");
         }
     }
 
-    private function createOrGetCategory($name)
+    private function ProcessData($data)
     {
-        $categoryID = @IPS_GetObjectIDByIdent($name, $this->InstanceID);
-        if ($categoryID === false) {
-            $categoryID = IPS_CreateCategory();
-            IPS_SetName($categoryID, $name);
-            IPS_SetIdent($categoryID, $name);
-            IPS_SetParent($categoryID, $this->InstanceID);
+        foreach ($data as $key => $value) {
+            if (is_array($value) || is_object($value)) {
+                foreach ($value as $subKey => $subValue) {
+                    if ($subKey === 'alarmTime') {
+                        // Zeitstempel in richtige Zeitzone konvertieren und speichern
+                        $dateTime = new DateTime($subValue);
+                        $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
+                        $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
+                        $this->updateVariable($subKey, $formattedAlarmTime, 3); // String
+                    } else {
+                        $this->updateVariable($subKey, $subValue);
+                    }
+                }
+            } else {
+                $this->updateVariable($key, $value);
+            }
         }
-        return $categoryID;
     }
 
-    private function createVariableIfNotExists($parentID, $name, $type)
+    private function updateVariable($name, $value, $type = null)
     {
-        $variableID = @IPS_GetObjectIDByIdent($name, $parentID);
-        if ($variableID === false) {
-            $variableID = IPS_CreateVariable($type);
-            IPS_SetName($variableID, $name);
-            IPS_SetIdent($variableID, $name);
-            IPS_SetParent($variableID, $parentID);
+        if ($type === null) {
+            // Automatische Typbestimmung
+            if (is_string($value)) {
+                $type = 3; // String
+            } elseif (is_int($value)) {
+                $type = 1; // Integer
+            } elseif (is_float($value)) {
+                $type = 2; // Float
+            } elseif (is_bool($value)) {
+                $type = 0; // Boolean
+            } else {
+                $type = 3; // Standardmäßig als String speichern
+                $value = json_encode($value);
+            }
         }
-        return $variableID;
+
+        $ident = $this->normalizeIdent($name);
+        $this->RegisterVariable($ident, $name, $type);
+        $this->SetValue($ident, $value);
     }
 
-    private function setVariable($parentID, $key, $value)
+    private function normalizeIdent($name)
     {
-        if (is_string($value)) {
-            $varID = $this->createVariableIfNotExists($parentID, $key, 3); // String
-            SetValue($varID, $value);
-        } elseif (is_int($value)) {
-            $varID = $this->createVariableIfNotExists($parentID, $key, 1); // Integer
-            SetValue($varID, $value);
-        } elseif (is_float($value)) {
-            $varID = $this->createVariableIfNotExists($parentID, $key, 2); // Float
-            SetValue($varID, $value);
-        } elseif (is_bool($value)) {
-            $varID = $this->createVariableIfNotExists($parentID, $key, 0); // Boolean
-            SetValue($varID, $value);
-        } elseif (is_array($value) || is_object($value)) {
-            $varID = $this->createVariableIfNotExists($parentID, $key, 3); // JSON-String
-            SetValue($varID, json_encode($value));
-        } else {
-            $varID = $this->createVariableIfNotExists($parentID, $key, 3);
-            SetValue($varID, (string)$value);
-        }
+        // Ident normalisieren, da sie bestimmte Zeichen nicht erlauben
+        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+        return substr($ident, 0, 32); // Maximale Länge für Idents beträgt 32 Zeichen
     }
 }
 
