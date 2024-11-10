@@ -1,73 +1,89 @@
 <?php
 
 class Reolink extends IPSModule
+
+declare(strict_types=1);
+
+//Constants will be defined with IP-Symcon 5.0 and newer
+if (!defined('IPS_KERNELMESSAGE')) {
+    define('IPS_KERNELMESSAGE', 10100);
+}
+if (!defined('KR_READY')) {
+    define('KR_READY', 10103);
+}
+
+class WebHookModule extends IPSModule
 {
+    private $hook = '';
+
+    public function __construct($InstanceID, $hook)
+    {
+        parent::__construct($InstanceID);
+
+        $this->hook = $hook;
+    }
+
     public function Create()
     {
-        // Diese Zeile darf nicht entfernt werden
+
+        //Never delete this line!
         parent::Create();
 
-        // Webhook registrieren
-        $this->RegisterHook("/hook/reolink");
+        //We need to call the RegisterHook function on Kernel READY
+        $this->RegisterMessage(0, IPS_KERNELMESSAGE);
+    }
+
+    public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
+    {
+
+        //Never delete this line!
+        parent::MessageSink($TimeStamp, $SenderID, $Message, $Data);
+
+        if ($Message == IPS_KERNELMESSAGE && $Data[0] == KR_READY) {
+            $this->RegisterHook('/hook/' . $this->hook);
+        }
     }
 
     public function ApplyChanges()
     {
-        // Diese Zeile darf nicht entfernt werden
+
+        //Never delete this line!
         parent::ApplyChanges();
 
-        // Webhook erneut registrieren, um sicherzustellen, dass er aktiv ist
-        $this->RegisterHook("/hook/reolink");
+        //Only call this in READY state. On startup the WebHook instance might not be available yet
+        if (IPS_GetKernelRunlevel() == KR_READY) {
+            $this->RegisterHook('/hook/' . $this->hook);
+        }
     }
 
-    private function RegisterHook($Hook)
+    private function RegisterHook($WebHook)
     {
-        // ID des WebHook Control-Moduls
-        $webhookID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
-        if (count($webhookID) > 0) {
-            $hookInstanceID = $webhookID[0];
-
-            // Hooks-Liste abrufen und prüfen, ob der Hook bereits existiert
-            $hooks = json_decode(IPS_GetProperty($hookInstanceID, "Hooks"), true);
+        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+        if (count($ids) > 0) {
+            $hooks = json_decode(IPS_GetProperty($ids[0], 'Hooks'), true);
             $found = false;
             foreach ($hooks as $index => $hook) {
-                if ($hook['Hook'] == $Hook) {
+                if ($hook['Hook'] == $WebHook) {
                     if ($hook['TargetID'] == $this->InstanceID) {
-                        // Wenn der Hook bereits vorhanden und korrekt verlinkt ist, nichts tun
                         return;
                     }
-                    // Wenn der Hook vorhanden ist, aber eine andere Instanz verlinkt, aktualisieren
                     $hooks[$index]['TargetID'] = $this->InstanceID;
                     $found = true;
                 }
             }
-
-            // Wenn der Hook noch nicht existiert, hinzufügen
             if (!$found) {
-                $hooks[] = [
-                    "Hook" => $Hook,
-                    "TargetID" => $this->InstanceID
-                ];
+                $hooks[] = ['Hook' => $WebHook, 'TargetID' => $this->InstanceID];
             }
-
-            // Aktualisierte Hooks-Liste im WebHook Control-Modul speichern
-            IPS_SetProperty($hookInstanceID, "Hooks", json_encode($hooks));
-            IPS_ApplyChanges($hookInstanceID);
-        } else {
-            IPS_LogMessage("Reolink", "WebHook Control Instance not found!");
+            IPS_SetProperty($ids[0], 'Hooks', json_encode($hooks));
+            IPS_ApplyChanges($ids[0]);
         }
     }
 
-    // Diese Methode wird aufgerufen, wenn der Webhook ausgelöst wird
-    public function ProcessHookData()
+    /**
+     * This function will be called by the hook control. Visibility should be protected!
+     */
+    protected function ProcessHookData()
     {
-        $this->SendDebug("Webhook Triggered", "Reolink Webhook wurde ausgelöst", 0);
-        $data = file_get_contents('php://input');
-        $this->SendDebug("Data Received", $data, 0);
-
-        // Die erhaltenen Daten im Log speichern
-        IPS_LogMessage("Reolink", $data);
+        $this->SendDebug('WebHook', 'Array POST: ' . print_r($_POST, true), 0);
     }
 }
-
-?>
