@@ -1,33 +1,13 @@
 {
-    "elements": [
-  
+  "elements": [
       {
-        "type": "ValidationTextBox",
-        "name": "WebhookName",
-        "caption": "Webhook Name"
+          "type": "Label",
+          "label": "Reolink Webhook Modul Konfiguration"
       },
       {
-        "type": "ValidationTextBox",
-        "name": "SavePath",
-        "caption": "Save Path"
-      },
-     {
-        "type": "ValidationTextBox",
-        "name": "UserName",
-        "caption": "User Name"
-      },
-     {
-        "type": "ValidationTextBox",
-        "name": "Password",
-        "caption": "Password"
-      },
-      {
-        "type": "NumberSpinner",
-        "name": "MotionActive",
-        "caption": "Duration the Motion Event stays activ in seconds",
-        "minimum": 0,
-        "maximum": 1000,
-        "default": 30
+          "type": "NumberSpinner",
+          "name": "UpdateInterval",
+          "caption": "Timer Intervall (in Sekunden)"
       }
-    ]
-  }
+  ]
+}
