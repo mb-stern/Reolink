@@ -6,7 +6,7 @@ class Reolink extends IPSModule
 
     public function Create()
     {
-        // Diese Zeile darf nicht entfernt werden.
+        // Diese Zeile nicht entfernen
         parent::Create();
 
         // Kernel READY Nachricht abonnieren
@@ -35,37 +35,38 @@ class Reolink extends IPSModule
 
     private function RegisterHook($WebHook)
     {
-        $ids = IPS_GetInstanceListByModuleID('{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}'); // WebHook Control Modul-ID
+        // WebHook Control Modul-ID
+        $ids = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
         if (count($ids) > 0) {
-            $hooks = json_decode(IPS_GetProperty($ids[0], 'Hooks'), true);
-            $found = false;
+            $hookInstanceID = $ids[0];
 
-            foreach ($hooks as $index => $hook) {
-                if ($hook['Hook'] == $WebHook) {
-                    if ($hook['TargetID'] == $this->InstanceID) {
-                        $this->SendDebug("RegisterHook", "Webhook bereits registriert: " . $WebHook, 0);
-                        return;
-                    }
-                    $hooks[$index]['TargetID'] = $this->InstanceID;
-                    $found = true;
-                }
+            // Ein Skript für den Webhook erstellen, falls es noch nicht existiert
+            $scriptID = @IPS_GetObjectIDByIdent("ReolinkHookHandler", $this->InstanceID);
+            if ($scriptID === false) {
+                $scriptID = IPS_CreateScript(0); // 0 = PHP-Skript
+                IPS_SetParent($scriptID, $this->InstanceID);
+                IPS_SetIdent($scriptID, "ReolinkHookHandler");
+                IPS_SetName($scriptID, "Reolink Webhook Handler");
+
+                // Skriptinhalt festlegen, um den Webhook zu verarbeiten
+                $scriptContent = '<?php Reolink_ProcessHookData($_IPS["TARGET"]);';
+                IPS_SetScriptContent($scriptID, $scriptContent);
             }
 
-            if (!$found) {
-                $hooks[] = ['Hook' => $WebHook, 'TargetID' => $this->InstanceID];
-                $this->SendDebug("RegisterHook", "Webhook erfolgreich registriert: " . $WebHook, 0);
-            }
+            // Verknüpfung des Webhooks mit dem erstellten Skript
+            IPS_SetProperty($hookInstanceID, 'Hook', $WebHook);
+            IPS_SetProperty($hookInstanceID, 'TargetID', $scriptID);
+            IPS_ApplyChanges($hookInstanceID);
 
-            IPS_SetProperty($ids[0], 'Hooks', json_encode($hooks));
-            IPS_ApplyChanges($ids[0]);
+            $this->SendDebug("RegisterHook", "Webhook erfolgreich registriert: " . $WebHook, 0);
         } else {
             $this->SendDebug("RegisterHook", "WebHook Control Modul nicht gefunden!", 0);
         }
     }
 
-    protected function ProcessHookData()
+    public function ProcessHookData()
     {
-        $this->SendDebug('WebHook', 'Daten empfangen: ' . print_r($_POST, true), 0);
+        $this->SendDebug("WebHook", "Daten empfangen: " . print_r($_POST, true), 0);
     }
 }
 
