@@ -20,7 +20,7 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
-        // WebHook Control Modul-ID (aktualisiert auf die angegebene Instanz-ID)
+        // WebHook Control Modul-ID
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) > 0) {
             $hooks = json_decode(IPS_GetProperty($ids[0], 'Hooks'), true);
@@ -54,6 +54,14 @@ class Reolink extends IPSModule
 
         // Hier können Sie die erhaltenen Daten verarbeiten und in Variablen speichern
         IPS_LogMessage('Reolink', $data);
+    }
+
+    // Funktion für IPS_RequestAction
+    public function RequestAction($Ident, $Value)
+    {
+        if ($Ident == 'UpdateValues') {
+            $this->UpdateValues();
+        }
     }
 
     // Methode zum manuellen Aktualisieren der Werte

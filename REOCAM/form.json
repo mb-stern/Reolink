@@ -9,7 +9,7 @@
       {
           "type": "Button",
           "caption": "Werte aktualisieren",
-          "onClick": "Reolink_UpdateValues($id);"
+          "onClick": "IPS_RequestAction($id, 'UpdateValues', '');"
       }
   ]
 }
