@@ -169,25 +169,43 @@ class Reolink extends IPSModule
     }
 
     private function UpdateSnapshot()
-    {
-        // Erstellen oder Abrufen des Medienobjekts für das Bild
-        $mediaID = $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
+{
+    // Erstellen oder Abrufen des Medienobjekts für das Bild
+    $mediaID = $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
 
-        // URL zum Snapshot-Bild
-        $snapshotUrl = $this->GetSnapshotURL();
+    // URL zum Snapshot-Bild
+    $snapshotUrl = $this->GetSnapshotURL();
 
-        // Bildinhalt abrufen und in einer temporären Datei speichern
-        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp.jpg";
-        $imageData = @file_get_contents($snapshotUrl);
+    // Bildinhalt abrufen und mit einem einzigartigen Dateinamen speichern
+    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_" . uniqid() . ".jpg";
+    $imageData = @file_get_contents($snapshotUrl);
 
-        if ($imageData !== false) {
-            file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
-        } else {
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
-        }
+    if ($imageData !== false) {
+        // Speichern des neuen Bildes
+        file_put_contents($tempImagePath, $imageData);
+        
+        // Verknüpfen der neuen Datei mit dem Medienobjekt
+        IPS_SetMediaFile($mediaID, $tempImagePath, false);
+        IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+
+        // Alte temporäre Dateien bereinigen, um Platz zu sparen
+        $this->CleanOldSnapshotFiles();
+    } else {
+        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
     }
+}
+
+private function CleanOldSnapshotFiles()
+{
+    // Verzeichnis durchsuchen und alte Snapshot-Dateien löschen
+    $files = glob(IPS_GetKernelDir() . "media/snapshot_*.jpg");
+    $filesToDelete = array_slice($files, 0, -5); // Die letzten 5 Dateien behalten
+
+    foreach ($filesToDelete as $file) {
+        @unlink($file); // Datei löschen
+    }
+}
+
 
     public function GetStreamURL()
     {
