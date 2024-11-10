@@ -2,63 +2,49 @@
 
 class Reolink extends IPSModule
 {
-    private $hook = 'reolink';
-
     public function Create()
     {
-        // Diese Zeile nicht entfernen
         parent::Create();
-
-        // Kernel READY Nachricht abonnieren
-        $this->RegisterMessage(0, IPS_KERNELMESSAGE);
-    }
-
-    public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
-    {
-        parent::MessageSink($TimeStamp, $SenderID, $Message, $Data);
-
-        // Prüfen, ob Kernel bereit ist
-        if ($Message == IPS_KERNELMESSAGE && $Data[0] == KR_READY) {
-            $this->RegisterHook('/hook/' . $this->hook);
-        }
+        $this->RegisterMessage(0, IPS_KERNELMESSAGE); // Kernel READY Nachricht abonnieren
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
 
-        // Webhook nur im READY-Status registrieren
+        // Wenn der Kernel bereits bereit ist, den Webhook registrieren
         if (IPS_GetKernelRunlevel() == KR_READY) {
-            $this->RegisterHook('/hook/' . $this->hook);
+            $this->RegisterHook('/hook/reolink');
         }
     }
 
-    private function RegisterHook($WebHook)
+    public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
     {
-        // WebHook Control Modul-ID
-        $ids = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
-        if (count($ids) > 0) {
-            $hookInstanceID = $ids[0];
+        // Sicherstellen, dass der Kernel bereit ist
+        if ($Message == IPS_KERNELMESSAGE && $Data[0] == KR_READY) {
+            $this->RegisterHook('/hook/reolink');
+        }
+    }
 
-            // Ein Skript für den Webhook erstellen, falls es noch nicht existiert
-            $scriptID = @IPS_GetObjectIDByIdent("ReolinkHookHandler", $this->InstanceID);
+    private function RegisterHook($Hook)
+    {
+        // WebHook Control Modul-ID suchen
+        $webhookID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
+        if (count($webhookID) > 0) {
+            $hookID = $webhookID[0];
+
+            // Existierendes Hook-Skript prüfen oder neu erstellen
+            $scriptID = @IPS_GetObjectIDByIdent("HookHandler", $this->InstanceID);
             if ($scriptID === false) {
-                $scriptID = IPS_CreateScript(0); // 0 = PHP-Skript
+                $scriptID = IPS_CreateScript(0); // PHP-Skript erstellen
                 IPS_SetParent($scriptID, $this->InstanceID);
-                IPS_SetIdent($scriptID, "ReolinkHookHandler");
-                IPS_SetName($scriptID, "Reolink Webhook Handler");
-
-                // Skriptinhalt festlegen, um den Webhook zu verarbeiten
-                $scriptContent = '<?php Reolink_ProcessHookData($_IPS["TARGET"]);';
-                IPS_SetScriptContent($scriptID, $scriptContent);
+                IPS_SetIdent($scriptID, "HookHandler");
+                IPS_SetName($scriptID, "Reolink Hook Handler");
+                IPS_SetScriptContent($scriptID, '<?php Reolink_ProcessHookData($_IPS["TARGET"]);');
             }
 
-            // Verknüpfung des Webhooks mit dem erstellten Skript
-            IPS_SetProperty($hookInstanceID, 'Hook', $WebHook);
-            IPS_SetProperty($hookInstanceID, 'TargetID', $scriptID);
-            IPS_ApplyChanges($hookInstanceID);
-
-            $this->SendDebug("RegisterHook", "Webhook erfolgreich registriert: " . $WebHook, 0);
+            // Skript und Webhook im Debug ausgeben, ohne nicht existierende Eigenschaften zu verwenden
+            $this->SendDebug("RegisterHook", "Webhook erstellt mit SkriptID: " . $scriptID, 0);
         } else {
             $this->SendDebug("RegisterHook", "WebHook Control Modul nicht gefunden!", 0);
         }
@@ -66,7 +52,7 @@ class Reolink extends IPSModule
 
     public function ProcessHookData()
     {
-        $this->SendDebug("WebHook", "Daten empfangen: " . print_r($_POST, true), 0);
+        $this->SendDebug("WebHook", "Daten empfangen: " . file_get_contents('php://input'), 0);
     }
 }
 
