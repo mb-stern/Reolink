@@ -20,11 +20,9 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Sicherstellen, dass das Stream-Medienobjekt existiert oder erstellt wird
+        // Sicherstellen, dass die Medienobjekte für den Stream und das Bild existieren oder erstellt werden
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-
-        // Sicherstellen, dass das Snapshot-Medienobjekt existiert
-        $this->CreateImageMedia("Snapshot", "Kamera Snapshot");
+        $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
     }
 
     private function RegisterHook($Hook)
@@ -154,25 +152,9 @@ class Reolink extends IPSModule
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    private function UpdateSnapshot()
+    private function CreateOrUpdateImage($ident, $name)
     {
-        // URL zum Snapshot-Bild
-        $snapshotUrl = $this->GetSnapshotURL();
-
-        // Bildinhalt abrufen
-        $imageData = @file_get_contents($snapshotUrl);
-
-        if ($imageData !== false) {
-            // Medienobjekt für das Bild aktualisieren
-            $this->UpdateImageContent("Snapshot", $imageData);
-        } else {
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
-        }
-    }
-
-    private function CreateImageMedia($ident, $name)
-    {
-        // Bild-Medienobjekt erstellen, falls es nicht existiert
+        // Überprüfen, ob das Bild-Medienobjekt existiert
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
@@ -182,17 +164,25 @@ class Reolink extends IPSModule
             IPS_SetName($mediaID, $name);
             IPS_SetMediaCached($mediaID, false);
         }
+
+        return $mediaID;
     }
 
-    private function UpdateImageContent($ident, $imageData)
+    private function UpdateSnapshot()
     {
-        // Abrufen des Medienobjekts für das Bild
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        // Erstellen oder Abrufen des Medienobjekts für das Bild
+        $mediaID = $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
 
-        if ($mediaID !== false) {
-            // Bildinhalt als Base64-codierten Inhalt speichern
+        // URL zum Snapshot-Bild
+        $snapshotUrl = $this->GetSnapshotURL();
+
+        // Bildinhalt abrufen und in das Medienobjekt aktualisieren
+        $imageData = @file_get_contents($snapshotUrl);
+        if ($imageData !== false) {
             IPS_SetMediaContent($mediaID, base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+            IPS_ApplyChanges($mediaID); // Änderungen anwenden, um das Bild zu aktualisieren
+        } else {
+            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
         }
     }
 
