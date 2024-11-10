@@ -145,6 +145,8 @@ class Reolink extends IPSModule
             } else {
                 IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
             }
+        } else {
+            IPS_LogMessage("Reolink", "Snapshot-Medienobjekt nicht gefunden.");
         }
     }
 
@@ -153,6 +155,8 @@ class Reolink extends IPSModule
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
         if ($mediaID !== false) {
             IPS_SetMediaFile($mediaID, $url, !$isStream);
+        } else {
+            IPS_LogMessage("Reolink", "Medienobjekt '$ident' nicht gefunden.");
         }
     }
 
