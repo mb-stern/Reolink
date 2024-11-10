@@ -20,10 +20,7 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Sicherstellen, dass das Stream-Medienobjekt existiert oder erstellt wird
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-
-        // Sicherstellen, dass das Snapshot-Medienobjekt existiert
+        // Sicherstellen, dass das Bild-Medienobjekt für Snapshot existiert oder erstellt wird
         $this->CreateImageMedia("Snapshot", "Kamera Snapshot");
     }
 
@@ -82,7 +79,6 @@ class Reolink extends IPSModule
         if (isset($data['alarm'])) {
             foreach ($data['alarm'] as $key => $value) {
                 if ($key === 'alarmTime') {
-                    // Zeitstempel in die richtige Zeitzone konvertieren und formatieren
                     $dateTime = new DateTime($value);
                     $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
                     $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
@@ -99,33 +95,14 @@ class Reolink extends IPSModule
         $ident = $this->normalizeIdent($name);
 
         if ($type === null) {
-            if (is_string($value)) {
-                $type = 3;
-            } elseif (is_int($value)) {
-                $type = 1;
-            } elseif (is_float($value)) {
-                $type = 2;
-            } elseif (is_bool($value)) {
-                $type = 0;
-            } else {
-                $type = 3;
-                $value = json_encode($value);
-            }
+            $type = is_string($value) ? 3 : (is_int($value) ? 1 : (is_float($value) ? 2 : 0));
         }
 
         switch ($type) {
-            case 0: // Boolean
-                $this->RegisterVariableBoolean($ident, $name);
-                break;
-            case 1: // Integer
-                $this->RegisterVariableInteger($ident, $name);
-                break;
-            case 2: // Float
-                $this->RegisterVariableFloat($ident, $name);
-                break;
-            case 3: // String
-                $this->RegisterVariableString($ident, $name);
-                break;
+            case 0: $this->RegisterVariableBoolean($ident, $name); break;
+            case 1: $this->RegisterVariableInteger($ident, $name); break;
+            case 2: $this->RegisterVariableFloat($ident, $name); break;
+            case 3: $this->RegisterVariableString($ident, $name); break;
         }
 
         $this->SetValue($ident, $value);
@@ -135,39 +112,6 @@ class Reolink extends IPSModule
     {
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
         return substr($ident, 0, 32); 
-    }
-
-    private function CreateOrUpdateStream($ident, $name)
-    {
-        // Überprüfen, ob das Stream-Medienobjekt existiert
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-
-        if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
-            IPS_SetParent($mediaID, $this->InstanceID);
-            IPS_SetIdent($mediaID, $ident);
-            IPS_SetName($mediaID, $name);
-            IPS_SetMediaCached($mediaID, true);
-        }
-
-        // Stream-URL setzen
-        IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
-    }
-
-    private function UpdateSnapshot()
-    {
-        // URL zum Snapshot-Bild
-        $snapshotUrl = $this->GetSnapshotURL();
-
-        // Bildinhalt abrufen
-        $imageData = @file_get_contents($snapshotUrl);
-
-        if ($imageData !== false) {
-            // Medienobjekt für das Bild aktualisieren
-            $this->UpdateImageContent("Snapshot", $imageData);
-        } else {
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
-        }
     }
 
     private function CreateImageMedia($ident, $name)
@@ -182,22 +126,24 @@ class Reolink extends IPSModule
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
             IPS_SetMediaCached($mediaID, false);
-            IPS_SendMediaEvent($mediaID); // Medienobjekt initialisieren
+            IPS_SendMediaEvent($mediaID);
         }
     }
 
-    private function UpdateImageContent($ident, $imageData)
+    private function UpdateSnapshot()
     {
-        // Abrufen des Medienobjekts für das Bild
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        $mediaID = @IPS_GetObjectIDByIdent("Snapshot", $this->InstanceID);
+        $snapshotUrl = $this->GetSnapshotURL();
 
         if ($mediaID !== false) {
-            $this->SendDebug("UpdateImageContent", "Aktualisiere Bildinhalt", 0);
-            // Bildinhalt als Base64-codierten Inhalt speichern
-            IPS_SetMediaContent($mediaID, base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
-        } else {
-            $this->SendDebug("UpdateImageContent", "Medienobjekt nicht gefunden", 0);
+            $imageData = @file_get_contents($snapshotUrl);
+            if ($imageData !== false) {
+                $this->SendDebug("UpdateSnapshot", "Aktualisiere Bildinhalt", 0);
+                IPS_SetMediaContent($mediaID, base64_encode($imageData));
+                IPS_SendMediaEvent($mediaID); 
+            } else {
+                IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
+            }
         }
     }
 
