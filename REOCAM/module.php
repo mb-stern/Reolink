@@ -176,11 +176,14 @@ class Reolink extends IPSModule
         // URL zum Snapshot-Bild
         $snapshotUrl = $this->GetSnapshotURL();
 
-        // Bildinhalt abrufen und in das Medienobjekt aktualisieren
+        // Bildinhalt abrufen und in einer temporären Datei speichern
+        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp.jpg";
         $imageData = @file_get_contents($snapshotUrl);
+
         if ($imageData !== false) {
-            IPS_SetMediaContent($mediaID, base64_encode($imageData));
-            IPS_ApplyChanges($mediaID); // Änderungen anwenden, um das Bild zu aktualisieren
+            file_put_contents($tempImagePath, $imageData);
+            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
         }
