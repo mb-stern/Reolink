@@ -59,7 +59,7 @@ class Reolink extends IPSModule
     {
         // Medienobjekte für Stream und Snapshot erstellen
         $this->RegisterStreamMediaObject("StreamURL", "Kamera Stream", $this->GetStreamURL());
-        $this->RegisterImageMediaObject("Snapshot", "Kamera Snapshot", $this->GetSnapshotURL());
+        $this->RegisterImageMediaObject("Snapshot", "Kamera Snapshot");
     }
 
     private function RegisterStreamMediaObject($ident, $name, $url)
@@ -75,7 +75,7 @@ class Reolink extends IPSModule
         }
     }
 
-    private function RegisterImageMediaObject($ident, $name, $url)
+    private function RegisterImageMediaObject($ident, $name)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
         if ($mediaID === false) {
@@ -83,23 +83,76 @@ class Reolink extends IPSModule
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
-            IPS_SetMediaFile($mediaID, $url, false);
             IPS_SetMediaCached($mediaID, true);
         }
     }
 
     private function UpdateMediaObjects()
     {
-        // URLs für die Medienobjekte aktualisieren
         $this->UpdateMediaObject("StreamURL", $this->GetStreamURL(), true);
-        $this->UpdateMediaObject("Snapshot", $this->GetSnapshotURL(), false);
+        $this->UpdateSnapshot(); // Aktualisiert das Snapshot-Bild initial
+    }
+
+    public function ProcessHookData()
+    {
+        $rawData = file_get_contents("php://input");
+        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+        $this->SendDebug('Raw POST Data', $rawData, 0);
+
+        if (!empty($rawData)) {
+            $data = json_decode($rawData, true);
+            if (is_array($data)) {
+                $this->ProcessData($data);
+            } else {
+                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
+            }
+        } else {
+            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+        }
+
+        // Snapshot-Bild bei jedem Webhook-Aufruf aktualisieren
+        $this->UpdateSnapshot();
+    }
+
+    private function ProcessData($data)
+    {
+        if (isset($data['alarm'])) {
+            foreach ($data['alarm'] as $key => $value) {
+                if ($key === 'alarmTime') {
+                    // Zeitstempel in die richtige Zeitzone konvertieren und formatieren
+                    $dateTime = new DateTime($value);
+                    $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
+                    $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
+                    $this->updateVariable($key, $formattedAlarmTime, 3); // String
+                } else {
+                    $this->updateVariable($key, $value);
+                }
+            }
+        }
+    }
+
+    private function UpdateSnapshot()
+    {
+        $snapshotUrl = $this->GetSnapshotURL();
+        $mediaID = @IPS_GetObjectIDByIdent("Snapshot", $this->InstanceID);
+
+        if ($mediaID !== false) {
+            $imageData = @file_get_contents($snapshotUrl);
+            if ($imageData !== false) {
+                IPS_SetMediaContent($mediaID, base64_encode($imageData));
+                IPS_ApplyChanges($mediaID); // Änderungen anwenden, um das Bild zu aktualisieren
+            } else {
+                IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
+            }
+        }
     }
 
     private function UpdateMediaObject($ident, $url, $isStream)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
         if ($mediaID !== false) {
-            IPS_SetMediaFile($mediaID, $url, !$isStream); // Aktualisiert die URL des Medienobjekts
+            IPS_SetMediaFile($mediaID, $url, !$isStream);
         }
     }
 
