@@ -1,6 +1,6 @@
 <?php
 
-class ReolinkWebhook extends IPSModule
+class Reolink extends IPSModule
 {
     public function Create()
     {
