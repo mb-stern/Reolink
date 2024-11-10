@@ -58,35 +58,48 @@ class Reolink extends IPSModule
     private function RegisterMediaObjects()
     {
         // Medienobjekte für Stream und Snapshot erstellen
-        $this->RegisterMediaObject("StreamURL", "Kamera Stream", 3, $this->GetStreamURL());
-        $this->RegisterMediaObject("Snapshot", "Kamera Snapshot", 3, $this->GetSnapshotURL());
+        $this->RegisterStreamMediaObject("StreamURL", "Kamera Stream", $this->GetStreamURL());
+        $this->RegisterImageMediaObject("Snapshot", "Kamera Snapshot", $this->GetSnapshotURL());
     }
 
-    private function RegisterMediaObject($ident, $name, $type, $url)
+    private function RegisterStreamMediaObject($ident, $name, $url)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia($type); // 3 steht für Stream oder Snapshot als URL
+            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream-URL
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
-            IPS_SetMediaFile($mediaID, $url, false); // URL als Datei für das Medienobjekt setzen
-            IPS_SetMediaCached($mediaID, true); // Medienelement cachen, um wiederholte Anfragen zu vermeiden
+            IPS_SetMediaFile($mediaID, $url, false);
+            IPS_SetMediaCached($mediaID, true);
+        }
+    }
+
+    private function RegisterImageMediaObject($ident, $name, $url)
+    {
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaFile($mediaID, $url, false);
+            IPS_SetMediaCached($mediaID, true);
         }
     }
 
     private function UpdateMediaObjects()
     {
         // URLs für die Medienobjekte aktualisieren
-        $this->UpdateMediaObject("StreamURL", $this->GetStreamURL());
-        $this->UpdateMediaObject("Snapshot", $this->GetSnapshotURL());
+        $this->UpdateMediaObject("StreamURL", $this->GetStreamURL(), true);
+        $this->UpdateMediaObject("Snapshot", $this->GetSnapshotURL(), false);
     }
 
-    private function UpdateMediaObject($ident, $url)
+    private function UpdateMediaObject($ident, $url, $isStream)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
         if ($mediaID !== false) {
-            IPS_SetMediaFile($mediaID, $url, false); // Aktualisiert die URL des Medienobjekts
+            IPS_SetMediaFile($mediaID, $url, !$isStream); // Aktualisiert die URL des Medienobjekts
         }
     }
 
@@ -96,7 +109,7 @@ class Reolink extends IPSModule
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
 
-        return "rtsp://$username:$password@$cameraIP:554//Preview_01_sub";
+        return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
     }
 
     public function GetSnapshotURL()
