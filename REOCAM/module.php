@@ -19,25 +19,34 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
-        $id = @IPS_GetObjectIDByIdent("WebHook", 0);
-        if ($id === false) {
-            $id = IPS_CreateScript(0);
-            IPS_SetParent($id, $this->InstanceID);
-            IPS_SetIdent($id, "WebHook");
-            IPS_SetName($id, "WebHook");
-            IPS_SetScriptContent($id, "<?php ReolinkWebhook_HookHandler(\$_IPS['INSTANCE']);");
-        }
+        $ids = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
+        if (count($ids) > 0) {
+            $hookInstanceID = $ids[0];
+            $hooks = json_decode(IPS_GetProperty($hookInstanceID, "Hooks"), true);
+            $found = false;
 
-        $webHookPath = "/hook/reolink";
-        if (IPS_GetProperty($id, 'TargetID') !== $webHookPath) {
-            IPS_SetProperty($id, 'TargetID', $webHookPath);
+            foreach ($hooks as $index => $hook) {
+                if ($hook['Hook'] == $Hook) {
+                    $found = true;
+                    break;
+                }
+            }
+
+            if (!$found) {
+                $hooks[] = [
+                    "Hook" => $Hook,
+                    "TargetID" => $this->InstanceID
+                ];
+                IPS_SetProperty($hookInstanceID, "Hooks", json_encode($hooks));
+                IPS_ApplyChanges($hookInstanceID);
+            }
         }
     }
 
     public function ReceiveData($JSONString)
     {
         $data = json_decode($JSONString, true);
-        IPS_LogMessage("ReolinkWebhook", print_r($data, true));
+        IPS_LogMessage("Reolink", print_r($data, true));
         // Hier kann Logik hinzugefügt werden, die auf die Webhook-Daten reagiert.
     }
 
@@ -48,7 +57,7 @@ class Reolink extends IPSModule
         $this->SendDebug("Data Received", $data, 0);
 
         // Hier können Sie die erhaltenen Daten verarbeiten und in Variablen speichern.
-        IPS_LogMessage("ReolinkWebhook", $data);
+        IPS_LogMessage("Reolink", $data);
     }
 }
 
