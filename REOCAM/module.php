@@ -176,11 +176,13 @@ class Reolink extends IPSModule
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
+            $this->SendDebug("CreateImageMedia", "Erstelle Bild-Medienobjekt", 0);
             $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
             IPS_SetMediaCached($mediaID, false);
+            IPS_SendMediaEvent($mediaID); // Medienobjekt initialisieren
         }
     }
 
@@ -190,9 +192,12 @@ class Reolink extends IPSModule
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID !== false) {
+            $this->SendDebug("UpdateImageContent", "Aktualisiere Bildinhalt", 0);
             // Bildinhalt als Base64-codierten Inhalt speichern
             IPS_SetMediaContent($mediaID, base64_encode($imageData));
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+        } else {
+            $this->SendDebug("UpdateImageContent", "Medienobjekt nicht gefunden", 0);
         }
     }
 
