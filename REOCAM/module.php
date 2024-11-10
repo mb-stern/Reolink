@@ -2,7 +2,7 @@
 
 class Reolink extends IPSModule
 
-declare(strict_types=1);
+//declare(strict_types=1);
 
 //Constants will be defined with IP-Symcon 5.0 and newer
 if (!defined('IPS_KERNELMESSAGE')) {
