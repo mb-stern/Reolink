@@ -22,6 +22,9 @@ class Reolink extends IPSModule
 
         // Sicherstellen, dass das Stream-Medienobjekt existiert oder erstellt wird
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+
+        // Sicherstellen, dass das Snapshot-Medienobjekt existiert
+        $this->CreateImageMedia("Snapshot", "Kamera Snapshot");
     }
 
     private function RegisterHook($Hook)
@@ -160,33 +163,37 @@ class Reolink extends IPSModule
         $imageData = @file_get_contents($snapshotUrl);
 
         if ($imageData !== false) {
-            // Medienobjekt für das Bild neu erstellen
-            $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot", $imageData);
+            // Medienobjekt für das Bild aktualisieren
+            $this->UpdateImageContent("Snapshot", $imageData);
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
         }
     }
 
-    private function CreateOrUpdateImage($ident, $name, $imageData)
+    private function CreateImageMedia($ident, $name)
     {
-        // Überprüfen, ob das Bild-Medienobjekt existiert
+        // Bild-Medienobjekt erstellen, falls es nicht existiert
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaCached($mediaID, false);
+        }
+    }
+
+    private function UpdateImageContent($ident, $imageData)
+    {
+        // Abrufen des Medienobjekts für das Bild
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID !== false) {
-            IPS_DeleteMedia($mediaID, true); // Altes Medienobjekt löschen, einschließlich Datei
+            // Bildinhalt als Base64-codierten Inhalt speichern
+            IPS_SetMediaContent($mediaID, base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
         }
-
-        // Neues Medienobjekt erstellen
-        $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
-        IPS_SetParent($mediaID, $this->InstanceID);
-        IPS_SetIdent($mediaID, $ident);
-        IPS_SetName($mediaID, $name);
-        IPS_SetMediaCached($mediaID, false);
-
-        // Bildinhalt als Base64-codierten Inhalt speichern und das Medienobjekt aktualisieren
-        IPS_SetMediaContent($mediaID, base64_encode($imageData));
-        IPS_ApplyChanges($mediaID); // Anwenden der Änderungen, um das Bild tatsächlich zu aktualisieren
-        IPS_SendMediaEvent($mediaID); // Senden des Events, um das Bild zu aktualisieren
     }
 
     public function GetStreamURL()
