@@ -20,23 +20,32 @@ class Reolink extends IPSModule
     private function RegisterHook($Hook)
     {
         // WebHook Control Modul-ID
-        $webhookID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
+        $webhookControlID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
         
-        if (count($webhookID) > 0) {
-            $hookInstanceID = $webhookID[0];
-            $this->UnregisterHook($Hook); // Zuvor vorhandene Hooks entfernen
+        if (count($webhookControlID) > 0) {
+            $hookInstanceID = $webhookControlID[0];
 
-            // Hook registrieren
-            IPS_RunScriptText("IPS_RegisterHook('$Hook', {$this->InstanceID});");
-        }
-    }
+            // Vorhandene Hooks laden
+            $hooks = json_decode(IPS_GetProperty($hookInstanceID, "Hooks"), true);
 
-    private function UnregisterHook($Hook)
-    {
-        $webhookID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
-        if (count($webhookID) > 0) {
-            $hookInstanceID = $webhookID[0];
-            IPS_RunScriptText("IPS_UnregisterHook('$Hook');");
+            // Prüfen, ob der Hook bereits existiert
+            $found = false;
+            foreach ($hooks as $hook) {
+                if ($hook['Hook'] == $Hook) {
+                    $found = true;
+                    break;
+                }
+            }
+
+            // Hook hinzufügen, wenn er nicht existiert
+            if (!$found) {
+                $hooks[] = [
+                    "Hook" => $Hook,
+                    "TargetID" => $this->InstanceID
+                ];
+                IPS_SetProperty($hookInstanceID, "Hooks", json_encode($hooks));
+                IPS_ApplyChanges($hookInstanceID);
+            }
         }
     }
 
