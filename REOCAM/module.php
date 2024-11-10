@@ -43,17 +43,39 @@ class Reolink extends IPSModule
     }
 
     public function ProcessHookData()
-    {
-        $rawData = file_get_contents("php://input");
-        if (!empty($rawData)) {
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessData($data);
-            }
+{
+    $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+
+    // Empfange alle Daten
+    $rawData = file_get_contents("php://input");
+    $this->SendDebug('Raw POST Data', $rawData, 0);
+
+    // Überprüfe GET-Parameter in der URL
+    $getParams = $_GET;
+    $this->SendDebug('GET Parameters', json_encode($getParams), 0);
+
+    // Überprüfe POST-Parameter (falls verwendet)
+    $postParams = $_POST;
+    $this->SendDebug('POST Parameters', json_encode($postParams), 0);
+
+    if (!empty($rawData)) {
+        $data = json_decode($rawData, true);
+        if (is_array($data)) {
+            $this->SendDebug('Decoded JSON Data', json_encode($data), 0);
+            $this->ProcessData($data);
         } else {
-            IPS_LogMessage("Reolink", "Keine rohen Daten empfangen oder der Datenstrom ist leer.");
+            $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
         }
+    } elseif (!empty($getParams)) {
+        // GET-Parameter verarbeiten, falls vorhanden
+        $this->SendDebug('Processing GET Parameters', json_encode($getParams), 0);
+        $this->ProcessData($getParams);
+    } else {
+        IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+        $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
     }
+}
+
 
     private function ProcessData($data)
     {
