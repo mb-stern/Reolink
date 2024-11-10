@@ -96,7 +96,7 @@ class Reolink extends IPSModule
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
 
-        return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_main";
+        return "rtsp://$username:$password@$cameraIP:554//Preview_01_main";
     }
 
     public function GetSnapshotURL()
