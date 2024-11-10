@@ -13,17 +13,22 @@ class Reolink extends IPSModule
 
         // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
+
+        // Medienobjekte für Stream und Snapshot erstellen
+        $this->RegisterMediaObjects();
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
+
+        // URLs für Medienobjekte aktualisieren
+        $this->UpdateMediaObjects();
     }
 
     private function RegisterHook($Hook)
     {
-        // Verwendet die von Ihnen gewünschte Instanz-ID für das WebHook Control Modul
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) > 0) {
             $hookInstanceID = $ids[0];
@@ -50,83 +55,39 @@ class Reolink extends IPSModule
         }
     }
 
-    public function ProcessHookData()
+    private function RegisterMediaObjects()
     {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Raw POST Data', $rawData, 0);
+        // Medienobjekte für Stream und Snapshot erstellen
+        $this->RegisterMediaObject("StreamURL", "Kamera Stream", 3, $this->GetStreamURL());
+        $this->RegisterMediaObject("Snapshot", "Kamera Snapshot", 3, $this->GetSnapshotURL());
+    }
 
-        if (!empty($rawData)) {
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
-        } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+    private function RegisterMediaObject($ident, $name, $type, $url)
+    {
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia($type); // 3 steht für Stream oder Snapshot als URL
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaFile($mediaID, $url, false); // URL als Datei für das Medienobjekt setzen
+            IPS_SetMediaCached($mediaID, true); // Medienelement cachen, um wiederholte Anfragen zu vermeiden
         }
     }
 
-    private function ProcessData($data)
+    private function UpdateMediaObjects()
     {
-        if (isset($data['alarm'])) {
-            foreach ($data['alarm'] as $key => $value) {
-                if ($key === 'alarmTime') {
-                    // Zeitstempel in die richtige Zeitzone konvertieren und formatieren
-                    $dateTime = new DateTime($value);
-                    $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
-                    $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
-                    $this->updateVariable($key, $formattedAlarmTime, 3); // String
-                } else {
-                    $this->updateVariable($key, $value);
-                }
-            }
-        }
+        // URLs für die Medienobjekte aktualisieren
+        $this->UpdateMediaObject("StreamURL", $this->GetStreamURL());
+        $this->UpdateMediaObject("Snapshot", $this->GetSnapshotURL());
     }
 
-    private function updateVariable($name, $value, $type = null)
+    private function UpdateMediaObject($ident, $url)
     {
-        $ident = $this->normalizeIdent($name);
-
-        if ($type === null) {
-            if (is_string($value)) {
-                $type = 3;
-            } elseif (is_int($value)) {
-                $type = 1;
-            } elseif (is_float($value)) {
-                $type = 2;
-            } elseif (is_bool($value)) {
-                $type = 0;
-            } else {
-                $type = 3;
-                $value = json_encode($value);
-            }
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($mediaID !== false) {
+            IPS_SetMediaFile($mediaID, $url, false); // Aktualisiert die URL des Medienobjekts
         }
-
-        // Erstelle Variable basierend auf dem Typ
-        switch ($type) {
-            case 0: // Boolean
-                $this->RegisterVariableBoolean($ident, $name);
-                break;
-            case 1: // Integer
-                $this->RegisterVariableInteger($ident, $name);
-                break;
-            case 2: // Float
-                $this->RegisterVariableFloat($ident, $name);
-                break;
-            case 3: // String
-                $this->RegisterVariableString($ident, $name);
-                break;
-        }
-
-        $this->SetValue($ident, $value);
-    }
-
-    private function normalizeIdent($name)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32);
     }
 
     public function GetStreamURL()
