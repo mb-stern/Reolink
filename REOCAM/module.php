@@ -107,4 +107,16 @@ class Reolink extends IPSModule
             $varID = $this->createVariableIfNotExists($parentID, $key, 2); // Float
             SetValue($varID, $value);
         } elseif (is_bool($value)) {
-            $varID = 
+            $varID = $this->createVariableIfNotExists($parentID, $key, 0); // Boolean
+            SetValue($varID, $value);
+        } elseif (is_array($value) || is_object($value)) {
+            $varID = $this->createVariableIfNotExists($parentID, $key, 3); // JSON-String
+            SetValue($varID, json_encode($value));
+        } else {
+            $varID = $this->createVariableIfNotExists($parentID, $key, 3);
+            SetValue($varID, (string)$value);
+        }
+    }
+}
+
+?>
