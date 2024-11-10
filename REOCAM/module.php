@@ -4,12 +4,7 @@ class Reolink extends IPSModule
 {
     public function Create()
     {
-        // Diese Zeile nicht entfernen
         parent::Create();
-
-        // Standard-Timer-Intervall auf 60 Sekunden setzen
-        $this->RegisterPropertyInteger("UpdateInterval", 60);
-        $this->RegisterTimer("ReolinkTimer", 0, 'Reolink_UpdateTimer($_IPS["TARGET"]);');
 
         // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
@@ -17,12 +12,7 @@ class Reolink extends IPSModule
 
     public function ApplyChanges()
     {
-        // Diese Zeile nicht entfernen
         parent::ApplyChanges();
-
-        // Timer entsprechend dem konfigurierten Intervall einstellen
-        $interval = $this->ReadPropertyInteger("UpdateInterval") * 1000; // Sekunden in Millisekunden umwandeln
-        $this->SetTimerInterval("ReolinkTimer", $interval);
 
         // Webhook erneut registrieren, um sicherzustellen, dass er aktiv ist
         $this->RegisterHook('/hook/reolink');
@@ -30,7 +20,7 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
-        // WebHook Control Modul-ID
+        // WebHook Control Modul-ID (aktualisiert auf die angegebene Instanz-ID)
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) > 0) {
             $hooks = json_decode(IPS_GetProperty($ids[0], 'Hooks'), true);
@@ -66,12 +56,13 @@ class Reolink extends IPSModule
         IPS_LogMessage('Reolink', $data);
     }
 
-    // Timer-Funktion
-    public function UpdateTimer()
+    // Methode zum manuellen Aktualisieren der Werte
+    public function UpdateValues()
     {
-        // Timer-Aktion oder Aktualisierungscode hier ausführen
-        $this->SendDebug('Timer', 'Timer ausgeführt', 0);
-        IPS_LogMessage('Reolink Timer', 'Timer wurde ausgeführt');
+        $this->SendDebug("UpdateValues", "Werte werden aktualisiert", 0);
+        IPS_LogMessage("Reolink Update", "Werte wurden manuell aktualisiert");
+        
+        // Hier den Aktualisierungscode einfügen
     }
 }
 

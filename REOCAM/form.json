@@ -3,11 +3,13 @@
       {
           "type": "Label",
           "label": "Reolink Webhook Modul Konfiguration"
-      },
+      }
+  ],
+  "actions": [
       {
-          "type": "NumberSpinner",
-          "name": "UpdateInterval",
-          "caption": "Timer Intervall (in Sekunden)"
+          "type": "Button",
+          "caption": "Werte aktualisieren",
+          "onClick": "Reolink_UpdateValues($id);"
       }
   ]
 }
