@@ -183,9 +183,10 @@ class Reolink extends IPSModule
         IPS_SetName($mediaID, $name);
         IPS_SetMediaCached($mediaID, false);
 
-        // Bildinhalt als Base64-codierten Inhalt speichern
+        // Bildinhalt als Base64-codierten Inhalt speichern und das Medienobjekt aktualisieren
         IPS_SetMediaContent($mediaID, base64_encode($imageData));
-        IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+        IPS_ApplyChanges($mediaID); // Anwenden der Änderungen, um das Bild tatsächlich zu aktualisieren
+        IPS_SendMediaEvent($mediaID); // Senden des Events, um das Bild zu aktualisieren
     }
 
     public function GetStreamURL()
