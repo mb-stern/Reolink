@@ -62,7 +62,6 @@ class Reolink extends IPSModule
 
     private function ProcessData($data)
     {
-        // Wenn "alarm" als Hauptschlüssel existiert, verarbeiten wir seine Inhalte
         if (isset($data['alarm'])) {
             foreach ($data['alarm'] as $key => $value) {
                 if ($key === 'alarmTime') {
@@ -80,32 +79,46 @@ class Reolink extends IPSModule
 
     private function updateVariable($name, $value, $type = null)
     {
+        $ident = $this->normalizeIdent($name);
+
         if ($type === null) {
-            // Automatische Typbestimmung
             if (is_string($value)) {
-                $type = 3; // String
+                $type = 3;
             } elseif (is_int($value)) {
-                $type = 1; // Integer
+                $type = 1;
             } elseif (is_float($value)) {
-                $type = 2; // Float
+                $type = 2;
             } elseif (is_bool($value)) {
-                $type = 0; // Boolean
+                $type = 0;
             } else {
-                $type = 3; // Standardmäßig als String speichern
+                $type = 3;
                 $value = json_encode($value);
             }
         }
 
-        $ident = $this->normalizeIdent($name);
-        $this->RegisterVariable($ident, $name, $type);
+        // Erstelle Variable basierend auf dem Typ
+        switch ($type) {
+            case 0: // Boolean
+                $this->RegisterVariableBoolean($ident, $name);
+                break;
+            case 1: // Integer
+                $this->RegisterVariableInteger($ident, $name);
+                break;
+            case 2: // Float
+                $this->RegisterVariableFloat($ident, $name);
+                break;
+            case 3: // String
+                $this->RegisterVariableString($ident, $name);
+                break;
+        }
+
         $this->SetValue($ident, $value);
     }
 
     private function normalizeIdent($name)
     {
-        // Ident normalisieren, da sie bestimmte Zeichen nicht erlauben
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32); // Maximale Länge für Idents beträgt 32 Zeichen
+        return substr($ident, 0, 32); 
     }
 }
 
