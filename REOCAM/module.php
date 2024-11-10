@@ -5,6 +5,13 @@ class Reolink extends IPSModule
     public function Create()
     {
         parent::Create();
+
+        // IP-Adresse, Benutzername und Passwort als Eigenschaften registrieren
+        $this->RegisterPropertyString("CameraIP", "");
+        $this->RegisterPropertyString("Username", "");
+        $this->RegisterPropertyString("Password", "");
+
+        // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
     }
 
@@ -16,6 +23,7 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
+        // Verwendet die von Ihnen gewünschte Instanz-ID für das WebHook Control Modul
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) > 0) {
             $hookInstanceID = $ids[0];
@@ -118,7 +126,25 @@ class Reolink extends IPSModule
     private function normalizeIdent($name)
     {
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32); 
+        return substr($ident, 0, 32);
+    }
+
+    public function GetStreamURL()
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+
+        return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_main";
+    }
+
+    public function GetSnapshotURL()
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+
+        return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password";
     }
 }
 

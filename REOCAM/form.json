@@ -1,15 +1,19 @@
 {
   "elements": [
       {
-          "type": "Label",
-          "label": "Reolink Webhook Modul Konfiguration"
-      }
-  ],
-  "actions": [
+          "type": "ValidationTextBox",
+          "name": "CameraIP",
+          "caption": "IP-Adresse der Kamera"
+      },
       {
-          "type": "Button",
-          "caption": "Werte aktualisieren",
-          "onClick": "IPS_RequestAction($id, 'UpdateValues', '');"
+          "type": "ValidationTextBox",
+          "name": "Username",
+          "caption": "Benutzername"
+      },
+      {
+          "type": "PasswordTextBox",
+          "name": "Password",
+          "caption": "Passwort"
       }
   ]
 }
