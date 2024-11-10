@@ -19,41 +19,31 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
-        // WebHook Control Modul-ID
+        // Prüfen, ob das WebHook Control-Modul vorhanden ist
         $webhookControlID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
         
         if (count($webhookControlID) > 0) {
             $hookInstanceID = $webhookControlID[0];
 
-            // Vorhandene Hooks laden
-            $hooks = json_decode(IPS_GetProperty($hookInstanceID, "Hooks"), true);
+            // Erstellen eines Skripts für den Webhook
+            $hookScriptID = @IPS_GetObjectIDByIdent("ReolinkHookScript", $this->InstanceID);
+            if ($hookScriptID === false) {
+                // Neues Skript erstellen
+                $hookScriptID = IPS_CreateScript(0); // 0 = PHP-Skript
+                IPS_SetParent($hookScriptID, $hookInstanceID);
+                IPS_SetIdent($hookScriptID, "ReolinkHookScript");
+                IPS_SetName($hookScriptID, "Reolink Webhook Handler");
 
-            // Prüfen, ob der Hook bereits existiert
-            $found = false;
-            foreach ($hooks as $hook) {
-                if ($hook['Hook'] == $Hook) {
-                    $found = true;
-                    break;
-                }
+                // Skriptinhalt festlegen
+                $scriptContent = '<?php Reolink_HookHandler($_IPS["TARGET"]);';
+                IPS_SetScriptContent($hookScriptID, $scriptContent);
             }
 
-            // Hook hinzufügen, wenn er nicht existiert
-            if (!$found) {
-                $hooks[] = [
-                    "Hook" => $Hook,
-                    "TargetID" => $this->InstanceID
-                ];
-                IPS_SetProperty($hookInstanceID, "Hooks", json_encode($hooks));
-                IPS_ApplyChanges($hookInstanceID);
-            }
+            // Webhook mit dem Skript verknüpfen
+            IPS_SetProperty($hookInstanceID, "Path", $Hook);
+            IPS_SetProperty($hookInstanceID, "ScriptID", $hookScriptID);
+            IPS_ApplyChanges($hookInstanceID);
         }
-    }
-
-    public function ReceiveData($JSONString)
-    {
-        $data = json_decode($JSONString, true);
-        IPS_LogMessage("Reolink", print_r($data, true));
-        // Hier kann Logik hinzugefügt werden, die auf die Webhook-Daten reagiert.
     }
 
     public function HookHandler()
