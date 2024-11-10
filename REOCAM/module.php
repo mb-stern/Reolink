@@ -24,24 +24,19 @@ class Reolink extends IPSModule
         
         if (count($webhookID) > 0) {
             $hookInstanceID = $webhookID[0];
+            $this->UnregisterHook($Hook); // Zuvor vorhandene Hooks entfernen
 
-            // Prüfen, ob ein Skript für diesen Hook existiert
-            $hookScriptID = @IPS_GetObjectIDByIdent("ReolinkHookScript", $this->InstanceID);
-            if ($hookScriptID === false) {
-                // Neues Skript erstellen
-                $hookScriptID = IPS_CreateScript(0); // 0 = PHP-Skript
-                IPS_SetParent($hookScriptID, $this->InstanceID);
-                IPS_SetIdent($hookScriptID, "ReolinkHookScript");
-                IPS_SetName($hookScriptID, "Reolink Webhook Handler");
-                
-                // Skriptinhalt festlegen
-                $scriptContent = '<?php Reolink_HookHandler($_IPS["INSTANCE"]);';
-                IPS_SetScriptContent($hookScriptID, $scriptContent);
-            }
+            // Hook registrieren
+            IPS_RunScriptText("IPS_RegisterHook('$Hook', {$this->InstanceID});");
+        }
+    }
 
-            // Webhook im WebHook Control registrieren
-            IPS_SetProperty($hookInstanceID, "WebHook", $Hook);
-            IPS_ApplyChanges($hookInstanceID);
+    private function UnregisterHook($Hook)
+    {
+        $webhookID = IPS_GetInstanceListByModuleID("{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}");
+        if (count($webhookID) > 0) {
+            $hookInstanceID = $webhookID[0];
+            IPS_RunScriptText("IPS_UnregisterHook('$Hook');");
         }
     }
 
