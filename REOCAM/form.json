@@ -1,68 +1,19 @@
 {
-    "elements": [
-  
+  "elements": [
       {
-        "type": "ValidationTextBox",
-        "name": "WebhookName",
-        "caption": "Webhook Name"
+          "type": "Label",
+          "label": "Reolink Webhook Modul"
       },
       {
-        "type": "ValidationTextBox",
-        "name": "SavePath",
-        "caption": "Save Path",
-        "default": "/user/"
-      },
-     {
-        "type": "ValidationTextBox",
-        "name": "UserName",
-        "caption": "User Name"
-      },
-     {
-        "type": "ValidationTextBox",
-        "name": "Password",
-        "caption": "Password"
-      },
-      {
-        "type": "NumberSpinner",
-        "name": "MotionActive",
-        "caption": "Duration the Motion Event stays activ in seconds",
-        "minimum": 0,
-        "maximum": 1000,
-        "default": 30
+          "type": "ValidationTextBox",
+          "name": "WebhookURL",
+          "caption": "Webhook URL"
       }
-    ],
-    "actions": [],
-    "status": [
+  ],
+  "actions": [
       {
-        "code": 102,
-        "icon": "active",
-        "caption": "Instance is active"
-      },
-      {
-        "code": 104,
-        "icon": "inactive",
-        "caption": "Instance is inactive"
-      },
-      {
-        "code": 101,
-        "icon": "inactive",
-        "caption": "Instanz wird erstellt"
-      },
-      {
-        "code": 103,
-        "icon": "inactive",
-        "caption": "Instanz wird gelöscht"
-      },
-      {
-        "code": 105,
-        "icon": "inactive",
-        "caption": "Instanz wurde nicht erstellt"
-      },
-  
-      {
-        "code": 200,
-        "icon": "error",
-        "caption": "Instance is in error state"
+          "type": "Label",
+          "label": "Dieses Modul erstellt einen Webhook, der von der Reolink-Kamera angesteuert werden kann."
       }
-    ]
-  }
+  ]
+}
