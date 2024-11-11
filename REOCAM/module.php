@@ -16,20 +16,16 @@ class Reolink extends IPSModule
         $this->RegisterHook('/hook/reolink');
 
         // Bool-Variablen mit dem Variablenprofil "~Motion" erstellen
-        $this->RegisterVariableBoolean("Person", "Person", "~Motion");
-        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion");
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion");
-        $this->RegisterVariableBoolean("Bewegung", "Bewegung", "~Motion");
+        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
-
-        // Sicherstellen, dass die Medienobjekte für den Stream und das Bild existieren oder erstellt werden
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-        $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
     }
 
     private function RegisterHook($Hook)
@@ -77,39 +73,32 @@ class Reolink extends IPSModule
             IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
-
-        // Snapshot-Bild bei jedem Webhook-Aufruf aktualisieren
-        $this->UpdateSnapshot();
     }
 
     private function ProcessData($data)
     {
-        // Überprüfen, ob der `Type`-Parameter gesetzt ist und den Bool-Status entsprechend aktualisieren
         if (isset($data['alarm']['type'])) {
             $type = $data['alarm']['type'];
             switch ($type) {
                 case "PEOPLE":
                     $this->ActivateBoolean("Person");
+                    $this->CreateSnapshotUnderBoolean("Person");
                     break;
                 case "ANIMAL":
                     $this->ActivateBoolean("Tier");
+                    $this->CreateSnapshotUnderBoolean("Tier");
                     break;
                 case "VEHICLE":
                     $this->ActivateBoolean("Fahrzeug");
+                    $this->CreateSnapshotUnderBoolean("Fahrzeug");
                     break;
                 case "MD":
                     $this->ActivateBoolean("Bewegung");
+                    $this->CreateSnapshotUnderBoolean("Bewegung");
                     break;
                 default:
                     $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
                     break;
-            }
-        }
-
-        // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
-        foreach ($data['alarm'] as $key => $value) {
-            if ($key !== 'type') { // `type` wird bereits behandelt
-                $this->updateVariable($key, $value);
             }
         }
     }
@@ -123,77 +112,32 @@ class Reolink extends IPSModule
         $this->SetValue($ident, false);
     }
 
-    private function updateVariable($name, $value)
+    private function CreateSnapshotUnderBoolean($booleanIdent)
     {
-        $ident = $this->normalizeIdent($name);
+        $booleanID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
+        if ($booleanID !== false) {
+            // Erstelle oder aktualisiere das Bild-Medienobjekt unterhalb der Bool-Variable
+            $snapshotIdent = "Snapshot_" . $booleanIdent;
+            $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
+            
+            if ($mediaID === false) {
+                $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+                IPS_SetParent($mediaID, $booleanID); // Setze den Snapshot unter die Bool-Variable
+                IPS_SetIdent($mediaID, $snapshotIdent);
+                IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
+                IPS_SetMediaCached($mediaID, false);
+            }
 
-        // Variablentyp bestimmen und registrieren
-        if (is_string($value)) {
-            $this->RegisterVariableString($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_int($value)) {
-            $this->RegisterVariableInteger($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_float($value)) {
-            $this->RegisterVariableFloat($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_bool($value)) {
-            $this->RegisterVariableBoolean($ident, $name);
-            $this->SetValue($ident, $value);
-        } else {
-            // Unbekannter Typ, als JSON-String speichern
-            $this->RegisterVariableString($ident, $name);
-            $this->SetValue($ident, json_encode($value));
-        }
-    }
+            // URL zum Snapshot-Bild abrufen und speichern
+            $snapshotUrl = $this->GetSnapshotURL();
+            $imageData = @file_get_contents($snapshotUrl);
 
-    private function normalizeIdent($name)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32); 
-    }
-
-    private function CreateOrUpdateStream($ident, $name)
-    {
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-        if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
-            IPS_SetParent($mediaID, $this->InstanceID);
-            IPS_SetIdent($mediaID, $ident);
-            IPS_SetName($mediaID, $name);
-            IPS_SetMediaCached($mediaID, true);
-        }
-
-        IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
-    }
-
-    private function CreateOrUpdateImage($ident, $name)
-    {
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-        if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
-            IPS_SetParent($mediaID, $this->InstanceID);
-            IPS_SetIdent($mediaID, $ident);
-            IPS_SetName($mediaID, $name);
-            IPS_SetMediaCached($mediaID, false);
-        }
-
-        return $mediaID;
-    }
-
-    private function UpdateSnapshot()
-    {
-        $mediaID = $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
-        $snapshotUrl = $this->GetSnapshotURL();
-        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp.jpg";
-        $imageData = @file_get_contents($snapshotUrl);
-
-        if ($imageData !== false) {
-            file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false);
-            IPS_SendMediaEvent($mediaID);
-        } else {
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
+            if ($imageData !== false) {
+                IPS_SetMediaContent($mediaID, base64_encode($imageData)); // Base64-kodierte Bilddaten setzen
+                IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+            } else {
+                IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
+            }
         }
     }
 
