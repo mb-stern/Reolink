@@ -178,6 +178,22 @@ class Reolink extends IPSModule
         }
     }
 
+    private function CreateOrUpdateStream($ident, $name)
+    {
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaCached($mediaID, true);
+        }
+
+        // Stream-URL aktualisieren
+        IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
+    }
+
     public function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
