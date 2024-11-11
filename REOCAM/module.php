@@ -20,6 +20,9 @@ class Reolink extends IPSModule
         $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+
+        // String-Variable für `type` registrieren
+        $this->RegisterVariableString("AlarmType", "Alarm Type", "", 15);
     }
 
     public function ApplyChanges()
@@ -82,6 +85,10 @@ class Reolink extends IPSModule
     {
         if (isset($data['alarm']['type'])) {
             $type = $data['alarm']['type'];
+
+            // Setze die AlarmType-Variable, um den aktuellen Typ zu speichern
+            $this->SetValue("AlarmType", $type);
+
             switch ($type) {
                 case "PEOPLE":
                     $this->ActivateBoolean("Person", 21);
