@@ -11,6 +11,9 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
 
+        // StreamType-Eigenschaft für die Auswahl zwischen Main- und Substream hinzufügen
+        $this->RegisterPropertyString("StreamType", "main");
+
         // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
     }
