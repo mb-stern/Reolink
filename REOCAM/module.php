@@ -21,14 +21,17 @@ class Reolink extends IPSModule
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
 
-        // Kategorien für die Bildarchive erstellen
+        // Kategorien und Medienobjekte für die Bildarchive und direkten Snapshots erstellen
         $this->CreateOrUpdateCategory("Person", "Bildarchiv Person", 22);
         $this->CreateOrUpdateCategory("Tier", "Bildarchiv Tier", 27);
         $this->CreateOrUpdateCategory("Fahrzeug", "Bildarchiv Fahrzeug", 32);
         $this->CreateOrUpdateCategory("Bewegung", "Bildarchiv Bewegung", 37);
 
-        // Einzelnen Snapshot für die aktuelle Ansicht erstellen
-        $this->CreateOrUpdateImage("Snapshot", "Aktueller Snapshot", 5);
+        // Einzelsnapshots für die aktuellen Ansichten der Bool-Variablen
+        $this->CreateOrUpdateImage("Snapshot_Person", "Aktueller Snapshot Person", 21);
+        $this->CreateOrUpdateImage("Snapshot_Tier", "Aktueller Snapshot Tier", 26);
+        $this->CreateOrUpdateImage("Snapshot_Fahrzeug", "Aktueller Snapshot Fahrzeug", 31);
+        $this->CreateOrUpdateImage("Snapshot_Bewegung", "Aktueller Snapshot Bewegung", 36);
 
         // String-Variable `type` für Alarmtyp
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
@@ -42,7 +45,7 @@ class Reolink extends IPSModule
         // Aktualisiere den Stream, falls der StreamType geändert wurde
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
 
-        // Snapshot aktualisieren
+        // Aktualisiere den allgemeinen Snapshot
         $this->UpdateSnapshot();
     }
 
@@ -92,7 +95,7 @@ class Reolink extends IPSModule
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
 
-        // Aktualisiere den aktuellen Snapshot bei jedem Webhook-Aufruf
+        // Aktualisiere den allgemeinen Snapshot bei jedem Webhook-Aufruf
         $this->UpdateSnapshot();
     }
 
@@ -106,30 +109,38 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person", "Bildarchiv Person");
+                    $this->ActivateBoolean("Person", "Bildarchiv Person", "Snapshot_Person");
                     break;
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier", "Bildarchiv Tier");
+                    $this->ActivateBoolean("Tier", "Bildarchiv Tier", "Snapshot_Tier");
                     break;
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug", "Bildarchiv Fahrzeug");
+                    $this->ActivateBoolean("Fahrzeug", "Bildarchiv Fahrzeug", "Snapshot_Fahrzeug");
                     break;
                 case "MD":
-                    $this->ActivateBoolean("Bewegung", "Bildarchiv Bewegung");
+                    $this->ActivateBoolean("Bewegung", "Bildarchiv Bewegung", "Snapshot_Bewegung");
                     break;
                 default:
                     $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
                     break;
             }
         }
+
+        // Aktualisiere zusätzliche Webhook-Variablen
+        foreach ($data['alarm'] as $key => $value) {
+            if ($key !== 'type') { // `type` wird bereits behandelt
+                $this->updateVariable($key, $value);
+            }
+        }
     }
 
-    private function ActivateBoolean($ident, $archiveName)
+    private function ActivateBoolean($ident, $archiveName, $snapshotIdent)
     {
         $this->SetValue($ident, true);
 
-        // Snapshot in das entsprechende Archiv speichern
+        // Snapshot für das Bildarchiv und das Einzelbild erstellen und aktualisieren
         $this->CreateSnapshotInArchive($ident, $archiveName);
+        $this->UpdateIndividualSnapshot($snapshotIdent);
 
         // Nach 5 Sekunden wieder auf false setzen
         IPS_Sleep(5000);
@@ -172,6 +183,24 @@ class Reolink extends IPSModule
             $this->LimitSnapshotCount($categoryID, 20);
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
+        }
+    }
+
+    private function UpdateIndividualSnapshot($ident)
+    {
+        $mediaID = $this->CreateOrUpdateImage($ident, "Aktueller Snapshot $ident", 5);
+
+        // Bildinhalt abrufen
+        $snapshotUrl = $this->GetSnapshotURL();
+        $imageData = @file_get_contents($snapshotUrl);
+
+        if ($imageData !== false) {
+            $tempImagePath = IPS_GetKernelDir() . "media" . DIRECTORY_SEPARATOR . "$ident.jpg";
+            file_put_contents($tempImagePath, $imageData);
+            IPS_SetMediaFile($mediaID, $tempImagePath, false);
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+        } else {
+            IPS_LogMessage("Reolink", "Aktueller Snapshot $ident konnte nicht abgerufen werden.");
         }
     }
 
