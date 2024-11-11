@@ -16,10 +16,10 @@ class Reolink extends IPSModule
         $this->RegisterHook('/hook/reolink');
 
         // Bool-Variablen mit dem Variablenprofil "~Motion" erstellen
-        $this->RegisterVariableBoolean("Person", "Person", "~Motion");
-        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion");
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion");
-        $this->RegisterVariableBoolean("Bewegung", "Bewegung", "~Motion");
+        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion");
+        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion");
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt ", "~Motion");
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion");
     }
 
     public function ApplyChanges()
