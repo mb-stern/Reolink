@@ -27,6 +27,9 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateCategory("Fahrzeug", "Bildarchiv Fahrzeug", 31);
         $this->CreateOrUpdateCategory("Bewegung", "Bildarchiv Bewegung", 36);
 
+        // Einzelnen Snapshot für die aktuelle Ansicht erstellen
+        $this->CreateOrUpdateImage("Snapshot", "Aktueller Snapshot", 5);
+
         // String-Variable `type` für Alarmtyp
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
     }
@@ -38,6 +41,9 @@ class Reolink extends IPSModule
 
         // Aktualisiere den Stream, falls der StreamType geändert wurde
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+
+        // Snapshot aktualisieren
+        $this->UpdateSnapshot();
     }
 
     private function RegisterHook($Hook)
@@ -85,6 +91,9 @@ class Reolink extends IPSModule
             IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
+
+        // Aktualisiere den aktuellen Snapshot bei jedem Webhook-Aufruf
+        $this->UpdateSnapshot();
     }
 
     private function ProcessData($data)
@@ -151,6 +160,7 @@ class Reolink extends IPSModule
         if ($imageData !== false) {
             $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
             IPS_SetParent($mediaID, $categoryID);
+            IPS_SetPosition($mediaID, -time()); // Negative Zeit, damit neue Bilder oben erscheinen
             IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
             IPS_SetMediaCached($mediaID, false);
 
@@ -176,6 +186,41 @@ class Reolink extends IPSModule
                 IPS_DeleteMedia($childrenIDs[$i], true);
             }
         }
+    }
+
+    private function UpdateSnapshot()
+    {
+        // Snapshot-ID abrufen oder erstellen
+        $mediaID = $this->CreateOrUpdateImage("Snapshot", "Aktueller Snapshot", 5);
+
+        // Bildinhalt abrufen
+        $snapshotUrl = $this->GetSnapshotURL();
+        $imageData = @file_get_contents($snapshotUrl);
+
+        if ($imageData !== false) {
+            $tempImagePath = IPS_GetKernelDir() . "media" . DIRECTORY_SEPARATOR . "current_snapshot.jpg";
+            file_put_contents($tempImagePath, $imageData);
+            IPS_SetMediaFile($mediaID, $tempImagePath, false);
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+        } else {
+            IPS_LogMessage("Reolink", "Aktueller Snapshot konnte nicht abgerufen werden.");
+        }
+    }
+
+    private function CreateOrUpdateImage($ident, $name, $position)
+    {
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetPosition($mediaID, $position);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaCached($mediaID, false);
+        }
+
+        return $mediaID;
     }
 
     private function CreateOrUpdateStream($ident, $name)
