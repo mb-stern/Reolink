@@ -1,19 +1,28 @@
 {
-  "elements": [
-      {
-          "type": "ValidationTextBox",
-          "name": "CameraIP",
-          "caption": "IP-Adresse der Kamera"
-      },
-      {
-          "type": "ValidationTextBox",
-          "name": "Username",
-          "caption": "Benutzername"
-      },
-      {
-          "type": "PasswordTextBox",
-          "name": "Password",
-          "caption": "Passwort"
-      }
-  ]
+    "elements": [
+        {
+            "type": "ValidationTextBox",
+            "name": "CameraIP",
+            "caption": "Camera IP"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Username",
+            "caption": "Username"
+        },
+        {
+            "type": "PasswordTextBox",
+            "name": "Password",
+            "caption": "Password"
+        },
+        {
+            "type": "Select",
+            "name": "StreamType",
+            "caption": "Stream Type",
+            "options": [
+                { "caption": "Mainstream", "value": "main" },
+                { "caption": "Substream", "value": "sub" }
+            ]
+        }
+    ]
 }

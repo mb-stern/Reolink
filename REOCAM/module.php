@@ -190,13 +190,20 @@ class Reolink extends IPSModule
     }
 
     public function GetStreamURL()
-    {
-        $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+{
+    $cameraIP = $this->ReadPropertyString("CameraIP");
+    $username = $this->ReadPropertyString("Username");
+    $password = $this->ReadPropertyString("Password");
+    $streamType = $this->ReadPropertyString("StreamType");
 
+    // URL basierend auf Streamauswahl festlegen
+    if ($streamType === "main") {
+        return "rtsp://$username:$password@$cameraIP:554";
+    } else {
         return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
     }
+}
+
 
     public function GetSnapshotURL()
     {
