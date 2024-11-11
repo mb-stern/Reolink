@@ -16,10 +16,10 @@ class Reolink extends IPSModule
         $this->RegisterHook('/hook/reolink');
 
         // Bool-Variablen mit dem Variablenprofil "~Motion" erstellen
-        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
-        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt ", "~Motion", 30);
-        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Person", "Person", "~Motion");
+        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion");
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion");
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung", "~Motion");
     }
 
     public function ApplyChanges()
@@ -84,6 +84,7 @@ class Reolink extends IPSModule
 
     private function ProcessData($data)
     {
+        // Überprüfen, ob der `Type`-Parameter gesetzt ist und den Bool-Status entsprechend aktualisieren
         if (isset($data['alarm']['type'])) {
             $type = $data['alarm']['type'];
             switch ($type) {
@@ -104,6 +105,13 @@ class Reolink extends IPSModule
                     break;
             }
         }
+
+        // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
+        foreach ($data['alarm'] as $key => $value) {
+            if ($key !== 'type') { // `type` wird bereits behandelt
+                $this->updateVariable($key, $value);
+            }
+        }
     }
 
     private function ActivateBoolean($ident)
@@ -113,6 +121,36 @@ class Reolink extends IPSModule
         // Nach 5 Sekunden wieder auf false setzen
         IPS_Sleep(5000);
         $this->SetValue($ident, false);
+    }
+
+    private function updateVariable($name, $value)
+    {
+        $ident = $this->normalizeIdent($name);
+
+        // Variablentyp bestimmen und registrieren
+        if (is_string($value)) {
+            $this->RegisterVariableString($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_int($value)) {
+            $this->RegisterVariableInteger($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_float($value)) {
+            $this->RegisterVariableFloat($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_bool($value)) {
+            $this->RegisterVariableBoolean($ident, $name);
+            $this->SetValue($ident, $value);
+        } else {
+            // Unbekannter Typ, als JSON-String speichern
+            $this->RegisterVariableString($ident, $name);
+            $this->SetValue($ident, json_encode($value));
+        }
+    }
+
+    private function normalizeIdent($name)
+    {
+        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+        return substr($ident, 0, 32); 
     }
 
     private function CreateOrUpdateStream($ident, $name)
