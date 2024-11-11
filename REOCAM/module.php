@@ -10,12 +10,16 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
-
-        // StreamType-Eigenschaft für die Auswahl zwischen Main- und Substream hinzufügen
-        $this->RegisterPropertyString("StreamType", "main");
+        $this->RegisterPropertyString("StreamType", "sub");
 
         // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
+
+        // Bool-Variablen mit dem Variablenprofil "~Motion" erstellen
+        $this->RegisterVariableBoolean("Person", "Person", "~Motion");
+        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion");
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion");
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung", "~Motion");
     }
 
     public function ApplyChanges()
@@ -80,69 +84,40 @@ class Reolink extends IPSModule
 
     private function ProcessData($data)
     {
-        if (isset($data['alarm'])) {
-            foreach ($data['alarm'] as $key => $value) {
-                if ($key === 'alarmTime') {
-                    // Zeitstempel in die richtige Zeitzone konvertieren und formatieren
-                    $dateTime = new DateTime($value);
-                    $dateTime->setTimezone(new DateTimeZone('Europe/Berlin'));
-                    $formattedAlarmTime = $dateTime->format('Y-m-d H:i:s');
-                    $this->updateVariable($key, $formattedAlarmTime, 3); // String
-                } else {
-                    $this->updateVariable($key, $value);
-                }
+        if (isset($data['alarm']['type'])) {
+            $type = $data['alarm']['type'];
+            switch ($type) {
+                case "PEOPLE":
+                    $this->ActivateBoolean("Person");
+                    break;
+                case "ANIMAL":
+                    $this->ActivateBoolean("Tier");
+                    break;
+                case "VEHICLE":
+                    $this->ActivateBoolean("Fahrzeug");
+                    break;
+                case "MD":
+                    $this->ActivateBoolean("Bewegung");
+                    break;
+                default:
+                    $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
+                    break;
             }
         }
     }
 
-    private function updateVariable($name, $value, $type = null)
+    private function ActivateBoolean($ident)
     {
-        $ident = $this->normalizeIdent($name);
+        $this->SetValue($ident, true);
 
-        if ($type === null) {
-            if (is_string($value)) {
-                $type = 3;
-            } elseif (is_int($value)) {
-                $type = 1;
-            } elseif (is_float($value)) {
-                $type = 2;
-            } elseif (is_bool($value)) {
-                $type = 0;
-            } else {
-                $type = 3;
-                $value = json_encode($value);
-            }
-        }
-
-        switch ($type) {
-            case 0: // Boolean
-                $this->RegisterVariableBoolean($ident, $name);
-                break;
-            case 1: // Integer
-                $this->RegisterVariableInteger($ident, $name);
-                break;
-            case 2: // Float
-                $this->RegisterVariableFloat($ident, $name);
-                break;
-            case 3: // String
-                $this->RegisterVariableString($ident, $name);
-                break;
-        }
-
-        $this->SetValue($ident, $value);
-    }
-
-    private function normalizeIdent($name)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32); 
+        // Nach 5 Sekunden wieder auf false setzen
+        IPS_Sleep(5000);
+        $this->SetValue($ident, false);
     }
 
     private function CreateOrUpdateStream($ident, $name)
     {
-        // Überprüfen, ob das Stream-Medienobjekt existiert
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -151,15 +126,12 @@ class Reolink extends IPSModule
             IPS_SetMediaCached($mediaID, true);
         }
 
-        // Stream-URL setzen
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
     private function CreateOrUpdateImage($ident, $name)
     {
-        // Überprüfen, ob das Bild-Medienobjekt existiert
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -173,40 +145,31 @@ class Reolink extends IPSModule
 
     private function UpdateSnapshot()
     {
-        // Erstellen oder Abrufen des Medienobjekts für das Bild
         $mediaID = $this->CreateOrUpdateImage("Snapshot", "Kamera Snapshot");
-
-        // URL zum Snapshot-Bild
         $snapshotUrl = $this->GetSnapshotURL();
-
-        // Bildinhalt abrufen und in einer temporären Datei speichern
         $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp.jpg";
         $imageData = @file_get_contents($snapshotUrl);
 
         if ($imageData !== false) {
             file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+            IPS_SetMediaFile($mediaID, $tempImagePath, false);
+            IPS_SendMediaEvent($mediaID);
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden.");
         }
     }
 
     public function GetStreamURL()
-{
-    $cameraIP = $this->ReadPropertyString("CameraIP");
-    $username = $this->ReadPropertyString("Username");
-    $password = $this->ReadPropertyString("Password");
-    $streamType = $this->ReadPropertyString("StreamType");
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+        $streamType = $this->ReadPropertyString("StreamType");
 
-    // URL basierend auf Streamauswahl festlegen
-    if ($streamType === "main") {
-        return "rtsp://$username:$password@$cameraIP:554";
-    } else {
-        return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
+        return $streamType === "main" ? 
+               "rtsp://$username:$password@$cameraIP:554" :
+               "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
     }
-}
-
 
     public function GetSnapshotURL()
     {
