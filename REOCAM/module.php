@@ -125,12 +125,14 @@ class Reolink extends IPSModule
             IPS_SetMediaCached($mediaID, false);
         }
 
-        // URL zum Snapshot-Bild abrufen und speichern
+        // URL zum Snapshot-Bild abrufen und temporär speichern
         $snapshotUrl = $this->GetSnapshotURL();
+        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
         $imageData = @file_get_contents($snapshotUrl);
 
         if ($imageData !== false) {
-            IPS_SetMediaContent($mediaID, base64_encode($imageData)); // Base64-kodierte Bilddaten setzen
+            file_put_contents($tempImagePath, $imageData);
+            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
