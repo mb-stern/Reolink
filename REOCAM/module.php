@@ -26,6 +26,9 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
+
+        // Aktualisiere den Stream, falls der StreamType geändert wurde
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
     private function RegisterHook($Hook)
@@ -97,6 +100,13 @@ class Reolink extends IPSModule
                     break;
             }
         }
+
+        // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
+        foreach ($data['alarm'] as $key => $value) {
+            if ($key !== 'type') { // `type` wird bereits behandelt
+                $this->updateVariable($key, $value);
+            }
+        }
     }
 
     private function ActivateBoolean($ident, $position)
@@ -109,6 +119,36 @@ class Reolink extends IPSModule
         // Nach 5 Sekunden wieder auf false setzen
         IPS_Sleep(5000);
         $this->SetValue($ident, false);
+    }
+
+    private function updateVariable($name, $value)
+    {
+        $ident = $this->normalizeIdent($name);
+
+        // Variablentyp bestimmen und registrieren
+        if (is_string($value)) {
+            $this->RegisterVariableString($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_int($value)) {
+            $this->RegisterVariableInteger($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_float($value)) {
+            $this->RegisterVariableFloat($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_bool($value)) {
+            $this->RegisterVariableBoolean($ident, $name);
+            $this->SetValue($ident, $value);
+        } else {
+            // Unbekannter Typ, als JSON-String speichern
+            $this->RegisterVariableString($ident, $name);
+            $this->SetValue($ident, json_encode($value));
+        }
+    }
+
+    private function normalizeIdent($name)
+    {
+        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+        return substr($ident, 0, 32); 
     }
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
@@ -137,6 +177,22 @@ class Reolink extends IPSModule
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
+    }
+
+    private function CreateOrUpdateStream($ident, $name)
+    {
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaCached($mediaID, true);
+        }
+
+        // Stream-URL aktualisieren
+        IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
     public function GetStreamURL()
