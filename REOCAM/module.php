@@ -201,7 +201,7 @@ class Reolink extends IPSModule
 
     // URL basierend auf Streamauswahl festlegen
     if ($streamType === "main") {
-        return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_main";
+        return "rtsp://$username:$password@$cameraIP:554";
     } else {
         return "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
     }

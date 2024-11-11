@@ -20,9 +20,13 @@
             "name": "StreamType",
             "caption": "Stream Type",
             "options": [
-                { "caption": "Mainstream", "value": "main" },
-                { "caption": "Substream", "value": "sub" }
+                { "caption": "Mainstream (meist H.265, wird nicht von IP-Symcon unterstützt)", "value": "main" },
+                { "caption": "Substream (H.264, empfohlen für IP-Symcon)", "value": "sub" }
             ]
+        },
+        {
+            "type": "Label",
+            "caption": "Hinweis: Der Mainstream ist häufig H.265-codiert und kann von IP-Symcon nicht verarbeitet werden. Wählen Sie den Substream für volle Kompatibilität."
         }
     ]
 }
