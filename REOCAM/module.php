@@ -22,10 +22,10 @@ class Reolink extends IPSModule
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
 
         // Kategorien für die Bildarchive erstellen
-        $this->CreateOrUpdateCategory("Person", "Bildarchiv Person", 21);
-        $this->CreateOrUpdateCategory("Tier", "Bildarchiv Tier", 26);
-        $this->CreateOrUpdateCategory("Fahrzeug", "Bildarchiv Fahrzeug", 31);
-        $this->CreateOrUpdateCategory("Bewegung", "Bildarchiv Bewegung", 36);
+        $this->CreateOrUpdateCategory("Person", "Bildarchiv Person", 22);
+        $this->CreateOrUpdateCategory("Tier", "Bildarchiv Tier", 27);
+        $this->CreateOrUpdateCategory("Fahrzeug", "Bildarchiv Fahrzeug", 32);
+        $this->CreateOrUpdateCategory("Bewegung", "Bildarchiv Bewegung", 37);
 
         // Einzelnen Snapshot für die aktuelle Ansicht erstellen
         $this->CreateOrUpdateImage("Snapshot", "Aktueller Snapshot", 5);
