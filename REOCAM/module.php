@@ -40,7 +40,7 @@ class Reolink extends IPSModule
 
     private function RegisterHook($Hook)
     {
-        $ids = IPS_GetInstanceListByModuleID('{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}');
+        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) > 0) {
             $hookInstanceID = $ids[0];
             $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
