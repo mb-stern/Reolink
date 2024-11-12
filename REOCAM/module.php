@@ -83,45 +83,38 @@ class Reolink extends IPSModule
     }
 
     private function ProcessData($data)
-    {
-        if (isset($data['alarm']['type'])) {
-            $type = $data['alarm']['type'];
-
-            // Setze die `type`-Variable, um den aktuellen Typ zu speichern
-            $this->SetValue("type", $type);
-
-            switch ($type) {
-                case "PEOPLE":
-                    $this->ActivateBoolean("Person", 21);
-                    break;
-                case "ANIMAL":
-                    $this->ActivateBoolean("Tier", 26);
-                    break;
-                case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug", 31);
-                    break;
-                case "MD":
-                    $this->ActivateBoolean("Bewegung", 36);
-                    break;
-                case "TEST":
-                    $this->ActivateBoolean("Test", 41);
-                    break;
-                default:
-                    $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
-                    break;
-            }
-        }
-
-        // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
-        if (isset($data['alarm'])) {
-            foreach ($data['alarm'] as $key => $value) {
-                if ($key !== 'type') { // `type` wird bereits behandelt
-                    $this->updateVariable($key, $value);
-                    $this->SendDebug("updateVariable", "Variable $key wurde mit dem Wert $value aktualisiert", 0);
-                }
-            }
+{
+    // 1. Boolean-Variablen schalten, basierend auf `type`
+    if (isset($data['alarm']['type'])) {
+        $type = $data['alarm']['type'];
+        switch ($type) {
+            case "PEOPLE":
+                $this->ActivateBoolean("Person", 21);
+                break;
+            case "ANIMAL":
+                $this->ActivateBoolean("Tier", 26);
+                break;
+            case "VEHICLE":
+                $this->ActivateBoolean("Fahrzeug", 31);
+                break;
+            case "MD":
+                $this->ActivateBoolean("Bewegung", 36);
+                break;
+            case "TEST":
+                $this->ActivateBoolean("Test", 41);
+                break;
+            default:
+                $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
+                break;
         }
     }
+
+    // 2. Alle Variablen zusammen aktualisieren, inklusive `type`
+    foreach ($data['alarm'] as $key => $value) {
+        $this->updateVariable($key, $value);
+    }
+}
+
 
     private function ActivateBoolean($ident, $position)
     {
