@@ -94,24 +94,25 @@ class Reolink extends IPSModule
         // Schalte den entsprechenden Boolean je nach Typ und erstelle sofort den Snapshot
         switch ($type) {
             case "PEOPLE":
-                $this->ActivateBoolean("Person", "ResetPerson");
+                $this->ActivateBoolean("Person");
                 break;
             case "ANIMAL":
-                $this->ActivateBoolean("Tier", "ResetTier");
+                $this->ActivateBoolean("Tier");
                 break;
             case "VEHICLE":
-                $this->ActivateBoolean("Fahrzeug", "ResetFahrzeug");
+                $this->ActivateBoolean("Fahrzeug");
                 break;
             case "MD":
-                $this->ActivateBoolean("Bewegung", "ResetBewegung");
+                $this->ActivateBoolean("Bewegung");
                 break;
             case "TEST":
-                $this->ActivateBoolean("Test", "ResetTest");
+                $this->ActivateBoolean("Test");
                 break;
             default:
                 $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
                 break;
         }
+        
     }
 
     // Jetzt alle weiteren Variablen des Webhooks aktualisieren
@@ -127,19 +128,30 @@ class Reolink extends IPSModule
     }
 }
 
-    private function ActivateBoolean($ident, $timerName)
-    {
-        $this->SetValue($ident, true);
+private function ActivateBoolean($ident)
+{
+    $timerName = $ident . "_Reset";
+    $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true und starte Snapshot.", 0);
 
-        $this->CreateOrUpdateSnapshot("Snapshot_" . $ident, "Snapshot von " . $ident);
-        $this->SetTimerInterval($timerName, 5000);
-    }
+    $this->SetValue($ident, true);
 
-    public function ResetBoolean(string $ident)
-    {
-        $this->SetValue($ident, false);
-        $this->SetTimerInterval("Reset" . ucfirst($ident), 0);
-    }
+    // Erstelle Snapshot für den Boolean und debugge das Ergebnis
+    $this->CreateSnapshotAtPosition($ident);
+    $this->SendDebug('ActivateBoolean', "Snapshot für Boolean $ident erstellt.", 0);
+
+    // Timer für das Rücksetzen der Boolean-Variable nach 5 Sekunden setzen
+    $this->SendDebug('ActivateBoolean', "Setze Timer $timerName für Boolean $ident.", 0);
+    $this->SetTimerInterval($timerName, 5000); // Timer wird nach 5 Sekunden ausgelöst
+}
+
+public function ResetBoolean(string $ident)
+{
+    $timerName = $ident . "_Reset";
+    $this->SendDebug('ResetBoolean', "Timer abgelaufen, setze Boolean $ident auf false.", 0);
+    $this->SetValue($ident, false);
+    $this->SetTimerInterval($timerName, 0); // Timer deaktivieren
+}
+
 
     private function updateVariable($name, $value)
     {
