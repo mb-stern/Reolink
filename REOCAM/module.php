@@ -83,39 +83,57 @@ class Reolink extends IPSModule
     }
 
     private function ProcessData($data)
-    {
-        if (isset($data['alarm']['type'])) {
-            $type = $data['alarm']['type'];
-            $this->SetValue("type", $type);
+{
+    // Zunächst die Bool-Variablen für Alarmzustände deaktivieren
+    $this->SetValue("Person", false);
+    $this->SetValue("Tier", false);
+    $this->SetValue("Fahrzeug", false);
+    $this->SetValue("Bewegung", false);
+    $this->SetValue("Test", false);
 
-            switch ($type) {
-                case "PEOPLE":
-                    $this->ActivateBoolean("Person", "ResetPerson");
-                    break;
-                case "ANIMAL":
-                    $this->ActivateBoolean("Tier", "ResetTier");
-                    break;
-                case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug", "ResetFahrzeug");
-                    break;
-                case "MD":
-                    $this->ActivateBoolean("Bewegung", "ResetBewegung");
-                    break;
-                case "TEST":
-                    $this->ActivateBoolean("Test", "ResetTest");
-                    break;
-                default:
-                    $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
-                    break;
-            }
-        }
+    // Überprüfen, ob der `type`-Wert existiert und schalte den entsprechenden Boolean
+    if (isset($data['alarm']['type'])) {
+        $type = $data['alarm']['type'];
 
-        foreach ($data['alarm'] as $key => $value) {
-            if ($key !== 'type') {
-                $this->updateVariable($key, $value);
-            }
+        // Speichere den `type`-Wert, aber aktualisiere ihn am Ende mit allen anderen Variablen
+        $this->SetBuffer("typeBuffer", $type);
+
+        // Aktiviert den entsprechenden Boolean je nach Typ und startet den Snapshot
+        switch ($type) {
+            case "PEOPLE":
+                $this->ActivateBoolean("Person", "ResetPerson");
+                break;
+            case "ANIMAL":
+                $this->ActivateBoolean("Tier", "ResetTier");
+                break;
+            case "VEHICLE":
+                $this->ActivateBoolean("Fahrzeug", "ResetFahrzeug");
+                break;
+            case "MD":
+                $this->ActivateBoolean("Bewegung", "ResetBewegung");
+                break;
+            case "TEST":
+                $this->ActivateBoolean("Test", "ResetTest");
+                break;
+            default:
+                $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
+                break;
         }
     }
+
+    // Aktualisieren der anderen Variablen aus dem JSON-Datenblock
+    foreach ($data['alarm'] as $key => $value) {
+        if ($key !== 'type') { // `type` wird später aus dem Buffer gesetzt
+            $this->updateVariable($key, $value);
+        }
+    }
+
+    // `type`-Variable zum Schluss aus dem Buffer aktualisieren
+    if ($typeBuffer = $this->GetBuffer("typeBuffer")) {
+        $this->SetValue("type", $typeBuffer);
+    }
+}
+
 
     private function ActivateBoolean($ident, $timerName)
     {
