@@ -165,7 +165,7 @@ class Reolink extends IPSModule
         foreach ($booleanVariables as $variable) {
             $varID = @IPS_GetObjectIDByIdent($variable, $this->InstanceID);
             if ($varID !== false) {
-                $this->UnregisterVariable($varID);
+                IPS_DeleteVariable($varID);
             }
         }
     }
@@ -205,7 +205,7 @@ private function RemoveWebhookVariables()
     foreach ($webhookVariables as $ident) {
         $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
         if ($varID !== false) {
-            $this->UnregisterVariable($varID);
+            IPS_DeleteVariable($varID);
         }
     }
 }
