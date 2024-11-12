@@ -110,15 +110,19 @@ class Reolink extends IPSModule
 
     private function EnsureTimer($timerName, $interval, $script)
     {
-        if (!IPS_TimerExists($this->GetIDForIdent($timerName))) {
+        $timerID = @IPS_GetObjectIDByIdent($timerName, $this->InstanceID);
+        if ($timerID === false) {
             $this->RegisterTimer($timerName, $interval, $script);
+        } else {
+            $this->SetTimerInterval($timerID, $interval);
         }
     }
 
     private function RemoveTimer($timerName)
     {
-        if (IPS_TimerExists($this->GetIDForIdent($timerName))) {
-            IPS_DeleteTimer($this->GetIDForIdent($timerName));
+        $timerID = @IPS_GetObjectIDByIdent($timerName, $this->InstanceID);
+        if ($timerID !== false) {
+            IPS_DeleteTimer($timerID);
         }
     }
 
@@ -227,7 +231,7 @@ class Reolink extends IPSModule
     private function normalizeIdent($name)
     {
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32); 
+        return substr($ident, 0, 32);
     }
 
     private function CreateSnapshotAtPosition($booleanIdent)
