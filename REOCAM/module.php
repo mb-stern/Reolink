@@ -161,7 +161,10 @@ class Reolink extends IPSModule
             "title" => "Alarm Titel",
             "device" => "Gerätename",
             "channel" => "Kanal",
-            "alarmTime" => "Alarmzeit"
+            "alarmTime" => "Alarmzeit",
+            "channelName" => "Kanalname",
+            "deviceModel" =>  "Gerätemodell",
+            "name" => "Name"
         ];
 
         foreach ($webhookVariables as $ident => $name) {
@@ -173,7 +176,7 @@ class Reolink extends IPSModule
 
     private function RemoveWebhookVariables()
     {
-        $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime"];
+        $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
         foreach ($webhookVariables as $ident) {
             $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
             if ($varID !== false) {
