@@ -113,9 +113,12 @@ class Reolink extends IPSModule
         }
 
         // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
-        foreach ($data['alarm'] as $key => $value) {
-            if ($key !== 'type') { // `type` wird bereits behandelt
-                $this->updateVariable($key, $value);
+        if (isset($data['alarm'])) {
+            foreach ($data['alarm'] as $key => $value) {
+                if ($key !== 'type') { // `type` wird bereits behandelt
+                    $this->updateVariable($key, $value);
+                    $this->SendDebug("updateVariable", "Variable $key wurde mit dem Wert $value aktualisiert", 0);
+                }
             }
         }
     }
@@ -138,22 +141,37 @@ class Reolink extends IPSModule
 
         // Variablentyp bestimmen und registrieren
         if (is_string($value)) {
-            $this->RegisterVariableString($ident, $name);
+            if (!$this->VariableExists($ident)) {
+                $this->RegisterVariableString($ident, $name);
+            }
             $this->SetValue($ident, $value);
         } elseif (is_int($value)) {
-            $this->RegisterVariableInteger($ident, $name);
+            if (!$this->VariableExists($ident)) {
+                $this->RegisterVariableInteger($ident, $name);
+            }
             $this->SetValue($ident, $value);
         } elseif (is_float($value)) {
-            $this->RegisterVariableFloat($ident, $name);
+            if (!$this->VariableExists($ident)) {
+                $this->RegisterVariableFloat($ident, $name);
+            }
             $this->SetValue($ident, $value);
         } elseif (is_bool($value)) {
-            $this->RegisterVariableBoolean($ident, $name);
+            if (!$this->VariableExists($ident)) {
+                $this->RegisterVariableBoolean($ident, $name);
+            }
             $this->SetValue($ident, $value);
         } else {
             // Unbekannter Typ, als JSON-String speichern
-            $this->RegisterVariableString($ident, $name);
+            if (!$this->VariableExists($ident)) {
+                $this->RegisterVariableString($ident, $name);
+            }
             $this->SetValue($ident, json_encode($value));
         }
+    }
+
+    private function VariableExists($ident)
+    {
+        return @IPS_GetObjectIDByIdent($ident, $this->InstanceID) !== false;
     }
 
     private function normalizeIdent($name)
