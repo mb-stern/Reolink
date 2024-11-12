@@ -27,6 +27,21 @@
         {
             "type": "Label",
             "caption": "Hinweis: Der Mainstream ist häufig H.265-codiert und kann aktuell von IP-Symcon nicht verarbeitet werden. Wählen Sie den Substream für volle Kompatibilität."
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowWebhookVariables",
+            "caption": "Webhook-Variablen anzeigen"
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowBooleanVariables",
+            "caption": "Boolean-Variablen anzeigen"
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowSnapshots",
+            "caption": "Schnappschüsse anzeigen"
         }
     ]
 }
