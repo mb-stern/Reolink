@@ -27,8 +27,9 @@ class Reolink extends IPSModule
         $this->RegisterHook('/hook/reolink');
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
 
-        // Variablen, Booleans oder Snapshots löschen, wenn Schalter deaktiviert sind
+        // Variablen, Booleans oder Snapshots löschen/erstellen, wenn Schalter aktiviert/deaktiviert sind
         $this->CleanupBasedOnSettings();
+        $this->InitializeVariablesAndTimers();
     }
 
     private function RegisterHook($Hook)
@@ -62,17 +63,11 @@ class Reolink extends IPSModule
     private function InitializeVariablesAndTimers()
     {
         if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-            $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
-            $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
-            $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
-            $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-            $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
-
-            $this->EnsureTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
-            $this->EnsureTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
-            $this->EnsureTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
-            $this->EnsureTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
-            $this->EnsureTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
+            $this->RegisterBooleanAndTimer("Person", "Person erkannt", 20);
+            $this->RegisterBooleanAndTimer("Tier", "Tier erkannt", 25);
+            $this->RegisterBooleanAndTimer("Fahrzeug", "Fahrzeug erkannt", 30);
+            $this->RegisterBooleanAndTimer("Bewegung", "Bewegung allgemein", 35);
+            $this->RegisterBooleanAndTimer("Test", "Test", 40);
         }
 
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -82,12 +77,10 @@ class Reolink extends IPSModule
 
     private function CleanupBasedOnSettings()
     {
-        // Löschen der Webhook-Variablen
         if (!$this->ReadPropertyBoolean("ShowWebhookVariables")) {
             @$this->UnregisterVariable("type");
         }
 
-        // Löschen der Boolean-Variablen und zugehöriger Timer
         if (!$this->ReadPropertyBoolean("ShowBooleanVariables")) {
             $booleanVariables = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
             foreach ($booleanVariables as $var) {
@@ -96,7 +89,6 @@ class Reolink extends IPSModule
             }
         }
 
-        // Löschen der Schnappschuss-Medienobjekte
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
             $snapshotVariables = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Bewegung", "Snapshot_Test"];
             foreach ($snapshotVariables as $snapshot) {
@@ -106,6 +98,12 @@ class Reolink extends IPSModule
                 }
             }
         }
+    }
+
+    private function RegisterBooleanAndTimer($ident, $name, $position)
+    {
+        $this->RegisterVariableBoolean($ident, $name, "~Motion", $position);
+        $this->EnsureTimer($ident . "_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "' . $ident . '");');
     }
 
     private function EnsureTimer($timerName, $interval, $script)
@@ -315,5 +313,4 @@ class Reolink extends IPSModule
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password";
     }
 }
-
 ?>
