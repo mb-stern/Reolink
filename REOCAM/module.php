@@ -20,7 +20,7 @@ class Reolink extends IPSModule
         // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
 
-        // Bool-Variablen für Bewegungen
+        // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
         $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
@@ -40,19 +40,26 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Erstellen oder Entfernen von Webhook-Variablen basierend auf der Einstellung
+        // Erstellen oder Entfernen von Webhook- und Boolean-Variablen sowie Schnappschüssen basierend auf den Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
             $this->RemoveWebhookVariables();
         }
 
-        // Snapshots und Stream je nach Einstellung verwalten
+        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
+            $this->CreateBooleanVariables();
+        } else {
+            $this->RemoveBooleanVariables();
+        }
+
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->CreateOrUpdateSnapshots();
         } else {
             $this->RemoveSnapshots();
         }
+
+        // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
@@ -175,12 +182,33 @@ class Reolink extends IPSModule
         }
     }
 
+    private function CreateBooleanVariables()
+    {
+        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+    }
+
+    private function RemoveBooleanVariables()
+    {
+        $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+        foreach ($booleans as $booleanIdent) {
+            $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
+            if ($varID !== false) {
+                IPS_DeleteVariable($varID);
+            }
+        }
+    }
+
     private function CreateOrUpdateSnapshots()
     {
         $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
         foreach ($snapshots as $snapshot) {
             $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
             $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
+            $this->CreateSnapshotAtPosition($snapshot, $position);
         }
     }
 
