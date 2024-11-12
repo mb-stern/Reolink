@@ -5,20 +5,21 @@ class Reolink extends IPSModule
     public function Create()
     {
         parent::Create();
-
-        // Eigenschaften für IP-Adresse, Benutzername, Passwort und Einstellungen für Variablenanzeige
+        
+        // IP-Adresse, Benutzername und Passwort als Eigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Steueroptionen für Variablenanzeige
+        // Schalter zum Anzeigen der Variablen
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
 
-        // Boolean-Variablen initialisieren
+        // Initiale Registrierung der Boolean-Variablen und Timer
         $this->RegisterBooleanVariables();
+        $this->RegisterResetTimers();
     }
 
     public function ApplyChanges()
