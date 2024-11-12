@@ -68,11 +68,11 @@ class Reolink extends IPSModule
             $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
             $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
 
-            $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
-            $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
-            $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
-            $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
-            $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
+            $this->EnsureTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
+            $this->EnsureTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
+            $this->EnsureTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
+            $this->EnsureTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
+            $this->EnsureTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         }
 
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -105,6 +105,13 @@ class Reolink extends IPSModule
                     IPS_DeleteMedia($mediaID, true);
                 }
             }
+        }
+    }
+
+    private function EnsureTimer($timerName, $interval, $script)
+    {
+        if (!IPS_TimerExists($this->GetIDForIdent($timerName))) {
+            $this->RegisterTimer($timerName, $interval, $script);
         }
     }
 
@@ -191,9 +198,8 @@ class Reolink extends IPSModule
 
     public function ResetBoolean(string $ident)
     {
-        $timerName = $ident . "_Reset";
         $this->SetValue($ident, false);
-        $this->SetTimerInterval($timerName, 0);
+        $this->SetTimerInterval($ident . "_Reset", 0);
     }
 
     private function updateVariable($name, $value)
