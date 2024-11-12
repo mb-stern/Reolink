@@ -5,33 +5,40 @@ class Reolink extends IPSModule
     public function Create()
     {
         parent::Create();
-
+        
+        // IP-Adresse, Benutzername und Passwort als Eigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
+        // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
 
+        // Boolean-Variablen mit dem Variablenprofil "~Motion" erstellen und Positionen festlegen
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
         $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
         $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
 
-        $this->RegisterVariableString("type", "Alarm Typ", "", 15);
+        // Timer für jede Boolean-Variable registrieren
+        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
+        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
+        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
+        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
 
-        $this->RegisterTimer("ResetPerson", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Person");');
-        $this->RegisterTimer("ResetTier", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Tier");');
-        $this->RegisterTimer("ResetFahrzeug", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Fahrzeug");');
-        $this->RegisterTimer("ResetBewegung", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Bewegung");');
-        $this->RegisterTimer("ResetTest", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Test");');
+        // String-Variable `type` für Alarmtyp
+        $this->RegisterVariableString("type", "Alarm Typ", "", 15);
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
+
+        // Aktualisiere den Stream, falls der StreamType geändert wurde
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
@@ -83,80 +90,67 @@ class Reolink extends IPSModule
     }
 
     private function ProcessData($data)
-{
-    // Überprüfen, ob der `type`-Wert existiert und sofort den entsprechenden Boolean schalten
-    if (isset($data['alarm']['type'])) {
-        $type = $data['alarm']['type'];
+    {
+        if (isset($data['alarm']['type'])) {
+            $type = $data['alarm']['type'];
 
-        // Setze die `type`-Variable am Ende der Verarbeitung
-        $this->SetBuffer("typeBuffer", $type);
+            // Setze die `type`-Variable, um den aktuellen Typ zu speichern
+            $this->SetValue("type", $type);
 
-        // Schalte den entsprechenden Boolean je nach Typ und erstelle sofort den Snapshot
-        switch ($type) {
-            case "PEOPLE":
-                $this->ActivateBoolean("Person");
-                break;
-            case "ANIMAL":
-                $this->ActivateBoolean("Tier");
-                break;
-            case "VEHICLE":
-                $this->ActivateBoolean("Fahrzeug");
-                break;
-            case "MD":
-                $this->ActivateBoolean("Bewegung");
-                break;
-            case "TEST":
-                $this->ActivateBoolean("Test");
-                break;
-            default:
-                $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
-                break;
+            switch ($type) {
+                case "PEOPLE":
+                    $this->ActivateBoolean("Person");
+                    break;
+                case "ANIMAL":
+                    $this->ActivateBoolean("Tier");
+                    break;
+                case "VEHICLE":
+                    $this->ActivateBoolean("Fahrzeug");
+                    break;
+                case "MD":
+                    $this->ActivateBoolean("Bewegung");
+                    break;
+                case "TEST":
+                    $this->ActivateBoolean("Test");
+                    break;
+                default:
+                    $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
+                    break;
+            }
         }
-        
-    }
 
-    // Jetzt alle weiteren Variablen des Webhooks aktualisieren
-    foreach ($data['alarm'] as $key => $value) {
-        if ($key !== 'type') { // `type` wird später aus dem Buffer gesetzt
-            $this->updateVariable($key, $value);
+        // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
+        foreach ($data['alarm'] as $key => $value) {
+            if ($key !== 'type') { // `type` wird bereits behandelt
+                $this->updateVariable($key, $value);
+            }
         }
     }
 
-    // `type`-Variable zum Schluss aus dem Buffer aktualisieren
-    if ($typeBuffer = $this->GetBuffer("typeBuffer")) {
-        $this->SetValue("type", $typeBuffer);
+    private function ActivateBoolean($ident)
+    {
+        $timerName = $ident . "_Reset";
+        $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true und starte Snapshot.", 0);
+
+        $this->SetValue($ident, true);
+
+        // Timer für das Rücksetzen der Boolean-Variable nach 5 Sekunden setzen
+        $this->SetTimerInterval($timerName, 5000);
     }
-}
 
-private function ActivateBoolean($ident)
-{
-    $timerName = $ident . "_Reset";
-    $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true und starte Snapshot.", 0);
-
-    $this->SetValue($ident, true);
-
-    // Erstelle Snapshot für den Boolean und debugge das Ergebnis
-    $this->CreateSnapshotAtPosition($ident);
-    $this->SendDebug('ActivateBoolean', "Snapshot für Boolean $ident erstellt.", 0);
-
-    // Timer für das Rücksetzen der Boolean-Variable nach 5 Sekunden setzen
-    $this->SendDebug('ActivateBoolean', "Setze Timer $timerName für Boolean $ident.", 0);
-    $this->SetTimerInterval($timerName, 5000); // Timer wird nach 5 Sekunden ausgelöst
-}
-
-public function ResetBoolean(string $ident)
-{
-    $timerName = $ident . "_Reset";
-    $this->SendDebug('ResetBoolean', "Timer abgelaufen, setze Boolean $ident auf false.", 0);
-    $this->SetValue($ident, false);
-    $this->SetTimerInterval($timerName, 0); // Timer deaktivieren
-}
-
+    public function ResetBoolean(string $ident)
+    {
+        $timerName = $ident . "_Reset";
+        $this->SendDebug('ResetBoolean', "Timer abgelaufen, setze Boolean $ident auf false.", 0);
+        $this->SetValue($ident, false);
+        $this->SetTimerInterval($timerName, 0);
+    }
 
     private function updateVariable($name, $value)
     {
         $ident = $this->normalizeIdent($name);
 
+        // Variablentyp bestimmen und registrieren
         if (is_string($value)) {
             $this->RegisterVariableString($ident, $name);
             $this->SetValue($ident, $value);
@@ -181,37 +175,12 @@ public function ResetBoolean(string $ident)
         return substr($ident, 0, 32); 
     }
 
-    private function CreateOrUpdateSnapshot($ident, $name)
-    {
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-
-        if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(1);
-            IPS_SetParent($mediaID, $this->InstanceID);
-            IPS_SetIdent($mediaID, $ident);
-            IPS_SetName($mediaID, $name);
-            IPS_SetMediaCached($mediaID, false);
-        }
-
-        $snapshotUrl = $this->GetSnapshotURL();
-        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $ident . ".jpg";
-        $imageData = @file_get_contents($snapshotUrl);
-
-        if ($imageData !== false) {
-            file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false);
-            IPS_SendMediaEvent($mediaID);
-        } else {
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $ident.");
-        }
-    }
-
     private function CreateOrUpdateStream($ident, $name)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(3);
+            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
@@ -242,3 +211,5 @@ public function ResetBoolean(string $ident)
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password";
     }
 }
+
+?>
