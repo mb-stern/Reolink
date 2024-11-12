@@ -20,13 +20,13 @@ class Reolink extends IPSModule
         $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
 
         // String-Variable `type` für Alarmtyp
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
         
         // Script Timer registrieren
         $this->RegisterTimer("ResetBoolean", 0, 'IPS_SetValue($_IPS[\'TARGET\'], false);');
-
     }
 
     public function ApplyChanges()
@@ -36,6 +36,33 @@ class Reolink extends IPSModule
 
         // Aktualisiere den Stream, falls der StreamType geändert wurde
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+    }
+
+    private function RegisterHook($Hook)
+    {
+        $ids = IPS_GetInstanceListByModuleID('{3565B1F2-8F7B-4311-A4B6-1BF1D868F39E}');
+        if (count($ids) > 0) {
+            $hooks = json_decode(IPS_GetProperty($ids[0], 'Hooks'), true);
+            if (!is_array($hooks)) {
+                $hooks = [];
+            }
+            $found = false;
+            foreach ($hooks as $index => $hook) {
+                if ($hook['Hook'] == $Hook) {
+                    if ($hook['TargetID'] == $this->InstanceID) {
+                        $found = true;
+                        break;
+                    }
+                    $hooks[$index]['TargetID'] = $this->InstanceID;
+                    $found = true;
+                }
+            }
+            if (!$found) {
+                $hooks[] = ['Hook' => $Hook, 'TargetID' => $this->InstanceID];
+            }
+            IPS_SetProperty($ids[0], 'Hooks', json_encode($hooks));
+            IPS_ApplyChanges($ids[0]);
+        }
     }
 
     public function ProcessHookData()
@@ -59,7 +86,6 @@ class Reolink extends IPSModule
 
     private function ProcessData($data)
     {
-        // Boolean-Werte aktivieren, basierend auf dem Typ im `type`-Feld
         if (isset($data['alarm']['type'])) {
             $type = $data['alarm']['type'];
             $this->SetValue("type", $type);
@@ -77,13 +103,16 @@ class Reolink extends IPSModule
                 case "MD":
                     $this->ActivateBoolean("Bewegung");
                     break;
+                case "TEST":
+                    $this->ActivateBoolean("Test");
+                    break;
                 default:
                     $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
                     break;
             }
         }
 
-        // Aktualisieren der Webhook-Variablen (einschließlich `type`)
+        // Aktualisieren der Webhook-Variablen
         foreach ($data['alarm'] as $key => $value) {
             if ($key !== 'type') { // `type` wurde bereits gesetzt
                 $this->updateVariable($key, $value);
@@ -164,3 +193,5 @@ class Reolink extends IPSModule
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password";
     }
 }
+
+?>
