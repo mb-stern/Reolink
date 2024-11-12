@@ -25,7 +25,8 @@ class Reolink extends IPSModule
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
         
         // Script Timer registrieren
-        $this->RegisterTimer("ResetBoolean", 0, "IPS_SetValue($_IPS['TARGET'], false);");
+        $this->RegisterTimer("ResetBoolean", 0, 'IPS_SetValue($_IPS[\'TARGET\'], false);');
+
     }
 
     public function ApplyChanges()
