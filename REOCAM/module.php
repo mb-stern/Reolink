@@ -165,28 +165,51 @@ class Reolink extends IPSModule
         foreach ($booleanVariables as $variable) {
             $varID = @IPS_GetObjectIDByIdent($variable, $this->InstanceID);
             if ($varID !== false) {
-                IPS_DeleteVariable($varID);
+                $this->UnregisterVariable($varID);
             }
         }
     }
 
     private function CreateWebhookVariables()
-    {
-        $this->RegisterVariableString("type", "Alarm Typ", "", 15);
-        // Hier können weitere Webhook-Variablen hinzugefügt werden
-    }
-
-    private function RemoveWebhookVariables()
-    {
-        $webhookVariables = ["type"];
-        // Weitere Webhook-Variablen hinzufügen, wenn benötigt
-        foreach ($webhookVariables as $variable) {
-            $varID = @IPS_GetObjectIDByIdent($variable, $this->InstanceID);
-            if ($varID !== false) {
-                IPS_DeleteVariable($varID);
-            }
+{
+    // Array aller gewünschten Webhook-Variablen
+    $webhookVariables = [
+        "type" => "Alarm Typ",
+        "message" => "Alarm Nachricht",
+        "title" => "Alarm Titel",
+        "device" => "Gerätename",
+        "channel" => "Kanal",
+        "alarmTime" => "Alarmzeit"
+    ];
+    
+    foreach ($webhookVariables as $ident => $name) {
+        // Prüfen, ob die Variable bereits existiert
+        if (@IPS_GetObjectIDByIdent($ident, $this->InstanceID) === false) {
+            $this->RegisterVariableString($ident, $name);
         }
     }
+}
+
+private function RemoveWebhookVariables()
+{
+    // Array aller gewünschten Webhook-Variablen
+    $webhookVariables = [
+        "type",
+        "message",
+        "title",
+        "device",
+        "channel",
+        "alarmTime"
+    ];
+    
+    foreach ($webhookVariables as $ident) {
+        $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($varID !== false) {
+            $this->UnregisterVariable($varID);
+        }
+    }
+}
+
 
     private function CreateOrUpdateSnapshots()
     {
