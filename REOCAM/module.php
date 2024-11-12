@@ -84,21 +84,14 @@ class Reolink extends IPSModule
 
     private function ProcessData($data)
 {
-    // Zunächst die Bool-Variablen für Alarmzustände deaktivieren
-    $this->SetValue("Person", false);
-    $this->SetValue("Tier", false);
-    $this->SetValue("Fahrzeug", false);
-    $this->SetValue("Bewegung", false);
-    $this->SetValue("Test", false);
-
-    // Überprüfen, ob der `type`-Wert existiert und schalte den entsprechenden Boolean
+    // Überprüfen, ob der `type`-Wert existiert und sofort den entsprechenden Boolean schalten
     if (isset($data['alarm']['type'])) {
         $type = $data['alarm']['type'];
 
-        // Speichere den `type`-Wert, aber aktualisiere ihn am Ende mit allen anderen Variablen
+        // Setze die `type`-Variable am Ende der Verarbeitung
         $this->SetBuffer("typeBuffer", $type);
 
-        // Aktiviert den entsprechenden Boolean je nach Typ und startet den Snapshot
+        // Schalte den entsprechenden Boolean je nach Typ und erstelle sofort den Snapshot
         switch ($type) {
             case "PEOPLE":
                 $this->ActivateBoolean("Person", "ResetPerson");
@@ -121,7 +114,7 @@ class Reolink extends IPSModule
         }
     }
 
-    // Aktualisieren der anderen Variablen aus dem JSON-Datenblock
+    // Jetzt alle weiteren Variablen des Webhooks aktualisieren
     foreach ($data['alarm'] as $key => $value) {
         if ($key !== 'type') { // `type` wird später aus dem Buffer gesetzt
             $this->updateVariable($key, $value);
@@ -133,7 +126,6 @@ class Reolink extends IPSModule
         $this->SetValue("type", $typeBuffer);
     }
 }
-
 
     private function ActivateBoolean($ident, $timerName)
     {
