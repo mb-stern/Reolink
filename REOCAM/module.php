@@ -16,24 +16,9 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
 
         $this->RegisterHook('/hook/reolink');
-
-        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-            $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
-            $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
-            $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
-            $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-            $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
-
-            $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
-            $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
-            $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
-            $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
-            $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
-        }
-
-        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
-            $this->RegisterVariableString("type", "Alarm Typ", "", 15);
-        }
+        
+        // Initialisieren von Booleans und Variablen
+        $this->InitializeVariablesAndTimers();
     }
 
     public function ApplyChanges()
@@ -41,6 +26,9 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+
+        // Variablen, Booleans oder Snapshots löschen, wenn Schalter deaktiviert sind
+        $this->CleanupBasedOnSettings();
     }
 
     private function RegisterHook($Hook)
@@ -68,6 +56,62 @@ class Reolink extends IPSModule
             }
             IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
             IPS_ApplyChanges($hookInstanceID);
+        }
+    }
+
+    private function InitializeVariablesAndTimers()
+    {
+        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
+            $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
+            $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
+            $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
+            $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+            $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+
+            $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
+            $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
+            $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
+            $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
+            $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
+        }
+
+        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
+            $this->RegisterVariableString("type", "Alarm Typ", "", 15);
+        }
+    }
+
+    private function CleanupBasedOnSettings()
+    {
+        // Löschen der Webhook-Variablen
+        if (!$this->ReadPropertyBoolean("ShowWebhookVariables")) {
+            @$this->UnregisterVariable("type");
+        }
+
+        // Löschen der Boolean-Variablen und zugehöriger Timer
+        if (!$this->ReadPropertyBoolean("ShowBooleanVariables")) {
+            $booleanVariables = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+            foreach ($booleanVariables as $var) {
+                @$this->UnregisterVariable($var);
+                $this->RemoveTimer($var . "_Reset");
+            }
+        }
+
+        // Löschen der Schnappschuss-Medienobjekte
+        if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
+            $snapshotVariables = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Bewegung", "Snapshot_Test"];
+            foreach ($snapshotVariables as $snapshot) {
+                $mediaID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
+                if ($mediaID !== false) {
+                    IPS_DeleteMedia($mediaID, true);
+                }
+            }
+        }
+    }
+
+    private function RemoveTimer($timerName)
+    {
+        if (IPS_TimerExists($this->GetIDForIdent($timerName))) {
+            IPS_DeleteTimer($this->GetIDForIdent($timerName));
         }
     }
 
