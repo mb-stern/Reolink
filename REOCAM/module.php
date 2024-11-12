@@ -206,6 +206,7 @@ class Reolink extends IPSModule
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
+            IPS_SetPosition($mediaID, 10);
             IPS_SetMediaCached($mediaID, true);
         }
 
