@@ -26,11 +26,11 @@ class Reolink extends IPSModule
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
 
         // Timer für jede Boolean-Variable registrieren
-        $this->RegisterTimer("ResetPerson", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Person");');
-        $this->RegisterTimer("ResetTier", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Tier");');
-        $this->RegisterTimer("ResetFahrzeug", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Fahrzeug");');
-        $this->RegisterTimer("ResetBewegung", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Bewegung");');
-        $this->RegisterTimer("ResetTest", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Test");');
+        $this->RegisterTimer("ResetPerson", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Person");');
+        $this->RegisterTimer("ResetTier", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Tier");');
+        $this->RegisterTimer("ResetFahrzeug", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Fahrzeug");');
+        $this->RegisterTimer("ResetBewegung", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Bewegung");');
+        $this->RegisterTimer("ResetTest", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Test");'); // Timer für Test-Variable
     }
 
     public function ApplyChanges()
@@ -135,7 +135,7 @@ class Reolink extends IPSModule
         $this->SetTimerInterval($timerName, 5000);
     }
 
-    public function ResetBoolean($ident)
+    public function ResetBoolean(string $ident)
     {
         // Setzt die Boolean-Variable zurück und deaktiviert den zugehörigen Timer
         $this->SetValue($ident, false);
