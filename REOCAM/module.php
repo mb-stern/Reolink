@@ -30,7 +30,7 @@ class Reolink extends IPSModule
         $this->RegisterTimer("ResetTier", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Tier");');
         $this->RegisterTimer("ResetFahrzeug", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Fahrzeug");');
         $this->RegisterTimer("ResetBewegung", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Bewegung");');
-        $this->RegisterTimer("ResetTest", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Test");'); // Timer für Test-Variable
+        $this->RegisterTimer("ResetTest", 0, 'REOCAM_ResetBoolean($_IPS["TARGET"], "Test");');
     }
 
     public function ApplyChanges()
@@ -131,6 +131,9 @@ class Reolink extends IPSModule
     {
         $this->SetValue($ident, true);
 
+        // Snapshot unterhalb der Position der Boolean-Variable erstellen und aktualisieren
+        $this->CreateOrUpdateSnapshot("Snapshot_" . $ident, "Snapshot von " . $ident);
+
         // Setzt den Timer für das Zurücksetzen auf 5 Sekunden
         $this->SetTimerInterval($timerName, 5000);
     }
@@ -170,18 +173,45 @@ class Reolink extends IPSModule
         return substr($ident, 0, 32); 
     }
 
+    private function CreateOrUpdateSnapshot($ident, $name)
+    {
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetMediaCached($mediaID, false);
+        }
+
+        // URL zum Snapshot-Bild abrufen und temporär speichern
+        $snapshotUrl = $this->GetSnapshotURL();
+        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $ident . ".jpg";
+        $imageData = @file_get_contents($snapshotUrl);
+
+        if ($imageData !== false) {
+            file_put_contents($tempImagePath, $imageData);
+            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+        } else {
+            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $ident.");
+        }
+    }
+
     private function CreateOrUpdateStream($ident, $name)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(3);
+            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
             IPS_SetMediaCached($mediaID, true);
         }
 
+        // Stream-URL aktualisieren
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
