@@ -25,8 +25,12 @@ class Reolink extends IPSModule
         // String-Variable `type` für Alarmtyp
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
 
-        // Timer für Verzögerung registrieren
-        $this->RegisterTimer("ResetBooleanTimer", 0, 'Reolink_ResetBoolean($_IPS["TARGET"]);');
+        // Timer für jede Boolean-Variable registrieren
+        $this->RegisterTimer("ResetPerson", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Person");');
+        $this->RegisterTimer("ResetTier", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Tier");');
+        $this->RegisterTimer("ResetFahrzeug", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Fahrzeug");');
+        $this->RegisterTimer("ResetBewegung", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Bewegung");');
+        $this->RegisterTimer("ResetTest", 0, 'Reolink_ResetBoolean($_IPS["TARGET"], "Test");');
     }
 
     public function ApplyChanges()
@@ -95,19 +99,19 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person");
+                    $this->ActivateBoolean("Person", "ResetPerson");
                     break;
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier");
+                    $this->ActivateBoolean("Tier", "ResetTier");
                     break;
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug");
+                    $this->ActivateBoolean("Fahrzeug", "ResetFahrzeug");
                     break;
                 case "MD":
-                    $this->ActivateBoolean("Bewegung");
+                    $this->ActivateBoolean("Bewegung", "ResetBewegung");
                     break;
                 case "TEST":
-                    $this->ActivateBoolean("Test");
+                    $this->ActivateBoolean("Test", "ResetTest");
                     break;
                 default:
                     $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
@@ -123,23 +127,19 @@ class Reolink extends IPSModule
         }
     }
 
-    private function ActivateBoolean($ident)
+    private function ActivateBoolean($ident, $timerName)
     {
         $this->SetValue($ident, true);
 
-        // Timer für das Zurücksetzen nach 5 Sekunden starten
-        $this->SetTimerInterval("ResetBooleanTimer", 5000);
+        // Setzt den Timer für das Zurücksetzen auf 5 Sekunden
+        $this->SetTimerInterval($timerName, 5000);
     }
 
-    public function ResetBoolean()
+    public function ResetBoolean($ident)
     {
-        // Setzt die Boolean-Variablen zurück und deaktiviert den Timer
-        $this->SetValue("Person", false);
-        $this->SetValue("Tier", false);
-        $this->SetValue("Fahrzeug", false);
-        $this->SetValue("Bewegung", false);
-        $this->SetValue("Test", false);
-        $this->SetTimerInterval("ResetBooleanTimer", 0);
+        // Setzt die Boolean-Variable zurück und deaktiviert den zugehörigen Timer
+        $this->SetValue($ident, false);
+        $this->SetTimerInterval("Reset" . ucfirst($ident), 0);
     }
 
     private function updateVariable($name, $value)
