@@ -6,12 +6,13 @@ class Reolink extends IPSModule
     {
         parent::Create();
         
+        // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Schalter zum Ein- und Ausblenden von Variablen und Snapshots
+        // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
@@ -19,8 +20,14 @@ class Reolink extends IPSModule
         // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
 
-        // Initialisierung von Variablen und Timern
-        $this->CreateBooleanVariables();
+        // Bool-Variablen für Bewegungen
+        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+
+        // Timer zur Rücksetzung der Boolean-Variablen
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
@@ -33,28 +40,19 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Snapshots je nach Einstellung anzeigen oder löschen
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateOrUpdateSnapshots();
-        } else {
-            $this->RemoveSnapshots();
-        }
-
-        // Boolean-Variablen je nach Einstellung anzeigen oder löschen
-        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-            $this->CreateBooleanVariables();
-        } else {
-            $this->RemoveBooleanVariables();
-        }
-
-        // Webhook-Variablen je nach Einstellung anzeigen oder löschen
+        // Erstellen oder Entfernen von Webhook-Variablen basierend auf der Einstellung
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
             $this->RemoveWebhookVariables();
         }
 
-        // Stream-URL aktualisieren
+        // Snapshots und Stream je nach Einstellung verwalten
+        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+            $this->CreateOrUpdateSnapshots();
+        } else {
+            $this->RemoveSnapshots();
+        }
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
@@ -120,7 +118,6 @@ class Reolink extends IPSModule
             }
         }
 
-        // Aktualisieren der Webhook-Variablen, falls aktiviert
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             foreach ($data['alarm'] as $key => $value) {
                 if ($key !== 'type') {
@@ -135,7 +132,6 @@ class Reolink extends IPSModule
         $timerName = $ident . "_Reset";
         $this->SetValue($ident, true);
 
-        // Snapshot erstellen, falls aktiviert
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->CreateSnapshotAtPosition($ident, $position);
         }
@@ -150,66 +146,34 @@ class Reolink extends IPSModule
         $this->SetTimerInterval($timerName, 0);
     }
 
-    private function CreateBooleanVariables()
+    private function CreateWebhookVariables()
     {
-        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
-        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
-        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+        $webhookVariables = [
+            "type" => "Alarm Typ",
+            "message" => "Alarm Nachricht",
+            "title" => "Alarm Titel",
+            "device" => "Gerätename",
+            "channel" => "Kanal",
+            "alarmTime" => "Alarmzeit"
+        ];
+
+        foreach ($webhookVariables as $ident => $name) {
+            if (!IPS_VariableExists(@IPS_GetObjectIDByIdent($ident, $this->InstanceID))) {
+                $this->RegisterVariableString($ident, $name);
+            }
+        }
     }
 
-    private function RemoveBooleanVariables()
+    private function RemoveWebhookVariables()
     {
-        $booleanVariables = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
-        foreach ($booleanVariables as $variable) {
-            $varID = @IPS_GetObjectIDByIdent($variable, $this->InstanceID);
+        $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime"];
+        foreach ($webhookVariables as $ident) {
+            $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
             if ($varID !== false) {
                 IPS_DeleteVariable($varID);
             }
         }
     }
-
-    private function CreateWebhookVariables()
-{
-    // Array aller gewünschten Webhook-Variablen
-    $webhookVariables = [
-        "type" => "Alarm Typ",
-        "message" => "Alarm Nachricht",
-        "title" => "Alarm Titel",
-        "device" => "Gerätename",
-        "channel" => "Kanal",
-        "alarmTime" => "Alarmzeit"
-    ];
-    
-    foreach ($webhookVariables as $ident => $name) {
-        // Prüfen, ob die Variable bereits existiert
-        if (@IPS_GetObjectIDByIdent($ident, $this->InstanceID) === false) {
-            $this->RegisterVariableString($ident, $name);
-        }
-    }
-}
-
-private function RemoveWebhookVariables()
-{
-    // Array aller gewünschten Webhook-Variablen
-    $webhookVariables = [
-        "type",
-        "message",
-        "title",
-        "device",
-        "channel",
-        "alarmTime"
-    ];
-    
-    foreach ($webhookVariables as $ident) {
-        $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-        if ($varID !== false) {
-            IPS_DeleteVariable($varID);
-        }
-    }
-}
-
 
     private function CreateOrUpdateSnapshots()
     {
@@ -217,7 +181,7 @@ private function RemoveWebhookVariables()
         foreach ($snapshots as $snapshot) {
             $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
             $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
-            //$this->CreateSnapshotAtPosition($snapshot, $position);
+            $this->CreateSnapshotAtPosition($snapshot, $position);
         }
     }
 
@@ -230,6 +194,34 @@ private function RemoveWebhookVariables()
                 IPS_DeleteMedia($mediaID, true);
             }
         }
+    }
+
+    private function updateVariable($name, $value)
+    {
+        $ident = $this->normalizeIdent($name);
+
+        if (is_string($value)) {
+            $this->RegisterVariableString($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_int($value)) {
+            $this->RegisterVariableInteger($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_float($value)) {
+            $this->RegisterVariableFloat($ident, $name);
+            $this->SetValue($ident, $value);
+        } elseif (is_bool($value)) {
+            $this->RegisterVariableBoolean($ident, $name);
+            $this->SetValue($ident, $value);
+        } else {
+            $this->RegisterVariableString($ident, $name);
+            $this->SetValue($ident, json_encode($value));
+        }
+    }
+
+    private function normalizeIdent($name)
+    {
+        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+        return substr($ident, 0, 32); 
     }
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
