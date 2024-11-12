@@ -143,7 +143,7 @@ class Reolink extends IPSModule
 
     private function RemoveSnapshots()
     {
-        $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Bewegung"];
+        $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Bewegung"];
         foreach ($snapshots as $snapshotIdent) {
             $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
             if ($mediaID) {
