@@ -99,19 +99,19 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person");
+                    $this->ActivateBoolean("Person", 21);
                     break;
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier");
+                    $this->ActivateBoolean("Tier", 26);
                     break;
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug");
+                    $this->ActivateBoolean("Fahrzeug", 31);
                     break;
                 case "MD":
-                    $this->ActivateBoolean("Bewegung");
+                    $this->ActivateBoolean("Bewegung", 36);
                     break;
                 case "TEST":
-                    $this->ActivateBoolean("Test");
+                    $this->ActivateBoolean("Test", 41);
                     break;
                 default:
                     $this->SendDebug("Unknown Type", "Der Typ $type ist unbekannt.", 0);
@@ -127,12 +127,15 @@ class Reolink extends IPSModule
         }
     }
 
-    private function ActivateBoolean($ident)
+    private function ActivateBoolean($ident, $position)
     {
         $timerName = $ident . "_Reset";
         $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true und starte Snapshot.", 0);
 
         $this->SetValue($ident, true);
+
+        // Schnappschuss bei Aktivierung der Boolean erstellen
+        $this->CreateSnapshotAtPosition($ident, $position);
 
         // Timer für das Rücksetzen der Boolean-Variable nach 5 Sekunden setzen
         $this->SetTimerInterval($timerName, 5000);
@@ -164,6 +167,7 @@ class Reolink extends IPSModule
             $this->RegisterVariableBoolean($ident, $name);
             $this->SetValue($ident, $value);
         } else {
+            // Unbekannter Typ, als JSON-String speichern
             $this->RegisterVariableString($ident, $name);
             $this->SetValue($ident, json_encode($value));
         }
@@ -173,6 +177,34 @@ class Reolink extends IPSModule
     {
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
         return substr($ident, 0, 32); 
+    }
+
+    private function CreateSnapshotAtPosition($booleanIdent, $position)
+    {
+        $snapshotIdent = "Snapshot_" . $booleanIdent;
+        $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
+
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $snapshotIdent);
+            IPS_SetPosition($mediaID, $position);
+            IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
+            IPS_SetMediaCached($mediaID, false);
+        }
+
+        // URL zum Snapshot-Bild abrufen und temporär speichern
+        $snapshotUrl = $this->GetSnapshotURL();
+        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+        $imageData = @file_get_contents($snapshotUrl);
+
+        if ($imageData !== false) {
+            file_put_contents($tempImagePath, $imageData);
+            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+        } else {
+            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
+        }
     }
 
     private function CreateOrUpdateStream($ident, $name)
@@ -187,6 +219,7 @@ class Reolink extends IPSModule
             IPS_SetMediaCached($mediaID, true);
         }
 
+        // Stream-URL aktualisieren
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
