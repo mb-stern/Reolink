@@ -196,6 +196,17 @@ class Reolink extends IPSModule
         return substr($ident, 0, 32); 
     }
 
+    private function CreateOrUpdateSnapshots()
+{
+    $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
+    foreach ($snapshots as $snapshot) {
+        $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
+        $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
+        $this->CreateSnapshotAtPosition($snapshot, $position);
+    }
+}
+
+
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
         $snapshotIdent = "Snapshot_" . $booleanIdent;
