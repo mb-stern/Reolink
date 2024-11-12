@@ -6,30 +6,25 @@ class Reolink extends IPSModule
     {
         parent::Create();
         
-        // IP-Adresse, Benutzername und Passwort als Eigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Webhook registrieren
         $this->RegisterHook('/hook/reolink');
 
-        // Boolean-Variablen mit dem Variablenprofil "~Motion" erstellen und Positionen festlegen
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
         $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
         $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
 
-        // Timer für jede Boolean-Variable registrieren
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
 
-        // String-Variable `type` für Alarmtyp
         $this->RegisterVariableString("type", "Alarm Typ", "", 15);
     }
 
@@ -37,8 +32,6 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
-
-        // Aktualisiere den Stream, falls der StreamType geändert wurde
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
@@ -79,7 +72,8 @@ class Reolink extends IPSModule
         if (!empty($rawData)) {
             $data = json_decode($rawData, true);
             if (is_array($data)) {
-                $this->ProcessData($data);
+                // Alle Variablen in einem Schritt speichern
+                $this->ProcessAllData($data);
             } else {
                 $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
             }
@@ -89,13 +83,13 @@ class Reolink extends IPSModule
         }
     }
 
-    private function ProcessData($data)
+    private function ProcessAllData($data)
     {
+        $variablesToUpdate = [];
+
         if (isset($data['alarm']['type'])) {
             $type = $data['alarm']['type'];
-
-            // Setze die `type`-Variable, um den aktuellen Typ zu speichern
-            $this->SetValue("type", $type);
+            $variablesToUpdate["type"] = $type;
 
             switch ($type) {
                 case "PEOPLE":
@@ -119,11 +113,14 @@ class Reolink extends IPSModule
             }
         }
 
-        // Zusätzliche Variablen aus dem Webhook-JSON in IP-Symcon-Variablen speichern
         foreach ($data['alarm'] as $key => $value) {
-            if ($key !== 'type') { // `type` wird bereits behandelt
-                $this->updateVariable($key, $value);
+            if ($key !== 'type') {
+                $variablesToUpdate[$key] = $value;
             }
+        }
+
+        foreach ($variablesToUpdate as $name => $value) {
+            $this->updateVariable($name, $value);
         }
     }
 
@@ -133,11 +130,7 @@ class Reolink extends IPSModule
         $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true und starte Snapshot.", 0);
 
         $this->SetValue($ident, true);
-
-        // Schnappschuss bei Aktivierung der Boolean erstellen
         $this->CreateSnapshotAtPosition($ident, $position);
-
-        // Timer für das Rücksetzen der Boolean-Variable nach 5 Sekunden setzen
         $this->SetTimerInterval($timerName, 5000);
     }
 
@@ -153,7 +146,6 @@ class Reolink extends IPSModule
     {
         $ident = $this->normalizeIdent($name);
 
-        // Variablentyp bestimmen und registrieren
         if (is_string($value)) {
             $this->RegisterVariableString($ident, $name);
             $this->SetValue($ident, $value);
@@ -167,7 +159,6 @@ class Reolink extends IPSModule
             $this->RegisterVariableBoolean($ident, $name);
             $this->SetValue($ident, $value);
         } else {
-            // Unbekannter Typ, als JSON-String speichern
             $this->RegisterVariableString($ident, $name);
             $this->SetValue($ident, json_encode($value));
         }
@@ -185,7 +176,7 @@ class Reolink extends IPSModule
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
 
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(1); // 1 steht für Bild (PNG/JPG)
+            $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $snapshotIdent);
             IPS_SetPosition($mediaID, $position);
@@ -193,15 +184,14 @@ class Reolink extends IPSModule
             IPS_SetMediaCached($mediaID, false);
         }
 
-        // URL zum Snapshot-Bild abrufen und temporär speichern
         $snapshotUrl = $this->GetSnapshotURL();
         $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
         $imageData = @file_get_contents($snapshotUrl);
 
         if ($imageData !== false) {
             file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Bild in Medienobjekt laden
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+            IPS_SetMediaFile($mediaID, $tempImagePath, false);
+            IPS_SendMediaEvent($mediaID);
         } else {
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
@@ -212,14 +202,13 @@ class Reolink extends IPSModule
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(3); // 3 steht für Stream
+            $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
             IPS_SetMediaCached($mediaID, true);
         }
 
-        // Stream-URL aktualisieren
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
