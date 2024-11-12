@@ -66,7 +66,6 @@ class Reolink extends IPSModule
     }
 }
 
-
     public function ProcessHookData()
     {
         $rawData = file_get_contents("php://input");
