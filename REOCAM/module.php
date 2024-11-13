@@ -218,7 +218,7 @@ public function ResetBoolean(string $ident)
         foreach ($booleans as $booleanIdent) {
             $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
             if ($varID !== false) {
-                $this->UnregisterVariable($varID);
+                $this->UnregisterVariable($booleanIdent);
             }
         }
     }
