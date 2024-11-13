@@ -69,7 +69,9 @@ class Reolink extends IPSModule
     private function RegisterHook()
 {
     $baseHook = '/hook/reolink'; // Basisname des Webhooks
+    $currentHook = $this->ReadAttributeString('CurrentHook');
     $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+
     if (count($ids) > 0) {
         $hookInstanceID = $ids[0];
         $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
@@ -78,15 +80,22 @@ class Reolink extends IPSModule
             $hooks = [];
         }
 
-        // Starte mit reolink_1
+        // Prüfen, ob der aktuelle Hook existiert
+        foreach ($hooks as $hook) {
+            if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
+                $this->SendDebug('RegisterHook', "Aktueller Hook bereits registriert: $currentHook", 0);
+                return; // Hook existiert bereits, keine Aktion nötig
+            }
+        }
+
+        // Falls der aktuelle Hook fehlt, einen neuen erstellen
         $counter = 1;
         $hookName = $baseHook . '_' . $counter;
 
-        // Überprüfen, ob der Hook-Name bereits existiert, und inkrementieren
         do {
             $found = false;
             foreach ($hooks as $hook) {
-                if ($hook['Hook'] == $hookName) {
+                if ($hook['Hook'] === $hookName) {
                     $found = true;
                     $counter++;
                     $hookName = $baseHook . '_' . $counter;
@@ -95,17 +104,16 @@ class Reolink extends IPSModule
             }
         } while ($found);
 
-        // Webhook hinzufügen
+        // Neuen Hook hinzufügen
         $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
 
-        // Webhook speichern
+        // Neuen Hook speichern
         $this->WriteAttributeString('CurrentHook', $hookName);
-        $this->SendDebug('RegisterHook', "Webhook registriert: $hookName", 0);
+        $this->SendDebug('RegisterHook', "Neuer Hook registriert: $hookName", 0);
     }
 }
-
 
     public function ProcessHookData()
 {
