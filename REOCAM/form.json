@@ -37,11 +37,6 @@
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
             "caption": "Boolean-Variablen anzeigen"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowSnapshots",
-            "caption": "Schnappschüsse anzeigen"
         }
     ]
 }
