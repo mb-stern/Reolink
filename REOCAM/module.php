@@ -198,7 +198,7 @@ public function ResetBoolean(string $ident)
         foreach ($webhookVariables as $ident) {
             $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
             if ($varID !== false) {
-                IPS_DeleteVariable($varID);
+                $this->UnregisterVariable($ident);
             }
         }
     }
