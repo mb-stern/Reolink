@@ -5,23 +5,22 @@ class Reolink extends IPSModule
     public function Create()
     {
         parent::Create();
-        
+
         // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
+        // Einstellungen für Variablen, Schnappschüsse und Archive
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
+        $this->RegisterPropertyBoolean("ShowArchives", true);
+        $this->RegisterPropertyInteger("MaxArchiveImages", 20);
 
-        // Attribut für den aktuellen Webhook registrieren
-        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
-        
         // Webhook registrieren
-        $this->RegisterHook();
+        $this->RegisterHook('/hook/reolink');
 
         // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
@@ -43,7 +42,7 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
         $this->RegisterHook('/hook/reolink');
 
-        // Erstellen oder Entfernen von Webhook- und Boolean-Variablen sowie Schnappschüssen basierend auf den Einstellungen
+        // Verwalte Webhook- und Boolean-Variablen sowie Schnappschüsse
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
@@ -62,9 +61,81 @@ class Reolink extends IPSModule
             $this->RemoveSnapshots();
         }
 
+        // Verwalte Bildarchive
+        if ($this->ReadPropertyBoolean("ShowArchives")) {
+            $this->CreateOrUpdateArchives();
+        } else {
+            $this->RemoveArchives();
+        }
+
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
+
+    private function CreateOrUpdateArchives()
+    {
+        $archiveNames = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+        $maxImages = $this->ReadPropertyInteger("MaxArchiveImages");
+
+        foreach ($archiveNames as $archiveName) {
+            $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $archiveName, $this->InstanceID);
+
+            // Falls Kategorie nicht existiert, erstellen
+            if ($categoryID === false) {
+                $categoryID = IPS_CreateCategory();
+                IPS_SetParent($categoryID, $this->InstanceID);
+                IPS_SetIdent($categoryID, "Archive_" . $archiveName);
+                IPS_SetName($categoryID, "Bildarchiv " . $archiveName);
+            }
+
+            // Bestehende Schnappschüsse ins Archiv kopieren
+            $snapshotID = @IPS_GetObjectIDByIdent("Snapshot_" . $archiveName, $this->InstanceID);
+            if ($snapshotID !== false) {
+                $this->CopySnapshotToArchive($snapshotID, $categoryID, $maxImages);
+            }
+        }
+    }
+
+    private function RemoveArchives()
+    {
+        $archiveNames = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+        foreach ($archiveNames as $archiveName) {
+            $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $archiveName, $this->InstanceID);
+            if ($categoryID !== false) {
+                IPS_DeleteCategory($categoryID, true);
+            }
+        }
+    }
+
+    private function CopySnapshotToArchive($snapshotID, $categoryID, $maxImages)
+    {
+        $snapshot = IPS_GetMedia($snapshotID);
+        $snapshotPath = $snapshot['MediaFile'];
+
+        if (file_exists($snapshotPath)) {
+            $archiveFileName = "archive_" . time() . ".jpg";
+            $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
+
+            copy($snapshotPath, $archiveFilePath);
+
+            $mediaID = IPS_CreateMedia(1);
+            IPS_SetParent($mediaID, $categoryID);
+            IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
+            IPS_SetMediaFile($mediaID, $archiveFilePath, false);
+
+            $this->PruneArchive($categoryID, $maxImages);
+        }
+    }
+
+    private function PruneArchive($categoryID, $maxImages)
+    {
+        $children = IPS_GetChildrenIDs($categoryID);
+        if (count($children) > $maxImages) {
+            $oldestID = $children[0];
+            IPS_DeleteMedia($oldestID, true);
+        }
+    }
+}
 
     private function RegisterHook()
 {

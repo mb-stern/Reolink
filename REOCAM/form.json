@@ -26,22 +26,34 @@
         },
         {
             "type": "Label",
-            "caption": "Hinweis: Der Mainstream ist häufig H.265-codiert und kann aktuell von IP-Symcon nicht verarbeitet werden. Wählen Sie den Substream für volle Kompatibilität."
+            "caption": "Optionen zur Anzeige von Variablen und Schnappschüssen:"
         },
         {
             "type": "CheckBox",
             "name": "ShowWebhookVariables",
-            "caption": "Webhook-Variablen anzeigen (nur zur Diagnose nötig)"
+            "caption": "Webhook-Variablen anzeigen"
         },
         {
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
-            "caption": "Bewegungen anzeigen (Person, Tier, Fahrzeug, Bewegung allgemein)"
+            "caption": "Boolean-Variablen anzeigen"
         },
         {
             "type": "CheckBox",
             "name": "ShowSnapshots",
-            "caption": "Schnappschüsse anzeigen (zum weiterverarbeiten oder versenden)"
+            "caption": "Schnappschüsse anzeigen"
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowArchives",
+            "caption": "Bildarchive anzeigen"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "MaxArchiveImages",
+            "caption": "Maximale Anzahl der Bilder pro Archiv",
+            "minimum": 1,
+            "default": 20
         }
     ]
 }
