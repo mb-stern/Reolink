@@ -375,5 +375,3 @@ public function ResetBoolean(string $ident)
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password";
     }
 }
-
-?>
