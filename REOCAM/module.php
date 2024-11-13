@@ -3,8 +3,14 @@
 class Reolink extends IPSModule
 {
     public function Create()
-    {
-        parent::Create();
+{
+    parent::Create();
+
+    // Modul-Attribute und Eigenschaften registrieren
+    $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
+
+    // Hook nur bei der Installation registrieren
+    $this->RegisterHook();
         
         // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
@@ -68,8 +74,15 @@ class Reolink extends IPSModule
 
     private function RegisterHook()
 {
-    $baseHook = '/hook/reolink'; // Basisname des Webhooks
+    // Überprüfen, ob der Hook bereits existiert
     $currentHook = $this->ReadAttributeString('CurrentHook');
+    if (!empty($currentHook)) {
+        $this->SendDebug('RegisterHook', "Hook bereits registriert: $currentHook", 0);
+        return; // Kein neuer Hook notwendig
+    }
+
+    // Basisname des Webhooks
+    $baseHook = '/hook/reolink';
     $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
 
     if (count($ids) > 0) {
@@ -80,15 +93,7 @@ class Reolink extends IPSModule
             $hooks = [];
         }
 
-        // Prüfen, ob der aktuelle Hook existiert
-        foreach ($hooks as $hook) {
-            if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
-                $this->SendDebug('RegisterHook', "Aktueller Hook bereits registriert: $currentHook", 0);
-                return; // Hook existiert bereits, keine Aktion nötig
-            }
-        }
-
-        // Falls der aktuelle Hook fehlt, einen neuen erstellen
+        // Neuen Hook-Namen suchen
         $counter = 1;
         $hookName = $baseHook . '_' . $counter;
 
