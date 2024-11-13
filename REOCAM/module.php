@@ -289,39 +289,48 @@ public function ResetBoolean(string $ident)
     $snapshotIdent = "Snapshot_" . $booleanIdent;
     $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
 
+    // Falls das Medienobjekt noch nicht existiert, erstellen
     if ($mediaID === false) {
-        $mediaID = IPS_CreateMedia(1);
+        $mediaID = IPS_CreateMedia(1); // 1 = Bild
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, $snapshotIdent);
-        IPS_SetPosition($mediaID, $position);
         IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
+        IPS_SetPosition($mediaID, $position);
         IPS_SetMediaCached($mediaID, false);
 
-        // Debugging: Neues Medienobjekt erstellt
-        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
+        // Debug: Neues Medienobjekt erstellt
+        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot '$booleanIdent' erstellt.", 0);
     } else {
-        // Debugging: Vorhandenes Medienobjekt gefunden
-        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
+        // Debug: Medienobjekt existiert bereits
+        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot '$booleanIdent' gefunden.", 0);
     }
 
+    // Snapshot-URL abrufen
     $snapshotUrl = $this->GetSnapshotURL();
+    if (empty($snapshotUrl)) {
+        $this->SendDebug('CreateSnapshotAtPosition', 'Snapshot-URL konnte nicht erstellt werden.', 0);
+        IPS_LogMessage("Reolink", "Snapshot-URL konnte nicht erstellt werden.");
+        return;
+    }
+
+    // Temporäre Datei für das Bild
     $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
+        // Bild speichern und Medienobjekt aktualisieren
         file_put_contents($tempImagePath, $imageData);
-        IPS_SetMediaFile($mediaID, $tempImagePath, false);
-        IPS_SendMediaEvent($mediaID);
+        IPS_SetMediaFile($mediaID, $tempImagePath, false); // Datei mit Medienobjekt verknüpfen
+        IPS_SendMediaEvent($mediaID); // Event senden, um Änderungen zu aktualisieren
 
-        // Debugging: Snapshot erfolgreich erstellt
-        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+        // Debug: Snapshot erfolgreich erstellt
+        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für '$booleanIdent' erfolgreich erstellt.", 0);
     } else {
-        // Debugging: Fehler beim Abrufen des Snapshots
-        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
-        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
+        // Debug: Fehler beim Abrufen des Snapshots
+        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für '$booleanIdent'.", 0);
+        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für '$booleanIdent'.");
     }
 }
-
 
     private function CreateOrUpdateStream($ident, $name)
     {
