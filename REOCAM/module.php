@@ -88,17 +88,24 @@ class Reolink extends IPSModule
     }
 
     public function ProcessHookData()
-    {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+{
+    $rawData = file_get_contents("php://input");
+    $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
 
-        if (!empty($rawData)) {
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessAllData($data);
-            }
+    if (!empty($rawData)) {
+        $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
+        $data = json_decode($rawData, true);
+        if (is_array($data)) {
+            $this->ProcessAllData($data);
+        } else {
+            $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
         }
+    } else {
+        IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+        $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
     }
+}
+
 
     private function ProcessAllData($data)
     {
