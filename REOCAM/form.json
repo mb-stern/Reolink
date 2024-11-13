@@ -31,17 +31,17 @@
         {
             "type": "CheckBox",
             "name": "ShowWebhookVariables",
-            "caption": "Webhook-Variablen anzeigen"
+            "caption": "Zeige die Webhook-Variablen (nur zur Diagnose nötig)"
         },
         {
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
-            "caption": "Boolean-Variablen anzeigen"
+            "caption": "Bewegungen anzeigen (Person, Tier, Fahrzeug, Bewegung allgemein)"
         },
         {
             "type": "CheckBox",
             "name": "ShowSnapshots",
-            "caption": "Schnappschüsse anzeigen"
+            "caption": "Den neusten Schnappschuss der Bewegung anzeigen"
         }
     ]
 }
