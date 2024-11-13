@@ -3,14 +3,8 @@
 class Reolink extends IPSModule
 {
     public function Create()
-{
-    parent::Create();
-
-        // Modul-Attribute und Eigenschaften registrieren
-        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
-
-        // Hook nur bei der Installation registrieren
-        $this->RegisterHook();
+    {
+        parent::Create();
         
         // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
@@ -22,6 +16,12 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
+
+        // Attribut für den aktuellen Webhook registrieren
+        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
+        
+        // Webhook registrieren
+        $this->RegisterHook();
 
         // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
@@ -39,48 +39,37 @@ class Reolink extends IPSModule
     }
 
     public function ApplyChanges()
+    {
+        parent::ApplyChanges();
+        $this->RegisterHook('/hook/reolink');
+
+        // Erstellen oder Entfernen von Webhook- und Boolean-Variablen sowie Schnappschüssen basierend auf den Einstellungen
+        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
+            $this->CreateWebhookVariables();
+        } else {
+            $this->RemoveWebhookVariables();
+        }
+
+        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
+            $this->CreateBooleanVariables();
+        } else {
+            $this->RemoveBooleanVariables();
+        }
+
+        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+            $this->CreateOrUpdateSnapshots();
+        } else {
+            $this->RemoveSnapshots();
+        }
+
+        // Stream-URL aktualisieren
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+    }
+
+    private function RegisterHook()
 {
-    parent::ApplyChanges();
-
-    // Nur beim ersten Erstellen des Moduls den Hook registrieren
-    if (!$this->ReadAttributeBoolean('HookRegistered')) {
-        $this->RegisterHook();
-    }
-
-    // Verwalte Variablen, Schnappschüsse und andere Ressourcen
-    if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
-        $this->CreateWebhookVariables();
-    } else {
-        $this->RemoveWebhookVariables();
-    }
-
-    if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-        $this->CreateBooleanVariables();
-    } else {
-        $this->RemoveBooleanVariables();
-    }
-
-    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-        $this->CreateOrUpdateSnapshots();
-    } else {
-        $this->RemoveSnapshots();
-    }
-
-    // Stream-URL aktualisieren
-    $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-}
-
-private function RegisterHook()
-{
-    $isHookRegistered = $this->ReadAttributeBoolean('HookRegistered');
-
-    // Wenn der Hook bereits registriert ist, keine Aktion durchführen
-    if ($isHookRegistered) {
-        $this->SendDebug('RegisterHook', 'Hook ist bereits registriert. Keine Aktion erforderlich.', 0);
-        return;
-    }
-
     $baseHook = '/hook/reolink'; // Basisname des Webhooks
+    $currentHook = $this->ReadAttributeString('CurrentHook');
     $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
 
     if (count($ids) > 0) {
@@ -91,44 +80,60 @@ private function RegisterHook()
             $hooks = [];
         }
 
-        // Falls der Hook bereits registriert ist, keine Aktion durchführen
+        // Prüfen, ob der aktuelle Hook existiert
         foreach ($hooks as $hook) {
-            if ($hook['Hook'] === $baseHook && $hook['TargetID'] === $this->InstanceID) {
-                $this->WriteAttributeBoolean('HookRegistered', true);
-                $this->SendDebug('RegisterHook', "Hook bereits vorhanden: $baseHook", 0);
-                return;
+            if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
+                $this->SendDebug('RegisterHook', "Aktueller Hook bereits registriert: $currentHook", 0);
+                return; // Hook existiert bereits, keine Aktion nötig
             }
         }
 
-        // Hook hinzufügen
-        $hooks[] = ['Hook' => $baseHook, 'TargetID' => $this->InstanceID];
+        // Falls der aktuelle Hook fehlt, einen neuen erstellen
+        $counter = 1;
+        $hookName = $baseHook . '_' . $counter;
+
+        do {
+            $found = false;
+            foreach ($hooks as $hook) {
+                if ($hook['Hook'] === $hookName) {
+                    $found = true;
+                    $counter++;
+                    $hookName = $baseHook . '_' . $counter;
+                    break;
+                }
+            }
+        } while ($found);
+
+        // Neuen Hook hinzufügen
+        $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
 
-        // Flag setzen, dass der Hook registriert wurde
-        $this->WriteAttributeBoolean('HookRegistered', true);
-        $this->SendDebug('RegisterHook', "Neuer Hook registriert: $baseHook", 0);
+        // Neuen Hook speichern
+        $this->WriteAttributeString('CurrentHook', $hookName);
+        $this->SendDebug('RegisterHook', "Neuer Hook registriert: $hookName", 0);
     }
 }
 
     public function ProcessHookData()
-    {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+{
+    $rawData = file_get_contents("php://input");
+    $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
 
-        if (!empty($rawData)) {
-            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessAllData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
+    if (!empty($rawData)) {
+        $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
+        $data = json_decode($rawData, true);
+        if (is_array($data)) {
+            $this->ProcessAllData($data);
         } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+            $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
         }
+    } else {
+        IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+        $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
     }
+}
+
 
     private function ProcessAllData($data)
     {
@@ -370,3 +375,5 @@ public function ResetBoolean(string $ident)
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password";
     }
 }
+
+?>
