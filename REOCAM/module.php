@@ -17,6 +17,9 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
 
+        // Attribut für den aktuellen Webhook registrieren
+        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
+        
         // Webhook registrieren
         $this->RegisterHook();
 
