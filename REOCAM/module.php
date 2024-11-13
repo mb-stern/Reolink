@@ -18,7 +18,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
 
         // Webhook registrieren
-        $this->RegisterHook('/hook/reolink');
+        $this->RegisterHook();
 
         // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
@@ -63,29 +63,46 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
-    private function RegisterHook($Hook)
-    {
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-        if (count($ids) > 0) {
-            $hookInstanceID = $ids[0];
-            $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-            if (!is_array($hooks)) {
-                $hooks = [];
-            }
+    private function RegisterHook()
+{
+    $baseHook = '/hook/reolink'; // Basisname des Webhooks
+    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+    if (count($ids) > 0) {
+        $hookInstanceID = $ids[0];
+        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
+
+        if (!is_array($hooks)) {
+            $hooks = [];
+        }
+
+        // Starte mit reolink_1
+        $counter = 1;
+        $hookName = $baseHook . '_' . $counter;
+
+        // Überprüfen, ob der Hook-Name bereits existiert, und inkrementieren
+        do {
             $found = false;
-            foreach ($hooks as $index => $hook) {
-                if ($hook['Hook'] == $Hook && $hook['TargetID'] == $this->InstanceID) {
+            foreach ($hooks as $hook) {
+                if ($hook['Hook'] == $hookName) {
                     $found = true;
+                    $counter++;
+                    $hookName = $baseHook . '_' . $counter;
                     break;
                 }
             }
-            if (!$found) {
-                $hooks[] = ['Hook' => $Hook, 'TargetID' => $this->InstanceID];
-                IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-                IPS_ApplyChanges($hookInstanceID);
-            }
-        }
+        } while ($found);
+
+        // Webhook hinzufügen
+        $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
+        IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
+        IPS_ApplyChanges($hookInstanceID);
+
+        // Webhook speichern
+        $this->WriteAttributeString('CurrentHook', $hookName);
+        $this->SendDebug('RegisterHook', "Webhook registriert: $hookName", 0);
     }
+}
+
 
     public function ProcessHookData()
 {
