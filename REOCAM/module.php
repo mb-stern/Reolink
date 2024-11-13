@@ -39,86 +39,90 @@ class Reolink extends IPSModule
     }
 
     public function ApplyChanges()
-    {
-        parent::ApplyChanges();
-    
-        // Hook nur registrieren, wenn er noch nicht gesetzt ist
-        if ($this->ReadAttributeString('CurrentHook') === '') {
-            $this->RegisterHook();
-        }
-    
-        // Verwalte Variablen und andere Einstellungen
-        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
-            $this->CreateWebhookVariables();
-        } else {
-            $this->RemoveWebhookVariables();
-        }
-    
-        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-            $this->CreateBooleanVariables();
-        } else {
-            $this->RemoveBooleanVariables();
-        }
-    
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateOrUpdateSnapshots();
-        } else {
-            $this->RemoveSnapshots();
-        }
-    
-        // Stream-URL aktualisieren
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-    }    
+{
+    parent::ApplyChanges();
+
+    // Nur beim ersten Mal oder wenn kein Hook vorhanden ist, den Hook registrieren
+    if ($this->ReadAttributeString('CurrentHook') === '') {
+        $this->RegisterHook();
+    }
+
+    // Verwalte Variablen und andere Einstellungen
+    if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
+        $this->CreateWebhookVariables();
+    } else {
+        $this->RemoveWebhookVariables();
+    }
+
+    if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
+        $this->CreateBooleanVariables();
+    } else {
+        $this->RemoveBooleanVariables();
+    }
+
+    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+        $this->CreateOrUpdateSnapshots();
+    } else {
+        $this->RemoveSnapshots();
+    }
+
+    // Stream-URL aktualisieren
+    $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+}
+
 
     private function RegisterHook()
-    {
-        $baseHook = '/hook/reolink'; // Basisname des Webhooks
-        $currentHook = $this->ReadAttributeString('CurrentHook'); // Aktuell registrierter Hook
-    
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-    
-        if (count($ids) > 0) {
-            $hookInstanceID = $ids[0];
-            $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-    
-            if (!is_array($hooks)) {
-                $hooks = [];
-            }
-    
-            // Prüfen, ob der aktuelle Hook bereits existiert und korrekt ist
-            foreach ($hooks as $hook) {
-                if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
-                    $this->SendDebug('RegisterHook', "Aktueller Hook ist bereits registriert: $currentHook", 0);
-                    return; // Hook existiert bereits
-                }
-            }
-    
-            // Falls aktueller Hook nicht existiert, neuen erstellen
-            $counter = 1;
-            $newHook = $baseHook . '_' . $counter;
-    
-            do {
-                $found = false;
-                foreach ($hooks as $hook) {
-                    if ($hook['Hook'] === $newHook) {
-                        $found = true;
-                        $counter++;
-                        $newHook = $baseHook . '_' . $counter;
-                        break;
-                    }
-                }
-            } while ($found);
-    
-            // Neuen Hook hinzufügen
-            $hooks[] = ['Hook' => $newHook, 'TargetID' => $this->InstanceID];
-            IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-            IPS_ApplyChanges($hookInstanceID);
-    
-            // Attribut aktualisieren
-            $this->WriteAttributeString('CurrentHook', $newHook);
-            $this->SendDebug('RegisterHook', "Neuer Hook registriert: $newHook", 0);
+{
+    $baseHook = '/hook/reolink'; // Basisname des Webhooks
+    $currentHook = $this->ReadAttributeString('CurrentHook'); // Aktueller Hook auslesen
+
+    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}'); // WebHook Control-Instanz
+    if (count($ids) === 0) {
+        $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
+        return;
+    }
+
+    $hookInstanceID = $ids[0];
+    $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
+
+    if (!is_array($hooks)) {
+        $hooks = [];
+    }
+
+    // Prüfen, ob ein gültiger Hook bereits existiert
+    foreach ($hooks as $hook) {
+        if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
+            $this->SendDebug('RegisterHook', "Aktueller Hook ist bereits registriert: $currentHook", 0);
+            return;
         }
     }
+
+    // Falls kein Hook vorhanden ist, einen neuen erstellen
+    $counter = 1;
+    $newHook = $baseHook . '_' . $counter;
+
+    do {
+        $found = false;
+        foreach ($hooks as $hook) {
+            if ($hook['Hook'] === $newHook) {
+                $found = true;
+                $counter++;
+                $newHook = $baseHook . '_' . $counter;
+                break;
+            }
+        }
+    } while ($found);
+
+    // Neuen Hook hinzufügen
+    $hooks[] = ['Hook' => $newHook, 'TargetID' => $this->InstanceID];
+    IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
+    IPS_ApplyChanges($hookInstanceID);
+
+    // Neuen Hook speichern
+    $this->WriteAttributeString('CurrentHook', $newHook);
+    $this->SendDebug('RegisterHook', "Neuer Hook registriert: $newHook", 0);
+}
+
     
     public function ProcessHookData()
     {
