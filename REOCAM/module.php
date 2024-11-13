@@ -6,11 +6,11 @@ class Reolink extends IPSModule
 {
     parent::Create();
 
-    // Modul-Attribute und Eigenschaften registrieren
-    $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
+        // Modul-Attribute und Eigenschaften registrieren
+        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
 
-    // Hook nur bei der Installation registrieren
-    $this->RegisterHook();
+        // Hook nur bei der Installation registrieren
+        $this->RegisterHook();
         
         // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
@@ -22,12 +22,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
-
-        // Attribut für den aktuellen Webhook registrieren
-        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
-        
-        // Webhook registrieren
-        $this->RegisterHook();
 
         // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
