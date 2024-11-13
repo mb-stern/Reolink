@@ -42,10 +42,8 @@ class Reolink extends IPSModule
 {
     parent::ApplyChanges();
 
-    // Nur beim ersten Mal oder wenn kein Hook vorhanden ist, den Hook registrieren
-    if ($this->ReadAttributeString('CurrentHook') === '') {
-        $this->RegisterHook();
-    }
+    // Registriere den Webhook nur einmal
+    $this->RegisterHook();
 
     // Verwalte Variablen und andere Einstellungen
     if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -72,10 +70,9 @@ class Reolink extends IPSModule
 
     private function RegisterHook()
 {
-    $baseHook = '/hook/reolink'; // Basisname des Webhooks
-    $currentHook = $this->ReadAttributeString('CurrentHook'); // Aktueller Hook auslesen
+    $hookName = '/hook/reolink'; // Fester Name für den Webhook
+    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
 
-    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}'); // WebHook Control-Instanz
     if (count($ids) === 0) {
         $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
         return;
@@ -88,59 +85,41 @@ class Reolink extends IPSModule
         $hooks = [];
     }
 
-    // Prüfen, ob ein gültiger Hook bereits existiert
+    // Prüfen, ob der Hook bereits existiert
     foreach ($hooks as $hook) {
-        if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
-            $this->SendDebug('RegisterHook', "Aktueller Hook ist bereits registriert: $currentHook", 0);
-            return;
+        if ($hook['Hook'] === $hookName && $hook['TargetID'] === $this->InstanceID) {
+            $this->SendDebug('RegisterHook', "Hook '$hookName' ist bereits registriert.", 0);
+            return; // Hook existiert bereits, keine weiteren Aktionen nötig
         }
     }
 
-    // Falls kein Hook vorhanden ist, einen neuen erstellen
-    $counter = 1;
-    $newHook = $baseHook . '_' . $counter;
-
-    do {
-        $found = false;
-        foreach ($hooks as $hook) {
-            if ($hook['Hook'] === $newHook) {
-                $found = true;
-                $counter++;
-                $newHook = $baseHook . '_' . $counter;
-                break;
-            }
-        }
-    } while ($found);
-
-    // Neuen Hook hinzufügen
-    $hooks[] = ['Hook' => $newHook, 'TargetID' => $this->InstanceID];
+    // Falls der Hook nicht existiert, hinzufügen
+    $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
     IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
     IPS_ApplyChanges($hookInstanceID);
 
-    // Neuen Hook speichern
-    $this->WriteAttributeString('CurrentHook', $newHook);
-    $this->SendDebug('RegisterHook', "Neuer Hook registriert: $newHook", 0);
+    $this->SendDebug('RegisterHook', "Hook '$hookName' wurde registriert.", 0);
 }
 
-    
     public function ProcessHookData()
-    {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+{
+    $rawData = file_get_contents("php://input");
+    $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
 
-        if (!empty($rawData)) {
-            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessAllData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
+    if (!empty($rawData)) {
+        $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
+        $data = json_decode($rawData, true);
+        if (is_array($data)) {
+            $this->ProcessAllData($data);
         } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+            $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
         }
+    } else {
+        IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+        $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
     }
+}
+
 
     private function ProcessAllData($data)
     {
