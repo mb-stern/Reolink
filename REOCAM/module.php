@@ -66,74 +66,73 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
-    private function RegisterHook()
-{
-    // Überprüfen, ob der Hook bereits existiert
-    $currentHook = $this->ReadAttributeString('CurrentHook');
-    if (!empty($currentHook)) {
-        $this->SendDebug('RegisterHook', "Hook bereits registriert: $currentHook", 0);
-        return; // Kein neuer Hook notwendig
-    }
-
-    // Basisname des Webhooks
-    $baseHook = '/hook/reolink';
-    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-
-    if (count($ids) > 0) {
-        $hookInstanceID = $ids[0];
-        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-
-        if (!is_array($hooks)) {
-            $hooks = [];
+        private function RegisterHook()
+    {
+        // Überprüfen, ob der Hook bereits existiert
+        $currentHook = $this->ReadAttributeString('CurrentHook');
+        if (!empty($currentHook)) {
+            $this->SendDebug('RegisterHook', "Hook bereits registriert: $currentHook", 0);
+            return; // Kein neuer Hook notwendig
         }
 
-        // Neuen Hook-Namen suchen
-        $counter = 1;
-        $hookName = $baseHook . '_' . $counter;
+        // Basisname des Webhooks
+        $baseHook = '/hook/reolink';
+        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
 
-        do {
-            $found = false;
-            foreach ($hooks as $hook) {
-                if ($hook['Hook'] === $hookName) {
-                    $found = true;
-                    $counter++;
-                    $hookName = $baseHook . '_' . $counter;
-                    break;
-                }
+        if (count($ids) > 0) {
+            $hookInstanceID = $ids[0];
+            $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
+
+            if (!is_array($hooks)) {
+            $hooks = [];
             }
-        } while ($found);
 
-        // Neuen Hook hinzufügen
-        $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
-        IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-        IPS_ApplyChanges($hookInstanceID);
+            // Neuen Hook-Namen suchen
+            $counter = 1;
+            $hookName = $baseHook . '_' . $counter;
 
-        // Neuen Hook speichern
-        $this->WriteAttributeString('CurrentHook', $hookName);
-        $this->SendDebug('RegisterHook', "Neuer Hook registriert: $hookName", 0);
+            do {
+                $found = false;
+                foreach ($hooks as $hook) {
+                    if ($hook['Hook'] === $hookName) {
+                        $found = true;
+                        $counter++;
+                        $hookName = $baseHook . '_' . $counter;
+                        break;
+                    }
+                }
+            } while ($found);
+
+            // Neuen Hook hinzufügen
+            $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
+            IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
+            IPS_ApplyChanges($hookInstanceID);
+
+            // Neuen Hook speichern
+            $this->WriteAttributeString('CurrentHook', $hookName);
+            $this->SendDebug('RegisterHook', "Neuer Hook registriert: $hookName", 0);
+        }
     }
-}
 
     public function ProcessHookData()
-{
-    $rawData = file_get_contents("php://input");
-    $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+    {
+        $rawData = file_get_contents("php://input");
+        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
 
-    if (!empty($rawData)) {
-        $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
-        $data = json_decode($rawData, true);
-        if (is_array($data)) {
-            $this->ProcessAllData($data);
+        if (!empty($rawData)) {
+            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
+            $data = json_decode($rawData, true);
+            if (is_array($data)) {
+                $this->ProcessAllData($data);
+            } else {
+                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
+            }
         } else {
-            $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
+            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
-    } else {
-        IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-        $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
     }
-}
-
-
+    
     private function ProcessAllData($data)
     {
         if (isset($data['alarm']['type'])) {
