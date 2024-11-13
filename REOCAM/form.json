@@ -36,7 +36,7 @@
         {
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
-            "caption": "Bewegungen anzeigen (Person, Tier, Fahrzeug, Bewegung allgemein)"
+            "caption": "Bewegungen als Bool-Variable anzeigen (Person, Tier, Fahrzeug, Bewegung allgemein)"
         },
         {
             "type": "CheckBox",
