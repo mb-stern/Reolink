@@ -41,11 +41,9 @@ class Reolink extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+        $this->RegisterHook('/hook/reolink');
 
-        // Registriere den Webhook nur einmal
-        $this->RegisterHook();
-
-        // Verwalte Variablen und andere Einstellungen
+        // Erstellen oder Entfernen von Webhook- und Boolean-Variablen sowie Schnappschüssen basierend auf den Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
@@ -69,56 +67,73 @@ class Reolink extends IPSModule
     }
 
     private function RegisterHook()
-    {
-        $hookName = '/hook/reolink'; // Fester Name für den Webhook
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+{
+    $baseHook = '/hook/reolink'; // Basisname des Webhooks
+    $currentHook = $this->ReadAttributeString('CurrentHook');
+    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
 
-        if (count($ids) === 0) {
-            $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
-            return;
-        }
-
+    if (count($ids) > 0) {
         $hookInstanceID = $ids[0];
         $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
 
         if (!is_array($hooks)) {
-        $hooks = [];
+            $hooks = [];
         }
 
-        // Prüfen, ob der Hook bereits existiert
+        // Prüfen, ob der aktuelle Hook existiert
         foreach ($hooks as $hook) {
-            if ($hook['Hook'] === $hookName && $hook['TargetID'] === $this->InstanceID) {
-                $this->SendDebug('RegisterHook', "Hook '$hookName' ist bereits registriert.", 0);
-                return; // Hook existiert bereits, keine weiteren Aktionen nötig
+            if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
+                $this->SendDebug('RegisterHook', "Aktueller Hook bereits registriert: $currentHook", 0);
+                return; // Hook existiert bereits, keine Aktion nötig
             }
         }
 
-        // Falls der Hook nicht existiert, hinzufügen
+        // Falls der aktuelle Hook fehlt, einen neuen erstellen
+        $counter = 1;
+        $hookName = $baseHook . '_' . $counter;
+
+        do {
+            $found = false;
+            foreach ($hooks as $hook) {
+                if ($hook['Hook'] === $hookName) {
+                    $found = true;
+                    $counter++;
+                    $hookName = $baseHook . '_' . $counter;
+                    break;
+                }
+            }
+        } while ($found);
+
+        // Neuen Hook hinzufügen
         $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
 
-        $this->SendDebug('RegisterHook', "Hook '$hookName' wurde registriert.", 0);
+        // Neuen Hook speichern
+        $this->WriteAttributeString('CurrentHook', $hookName);
+        $this->SendDebug('RegisterHook', "Neuer Hook registriert: $hookName", 0);
     }
+}
 
     public function ProcessHookData()
-    {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+{
+    $rawData = file_get_contents("php://input");
+    $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
 
-        if (!empty($rawData)) {
-            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessAllData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
+    if (!empty($rawData)) {
+        $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
+        $data = json_decode($rawData, true);
+        if (is_array($data)) {
+            $this->ProcessAllData($data);
         } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+            $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
         }
+    } else {
+        IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+        $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
     }
+}
+
 
     private function ProcessAllData($data)
     {
@@ -289,48 +304,39 @@ public function ResetBoolean(string $ident)
     $snapshotIdent = "Snapshot_" . $booleanIdent;
     $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
 
-    // Falls das Medienobjekt noch nicht existiert, erstellen
     if ($mediaID === false) {
-        $mediaID = IPS_CreateMedia(1); // 1 = Bild
+        $mediaID = IPS_CreateMedia(1);
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, $snapshotIdent);
-        IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
         IPS_SetPosition($mediaID, $position);
+        IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
         IPS_SetMediaCached($mediaID, false);
 
-        // Debug: Neues Medienobjekt erstellt
-        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot '$booleanIdent' erstellt.", 0);
+        // Debugging: Neues Medienobjekt erstellt
+        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
     } else {
-        // Debug: Medienobjekt existiert bereits
-        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot '$booleanIdent' gefunden.", 0);
+        // Debugging: Vorhandenes Medienobjekt gefunden
+        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
     }
 
-    // Snapshot-URL abrufen
     $snapshotUrl = $this->GetSnapshotURL();
-    if (empty($snapshotUrl)) {
-        $this->SendDebug('CreateSnapshotAtPosition', 'Snapshot-URL konnte nicht erstellt werden.', 0);
-        IPS_LogMessage("Reolink", "Snapshot-URL konnte nicht erstellt werden.");
-        return;
-    }
-
-    // Temporäre Datei für das Bild
     $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        // Bild speichern und Medienobjekt aktualisieren
         file_put_contents($tempImagePath, $imageData);
-        IPS_SetMediaFile($mediaID, $tempImagePath, false); // Datei mit Medienobjekt verknüpfen
-        IPS_SendMediaEvent($mediaID); // Event senden, um Änderungen zu aktualisieren
+        IPS_SetMediaFile($mediaID, $tempImagePath, false);
+        IPS_SendMediaEvent($mediaID);
 
-        // Debug: Snapshot erfolgreich erstellt
-        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für '$booleanIdent' erfolgreich erstellt.", 0);
+        // Debugging: Snapshot erfolgreich erstellt
+        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
     } else {
-        // Debug: Fehler beim Abrufen des Snapshots
-        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für '$booleanIdent'.", 0);
-        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für '$booleanIdent'.");
+        // Debugging: Fehler beim Abrufen des Snapshots
+        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
+        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
+
 
     private function CreateOrUpdateStream($ident, $name)
     {
