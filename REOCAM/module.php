@@ -70,7 +70,6 @@ class Reolink extends IPSModule
     $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
 }
 
-
     private function RegisterHook()
 {
     $baseHook = '/hook/reolink'; // Basisname des Webhooks
