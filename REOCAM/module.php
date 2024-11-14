@@ -68,6 +68,104 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
+private function CreateSnapshotAtPosition($booleanIdent, $position)
+{
+    $snapshotIdent = "Snapshot_" . $booleanIdent;
+    $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
+
+    if ($mediaID === false) {
+        $mediaID = IPS_CreateMedia(1);
+        IPS_SetParent($mediaID, $this->InstanceID);
+        IPS_SetIdent($mediaID, $snapshotIdent);
+        IPS_SetPosition($mediaID, $position);
+        IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
+        IPS_SetMediaCached($mediaID, false);
+
+        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
+    } else {
+        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
+    }
+
+    $snapshotUrl = $this->GetSnapshotURL();
+    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+    $imageData = @file_get_contents($snapshotUrl);
+
+    if ($imageData !== false) {
+        file_put_contents($tempImagePath, $imageData);
+        IPS_SetMediaFile($mediaID, $tempImagePath, false);
+        IPS_SendMediaEvent($mediaID);
+
+        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+
+        // Kopieren ins Archiv
+        $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
+        $this->CopySnapshotToArchive($mediaID, $archiveCategoryID);
+    } else {
+        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
+        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
+    }
+}
+
+private function CreateOrGetArchiveCategory($booleanIdent)
+{
+    $archiveIdent = "Archive_" . $booleanIdent;
+    $archiveName = "Bildarchiv " . ucfirst($booleanIdent);
+    $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
+
+    if ($categoryID === false) {
+        $categoryID = IPS_CreateCategory();
+        IPS_SetParent($categoryID, $this->InstanceID);
+        IPS_SetIdent($categoryID, $archiveIdent);
+        IPS_SetName($categoryID, $archiveName);
+        $this->SendDebug('CreateOrGetArchiveCategory', "Archivkategorie $archiveName erstellt.", 0);
+    }
+
+    return $categoryID;
+}
+
+private function CopySnapshotToArchive($snapshotID, $categoryID)
+{
+    $snapshot = IPS_GetMedia($snapshotID);
+    $snapshotPath = $snapshot['MediaFile'];
+
+    if (file_exists($snapshotPath)) {
+        $archiveFileName = "archive_" . time() . ".jpg";
+        $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
+
+        if (copy($snapshotPath, $archiveFilePath)) {
+            $mediaID = IPS_CreateMedia(1);
+            IPS_SetParent($mediaID, $categoryID);
+            IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
+            IPS_SetPosition($mediaID, -time());
+            IPS_SetMediaFile($mediaID, $archiveFilePath, false);
+
+            $this->SendDebug('CopySnapshotToArchive', "Snapshot erfolgreich ins Archiv kopiert: $archiveFilePath", 0);
+
+            $this->PruneArchive($categoryID, 20); // Begrenzt auf 20 Bilder
+        } else {
+            IPS_LogMessage("Reolink", "Fehler beim Kopieren der Datei $snapshotPath ins Archiv.");
+        }
+    } else {
+        IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
+    }
+}
+
+private function PruneArchive($categoryID, $maxImages)
+{
+    $children = IPS_GetChildrenIDs($categoryID);
+
+    if (count($children) > $maxImages) {
+        usort($children, function ($a, $b) {
+            return IPS_GetObject($a)['ObjectPosition'] <=> IPS_GetObject($b)['ObjectPosition'];
+        });
+
+        while (count($children) > $maxImages) {
+            $oldestID = array_shift($children);
+            IPS_DeleteMedia($oldestID, true);
+        }
+    }
+}
+
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
