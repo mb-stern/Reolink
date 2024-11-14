@@ -391,14 +391,14 @@ private function CreateOrUpdateArchives()
 private function PruneArchive($categoryID)
 {
     $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
-    $children = IPS_GetChildrenIDs($categoryID); // Kinder (Bilder) im Archiv abrufen
+    $children = IPS_GetChildrenIDs($categoryID); // Bilder im Archiv abrufen
 
     // Debug-Ausgaben zur Überprüfung
-    $this->SendDebug('PruneArchive', "Anzahl der Kinder im Archiv: " . count($children), 0);
+    $this->SendDebug('PruneArchive', "Anzahl der Bilder im Archiv: " . count($children), 0);
     $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder: $maxImages", 0);
 
     if (count($children) > $maxImages) {
-        // Sortiere die Kinder nach Position (höher = älter)
+        // Sortiere die Bilder nach Position (höher = älter)
         usort($children, function ($a, $b) {
             $objectA = @IPS_GetObject($a); // Hole das Objekt sicher
             $objectB = @IPS_GetObject($b); // Hole das Objekt sicher
