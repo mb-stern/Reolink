@@ -42,6 +42,21 @@
             "type": "CheckBox",
             "name": "ShowSnapshots",
             "caption": "Schnappschüsse anzeigen"
+        },
+        {
+            "elements": [
+                {
+                    "type": "NumberSpinner",
+                    "name": "MaxArchiveImages",
+                    "caption": "Maximale Bilderanzahl pro Archiv"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowArchives",
+                    "caption": "Bildarchive anzeigen"
+                }
+            ]
         }
+        
     ]
 }
