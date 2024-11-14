@@ -87,7 +87,7 @@ private function CreateSnapshotAtPosition($booleanIdent, $position)
     }
 
     $snapshotUrl = $this->GetSnapshotURL();
-    $tempImagePath = IPS_GetKernelDir() . "media.DIRECTORY_SEPARATOR.snapshot_temp_" . $booleanIdent . ".jpg";
+    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
@@ -123,29 +123,37 @@ private function CreateOrGetArchiveCategory($booleanIdent)
     return $categoryID;
 }
 
-private function CopySnapshotToArchive($snapshotID, $categoryID)
+private function CopySnapshotToArchive($snapshotID, $categoryID, $maxImages)
 {
     $snapshot = IPS_GetMedia($snapshotID);
     $snapshotPath = $snapshot['MediaFile'];
 
     if (file_exists($snapshotPath)) {
-        $archiveFileName = "archive_" . time() . ".jpg";
-        $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
+        // Archivname und Ident
+        $archiveName = "Snapshot " . date("Y-m-d H:i:s");
+        $archiveIdent = "Archive_" . time();
 
-        if (copy($snapshotPath, $archiveFilePath)) {
-            $mediaID = IPS_CreateMedia(1);
-            IPS_SetParent($mediaID, $categoryID);
-            IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
-            IPS_SetPosition($mediaID, -time());
-            IPS_SetMediaFile($mediaID, $archiveFilePath, false);
+        // Neues Medienobjekt im Archiv erstellen
+        $mediaID = IPS_CreateMedia(1); // Image
+        IPS_SetParent($mediaID, $categoryID);
+        IPS_SetIdent($mediaID, $archiveIdent);
+        IPS_SetPosition($mediaID, -time()); // Negative Zeit für Sortierung
+        IPS_SetMediaCached($mediaID, false); // Kein Caching
+        
+        $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveIdent . ".jpg";
+        copy($snapshotPath, $archiveFilePath); // Datei ins Archiv kopieren
+        
+        IPS_SetMediaFile($mediaID, $archiveFilePath, false);
+        IPS_SetName($mediaID, $archiveName);
+        IPS_SendMediaEvent($mediaID);
 
-            $this->SendDebug('CopySnapshotToArchive', "Snapshot erfolgreich ins Archiv kopiert: $archiveFilePath", 0);
+        // Archivgröße beschränken
+        $this->PruneArchive($categoryID, $maxImages);
 
-            $this->PruneArchive($categoryID, 20); // Begrenzt auf 20 Bilder
-        } else {
-            IPS_LogMessage("Reolink", "Fehler beim Kopieren der Datei $snapshotPath ins Archiv.");
-        }
+        // Debugging
+        $this->SendDebug('CopySnapshotToArchive', "Bild ins Archiv kopiert: $archiveFilePath", 0);
     } else {
+        $this->SendDebug('CopySnapshotToArchive', "Schnappschuss-Datei existiert nicht: $snapshotPath", 0);
         IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
     }
 }
@@ -154,6 +162,7 @@ private function PruneArchive($categoryID, $maxImages)
 {
     $children = IPS_GetChildrenIDs($categoryID);
 
+    // Falls zu viele Bilder im Archiv, entferne die ältesten
     if (count($children) > $maxImages) {
         usort($children, function ($a, $b) {
             return IPS_GetObject($a)['ObjectPosition'] <=> IPS_GetObject($b)['ObjectPosition'];
