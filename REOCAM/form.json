@@ -3,30 +3,32 @@
         {
             "type": "ValidationTextBox",
             "name": "CameraIP",
-            "caption": "Camera IP"
+            "caption": "Kamera-IP"
         },
         {
             "type": "ValidationTextBox",
             "name": "Username",
-            "caption": "Username"
+            "caption": "Benutzername"
         },
         {
             "type": "PasswordTextBox",
             "name": "Password",
-            "caption": "Password"
+            "caption": "Passwort"
         },
         {
             "type": "Select",
             "name": "StreamType",
-            "caption": "Stream Type",
+            "caption": "Stream-Typ",
             "options": [
-                { "caption": "Mainstream (meist H.265)", "value": "main" },
-                { "caption": "Substream (meist H.264)", "value": "sub" }
+                {
+                    "caption": "Main Stream",
+                    "value": "main"
+                },
+                {
+                    "caption": "Sub Stream",
+                    "value": "sub"
+                }
             ]
-        },
-        {
-            "type": "Label",
-            "caption": "Optionen zur Anzeige von Variablen und Schnappschüssen:"
         },
         {
             "type": "CheckBox",
@@ -36,12 +38,32 @@
         {
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
-            "caption": "Boolean-Variablen anzeigen"
+            "caption": "Bewegungs-Variablen anzeigen"
         },
         {
             "type": "CheckBox",
             "name": "ShowSnapshots",
             "caption": "Schnappschüsse anzeigen"
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowArchives",
+            "caption": "Archivbilder anzeigen"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "MaxArchiveImages",
+            "caption": "Maximale Archivbilder",
+            "minimum": 1,
+            "maximum": 100,
+            "suffix": "Bilder"
+        }
+    ],
+    "actions": [
+        {
+            "type": "Button",
+            "caption": "Test-Schnappschuss",
+            "onClick": "REOCAM_CreateTestSnapshot($id);"
         }
     ]
 }
