@@ -400,7 +400,7 @@ private function PruneArchive($categoryID)
     if (count($children) > $maxImages) {
         // Sortiere die Kinder nach ihrer ID (niedrigste zuerst = älteste zuerst)
         usort($children, function ($a, $b) {
-            return $a - $b;
+            return $b - $a;
         });
 
         // Entferne überschüssige Bilder
