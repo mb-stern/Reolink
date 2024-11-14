@@ -5,45 +5,47 @@ class Reolink extends IPSModule
     public function Create()
     {
         parent::Create();
-
-        // Moduleigenschaften
+        
+        // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
-        $this->RegisterPropertyInteger("MaxArchiveImages", 20); // Max. Bilder im Archiv
 
-        // Schalter für Variablen und Archiv
+        // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
-        $this->RegisterPropertyBoolean("ShowArchives", true);
 
-        // Attribut für den aktuellen Webhook
+        // Attribut für den aktuellen Webhook registrieren
         $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
-
+        
         // Webhook registrieren
         $this->RegisterHook();
 
-        // Boolean-Variablen registrieren
+        // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
         $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
 
-        // Timer zur Rücksetzung
+        // Timer zur Rücksetzung der Boolean-Variablen
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
 
+        // Registriere den Webhook nur einmal
         $this->RegisterHook();
 
+        // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
@@ -62,132 +64,10 @@ class Reolink extends IPSModule
             $this->RemoveSnapshots();
         }
 
-        if ($this->ReadPropertyBoolean("ShowArchives")) {
-            $this->CreateOrUpdateArchives();
-        } else {
-            $this->RemoveArchives();
-        }
+        // Stream-URL aktualisieren
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
-    private function CreateOrUpdateArchives()
-    {
-        $categories = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
-        foreach ($categories as $category) {
-            $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
-
-            if ($categoryID === false) {
-                $categoryID = IPS_CreateCategory();
-                IPS_SetParent($categoryID, $this->InstanceID);
-                IPS_SetIdent($categoryID, "Archive_" . $category);
-                IPS_SetName($categoryID, "Bildarchiv " . $category);
-            }
-
-            $snapshotID = @IPS_GetObjectIDByIdent("Snapshot_" . $category, $this->InstanceID);
-            if ($snapshotID !== false) {
-                $this->CopySnapshotToArchive($snapshotID, $categoryID, $this->ReadPropertyInteger("MaxArchiveImages"));
-            }
-        }
-    }
-
-    private function RemoveArchives()
-    {
-        $categories = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
-        foreach ($categories as $category) {
-            $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
-            if ($categoryID !== false) {
-                IPS_DeleteCategory($categoryID);
-            }
-        }
-    }
-
-    private function CopySnapshotToArchive($snapshotID, $categoryID, $maxImages)
-    {
-        $snapshot = IPS_GetMedia($snapshotID);
-        $snapshotPath = $snapshot['MediaFile'];
-    
-        if (file_exists($snapshotPath)) {
-            $archiveFileName = "archive_" . time() . ".jpg";
-            $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
-    
-            // Datei kopieren
-            if (copy($snapshotPath, $archiveFilePath)) {
-                // Neues Medienobjekt im Archiv erstellen
-                $mediaID = IPS_CreateMedia(1);
-                IPS_SetParent($mediaID, $categoryID);
-                IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
-                IPS_SetPosition($mediaID, -time()); // Negative Zeit für neueste zuerst
-                IPS_SetMediaFile($mediaID, $archiveFilePath, false);
-    
-                // Debug: Erfolgreiches Kopieren
-                $this->SendDebug("CopySnapshotToArchive", "Snapshot erfolgreich ins Archiv kopiert: $archiveFilePath", 0);
-    
-                // Archivgröße beschränken
-                $this->PruneArchive($categoryID, $maxImages);
-            } else {
-                IPS_LogMessage("Reolink", "Fehler beim Kopieren der Datei $snapshotPath.");
-            }
-        } else {
-            IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
-        }
-    }
-    private function PruneArchive($categoryID, $maxImages)
-    {
-        $children = IPS_GetChildrenIDs($categoryID);
-    
-        // Falls zu viele Bilder im Archiv, entferne die ältesten
-        if (count($children) > $maxImages) {
-            usort($children, function ($a, $b) {
-                return IPS_GetObject($a)['ObjectPosition'] <=> IPS_GetObject($b)['ObjectPosition'];
-            });
-    
-            while (count($children) > $maxImages) {
-                $oldestID = array_shift($children);
-                IPS_DeleteMedia($oldestID, true);
-            }
-        }
-    }
-    
-    private function CreateSnapshotAtPosition($booleanIdent, $position)
-    {
-        $snapshotIdent = "Snapshot_" . $booleanIdent;
-        $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
-    
-        if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(1); // 1 = Bild
-            IPS_SetParent($mediaID, $this->InstanceID);
-            IPS_SetIdent($mediaID, $snapshotIdent);
-            IPS_SetPosition($mediaID, $position);
-            IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
-            IPS_SetMediaCached($mediaID, false);
-    
-            // Debugging: Neues Medienobjekt erstellt
-            $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
-        }
-    
-        $snapshotUrl = $this->GetSnapshotURL();
-        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
-        $imageData = @file_get_contents($snapshotUrl);
-    
-        if ($imageData !== false) {
-            file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false);
-            IPS_SendMediaEvent($mediaID);
-    
-            // Debugging: Snapshot erfolgreich erstellt
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
-    
-            // Archivieren
-            $archiveID = @IPS_GetObjectIDByIdent("Archive_" . $booleanIdent, $this->InstanceID);
-            if ($archiveID !== false) {
-                $this->CopySnapshotToArchive($mediaID, $archiveID, $this->ReadPropertyInteger("MaxArchiveImages"));
-            }
-        } else {
-            // Debugging: Fehler beim Abrufen des Snapshots
-            $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
-        }
-    }
-    
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
@@ -403,6 +283,45 @@ public function ResetBoolean(string $ident)
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
         return substr($ident, 0, 32); 
     }
+
+    private function CreateSnapshotAtPosition($booleanIdent, $position)
+{
+    $snapshotIdent = "Snapshot_" . $booleanIdent;
+    $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
+
+    if ($mediaID === false) {
+        $mediaID = IPS_CreateMedia(1);
+        IPS_SetParent($mediaID, $this->InstanceID);
+        IPS_SetIdent($mediaID, $snapshotIdent);
+        IPS_SetPosition($mediaID, $position);
+        IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
+        IPS_SetMediaCached($mediaID, false);
+
+        // Debugging: Neues Medienobjekt erstellt
+        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
+    } else {
+        // Debugging: Vorhandenes Medienobjekt gefunden
+        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
+    }
+
+    $snapshotUrl = $this->GetSnapshotURL();
+    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+    $imageData = @file_get_contents($snapshotUrl);
+
+    if ($imageData !== false) {
+        file_put_contents($tempImagePath, $imageData);
+        IPS_SetMediaFile($mediaID, $tempImagePath, false);
+        IPS_SendMediaEvent($mediaID);
+
+        // Debugging: Snapshot erfolgreich erstellt
+        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+    } else {
+        // Debugging: Fehler beim Abrufen des Snapshots
+        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
+        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
+    }
+}
+
 
     private function CreateOrUpdateStream($ident, $name)
     {
