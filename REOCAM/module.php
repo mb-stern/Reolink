@@ -16,6 +16,8 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
+        $this->RegisterPropertyBoolean("ShowArchives", true);
+        $this->RegisterPropertyInteger("MaxArchiveImages", 20);
 
         // Attribut für den aktuellen Webhook registrieren
         $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
@@ -62,6 +64,12 @@ class Reolink extends IPSModule
             $this->CreateOrUpdateSnapshots();
         } else {
             $this->RemoveSnapshots();
+        }
+
+        if ($this->ReadPropertyBoolean("ShowArchives")) {
+            $this->CreateOrUpdateArchives();
+        } else {
+            $this->RemoveArchives();
         }
 
         // Stream-URL aktualisieren
@@ -327,47 +335,80 @@ public function ResetBoolean(string $ident)
         }
     }
     
-private function CreateOrGetArchiveCategory($booleanIdent)
-{
-    $archiveIdent = "Archive_" . $booleanIdent;
-    $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
-
-    if ($categoryID === false) {
-        $categoryID = IPS_CreateCategory();
-        IPS_SetParent($categoryID, $this->InstanceID);
-        IPS_SetIdent($categoryID, $archiveIdent);
-        IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+    private function CreateOrGetArchiveCategory($booleanIdent)
+    {
+        $archiveIdent = "Archive_" . $booleanIdent;
+        $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
+    
+        if ($categoryID === false) {
+            // Archivkategorie erstellen
+            $categoryID = IPS_CreateCategory();
+            IPS_SetParent($categoryID, $this->InstanceID);
+            IPS_SetIdent($categoryID, $archiveIdent);
+            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+        }
+    
+        return $categoryID;
     }
+    
 
-    return $categoryID;
+private function CreateOrUpdateArchives()
+{
+    // Boolean-Identifikatoren für die Archive
+    $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+    
+    // Für jede Kategorie prüfen und aktualisieren
+    foreach ($categories as $category) {
+        // Archiv-Kategorie erstellen oder abrufen
+        $categoryID = $this->CreateOrGetArchiveCategory($category);
+
+        // Optional: Prune-Logik hier direkt anwenden
+        $this->PruneArchive($categoryID); // Archivgröße sofort prüfen
+    }
 }
 
-private function CopySnapshotToArchive($snapshotID, $categoryID)
+
+private function CopySnapshotToArchive($tempImagePath, $categoryID)
 {
-    $snapshot = IPS_GetMedia($snapshotID);
-    $snapshotPath = $snapshot['MediaFile']; // Der Pfad zur ursprünglichen Schnappschuss-Datei
+    $archiveIdent = "Archive_" . time();
+    $mediaID = IPS_CreateMedia(1); // Neues Medienobjekt für das Archiv-Bild
+    IPS_SetParent($mediaID, $categoryID);
+    IPS_SetIdent($mediaID, $archiveIdent);
+    IPS_SetPosition($mediaID, -time()); // Negative Zeit für neueste zuerst
+    IPS_SetName($mediaID, "Archivbild " . date("Y-m-d H:i:s"));
+    IPS_SetMediaCached($mediaID, false);
+    $archiveFilePath = IPS_GetKernelDir() . "media/archive_" . time() . ".jpg";
 
-    if (file_exists($snapshotPath)) {
-        // Archiv-Dateiname und -Pfad
-        $archiveFileName = "snapshot_" . time() . ".jpg";
-        $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
+    if (copy($tempImagePath, $archiveFilePath)) {
+        IPS_SetMediaFile($mediaID, $archiveFilePath, false);
+        IPS_SendMediaEvent($mediaID);
 
-        // Kopieren der Datei
-        if (copy($snapshotPath, $archiveFilePath)) {
-            $this->SendDebug('CopySnapshotToArchive', "Datei erfolgreich kopiert: $archiveFilePath", 0);
+        $this->SendDebug('CopySnapshotToArchive', "Bild erfolgreich ins Archiv kopiert: $archiveFilePath", 0);
 
-            // Medienobjekt für die Archivdatei erstellen
-            $archiveMediaID = IPS_CreateMedia(1); // Erstellen eines Medienobjekts für das Bild
-            IPS_SetParent($archiveMediaID, $categoryID); // Dem Archiv-Kategorie zuweisen
-            IPS_SetName($archiveMediaID, "Snapshot " . date("Y-m-d H:i:s"));
-            IPS_SetMediaFile($archiveMediaID, $archiveFilePath, false); // Archiv-Datei verknüpfen
-            IPS_SendMediaEvent($archiveMediaID); // Aktualisieren des Medienobjekts
-        } else {
-            $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $snapshotPath", 0);
-        }
+        // Archivgröße beschränken
+        $this->PruneArchive($categoryID);
     } else {
-        $this->SendDebug('CopySnapshotToArchive', "Schnappschuss-Datei existiert nicht: $snapshotPath", 0);
-        IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
+        $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
+    }
+}
+
+private function PruneArchive($categoryID)
+{
+    $maxImages = $this->ReadPropertyInteger("MaxArchiveImages");
+    $children = IPS_GetChildrenIDs($categoryID);
+
+    if (count($children) > $maxImages) {
+        // Sortiere nach ObjectPosition (älteste zuerst)
+        usort($children, function ($a, $b) {
+            return IPS_GetObject($a)['ObjectPosition'] <=> IPS_GetObject($b)['ObjectPosition'];
+        });
+
+        // Entferne überschüssige Bilder
+        while (count($children) > $maxImages) {
+            $oldestID = array_shift($children);
+            IPS_DeleteMedia($oldestID, true);
+            $this->SendDebug('PruneArchive', "Altes Bild entfernt: $oldestID", 0);
+        }
     }
 }
 
