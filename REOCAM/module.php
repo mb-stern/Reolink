@@ -360,6 +360,7 @@ if (copy($tempImagePath, $archiveFilePath)) {
 } else {
     $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
 }
+}
 
 
     private function CreateOrUpdateStream($ident, $name)
