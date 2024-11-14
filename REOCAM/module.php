@@ -438,6 +438,25 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     }
 }
 
+private function RemoveArchives()
+{
+    $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"]; // Alle möglichen Archiv-Kategorien
+    foreach ($categories as $category) {
+        $archiveIdent = "Archive_" . $category;
+        $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
+        if ($categoryID !== false) {
+            $children = IPS_GetChildrenIDs($categoryID);
+            foreach ($children as $childID) {
+                if (IPS_MediaExists($childID)) {
+                    IPS_DeleteMedia($childID, true); // Löscht das Medienobjekt
+                }
+            }
+            IPS_DeleteCategory($categoryID); // Löscht die Kategorie
+            $this->SendDebug('RemoveArchives', "Archivkategorie $categoryID wurde entfernt.", 0);
+        }
+    }
+}
+
 
     private function CreateOrUpdateStream($ident, $name)
     {
