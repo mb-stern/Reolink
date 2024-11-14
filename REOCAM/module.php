@@ -388,6 +388,7 @@ private function CreateOrUpdateArchives()
     }
 }
 
+/*
 private function CopySnapshotToArchive($tempImagePath, $categoryID)
 {
     $archiveIdent = "Archive_" . time();
@@ -414,6 +415,7 @@ private function CopySnapshotToArchive($tempImagePath, $categoryID)
         $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
     }
 }
+*/
 
 private function PruneArchive($categoryID)
 {
