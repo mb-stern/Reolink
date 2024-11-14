@@ -153,7 +153,7 @@ class Reolink extends IPSModule
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(1);
+            $mediaID = IPS_CreateMedia(1); // 1 = Bild
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $snapshotIdent);
             IPS_SetPosition($mediaID, $position);
@@ -162,9 +162,6 @@ class Reolink extends IPSModule
     
             // Debugging: Neues Medienobjekt erstellt
             $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
-        } else {
-            // Debugging: Vorhandenes Medienobjekt gefunden
-            $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
         $snapshotUrl = $this->GetSnapshotURL();
@@ -183,8 +180,6 @@ class Reolink extends IPSModule
             $archiveID = @IPS_GetObjectIDByIdent("Archive_" . $booleanIdent, $this->InstanceID);
             if ($archiveID !== false) {
                 $this->CopySnapshotToArchive($mediaID, $archiveID, $this->ReadPropertyInteger("MaxArchiveImages"));
-            } else {
-                $this->SendDebug('CreateSnapshotAtPosition', "Archiv für $booleanIdent nicht gefunden.", 0);
             }
         } else {
             // Debugging: Fehler beim Abrufen des Snapshots
@@ -192,7 +187,7 @@ class Reolink extends IPSModule
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
     }
-
+    
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
