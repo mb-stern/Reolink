@@ -82,7 +82,7 @@ class Reolink extends IPSModule
         $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
 
         if (!is_array($hooks)) {
-        $hooks = [];
+        $hooks = [];zz
         }
 
         // Prüfen, ob der Hook bereits existiert
