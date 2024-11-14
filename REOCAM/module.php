@@ -360,8 +360,12 @@ if (copy($tempImagePath, $archiveFilePath)) {
 } else {
     $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
 }
-}
 
+    } else {
+        $this->SendDebug('CopySnapshotToArchive', "Schnappschuss-Datei existiert nicht: $snapshotPath", 0);
+        IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
+    }
+}
 
     private function CreateOrUpdateStream($ident, $name)
     {
