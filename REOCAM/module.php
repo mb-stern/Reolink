@@ -226,9 +226,9 @@ public function ResetBoolean(string $ident)
 
     private function CreateBooleanVariables()
     {
-        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
-        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
+        $this->RegisterVariableBoolean("Person", "Person", "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
         $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
     }
@@ -358,8 +358,11 @@ public function ResetBoolean(string $ident)
                 case "Fahrzeug":
                     IPS_SetPosition($categoryID, 32);
                     break;
-                case "Test":
+                case "Bewegung":
                     IPS_SetPosition($categoryID, 37);
+                    break;
+                case "Test":
+                    IPS_SetPosition($categoryID, 42);
                     break;
                 default:
                     IPS_SetPosition($categoryID, 99); // Standardposition
