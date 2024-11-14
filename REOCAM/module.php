@@ -284,7 +284,7 @@ public function ResetBoolean(string $ident)
         return substr($ident, 0, 32); 
     }
 
-    private function CreateSnapshotAtPosition($booleanIdent, $position)
+private function CreateSnapshotAtPosition($booleanIdent, $position)
 {
     $snapshotIdent = "Snapshot_" . $booleanIdent;
     $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
@@ -297,10 +297,8 @@ public function ResetBoolean(string $ident)
         IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
         IPS_SetMediaCached($mediaID, false);
 
-        // Debugging: Neues Medienobjekt erstellt
         $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
     } else {
-        // Debugging: Vorhandenes Medienobjekt gefunden
         $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
     }
 
@@ -316,9 +314,10 @@ public function ResetBoolean(string $ident)
         // Debugging: Snapshot erfolgreich erstellt
         $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
 
-        // Archivbild erstellen durch Kopie des existierenden Schnappschusses
+        // Kopiere Schnappschuss ins Archiv
         $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
-        $this->CopySnapshotToArchive($tempImagePath, $archiveCategoryID);
+        $this->CopySnapshotToArchive($mediaID, $archiveCategoryID);
+
     } else {
         // Debugging: Fehler beim Abrufen des Snapshots
         $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
