@@ -398,16 +398,16 @@ private function PruneArchive($categoryID)
     $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder: $maxImages", 0);
 
     if (count($children) > $maxImages) {
-        // Sortiere die Kinder nach ihrer ID (niedrigste zuerst = älteste zuerst)
-        usort($children, function ($b, $a) {
-            return $a - $b;
+        // Sortiere die Kinder nach Position (höher = älter)
+        usort($children, function ($a, $b) {
+            return IPS_GetObject($b)['ObjectPosition'] <=> IPS_GetObject($a)['ObjectPosition'];
         });
 
         // Entferne überschüssige Bilder
         while (count($children) > $maxImages) {
-            $oldestID = array_shift($children); // Nimm das erste Element (ältestes)
+            $oldestID = array_shift($children); // Nimm das erste Element (höchste Position = ältestes)
             IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
-            $this->SendDebug('PruneArchive', "Entferntes Bild: $oldestID", 0);
+            $this->SendDebug('PruneArchive', "Entferntes Bild mit Position: " . IPS_GetObject($oldestID)['ObjectPosition'], 0);
         }
     }
 }
