@@ -382,45 +382,6 @@ public function ResetBoolean(string $ident)
         return substr($ident, 0, 32); 
     }
 
-    private function CreateSnapshotAtPosition($booleanIdent, $position)
-{
-    $snapshotIdent = "Snapshot_" . $booleanIdent;
-    $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
-
-    if ($mediaID === false) {
-        $mediaID = IPS_CreateMedia(1);
-        IPS_SetParent($mediaID, $this->InstanceID);
-        IPS_SetIdent($mediaID, $snapshotIdent);
-        IPS_SetPosition($mediaID, $position);
-        IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
-        IPS_SetMediaCached($mediaID, false);
-
-        // Debugging: Neues Medienobjekt erstellt
-        $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
-    } else {
-        // Debugging: Vorhandenes Medienobjekt gefunden
-        $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
-    }
-
-    $snapshotUrl = $this->GetSnapshotURL();
-    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
-    $imageData = @file_get_contents($snapshotUrl);
-
-    if ($imageData !== false) {
-        file_put_contents($tempImagePath, $imageData);
-        IPS_SetMediaFile($mediaID, $tempImagePath, false);
-        IPS_SendMediaEvent($mediaID);
-
-        // Debugging: Snapshot erfolgreich erstellt
-        $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
-    } else {
-        // Debugging: Fehler beim Abrufen des Snapshots
-        $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
-        IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
-    }
-}
-
-
     private function CreateOrUpdateStream($ident, $name)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
