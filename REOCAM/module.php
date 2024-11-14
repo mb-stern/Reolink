@@ -408,6 +408,8 @@ private function CopySnapshotToArchive($tempImagePath, $categoryID)
 
         // Archivgröße sofort prüfen
         $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
+        $this->SendDebug('PruneArchive', "PruneArchive wurde nach Hinzufügen eines Bildes aufgerufen.", 0);
+
     } else {
         $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
     }
@@ -416,12 +418,13 @@ private function CopySnapshotToArchive($tempImagePath, $categoryID)
 private function PruneArchive($categoryID)
 {
     $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
-    $children = IPS_GetChildrenIDs($categoryID);
+    $children = IPS_GetChildrenIDs($categoryID); // Kinder (Bilder) im Archiv abrufen
+
+    // Debug-Ausgaben zur Überprüfung
+    $this->SendDebug('PruneArchive', "Anzahl der Kinder im Archiv: " . count($children), 0);
+    $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder: $maxImages", 0);
 
     if (count($children) > $maxImages) {
-        // Debug-Ausgabe: Anzahl der Kinder und Limit
-        $this->SendDebug('PruneArchive', "Anzahl der Bilder: " . count($children) . ", Limit: $maxImages", 0);
-
         // Sortiere die Kinder nach Position (älteste zuerst)
         usort($children, function ($a, $b) {
             return IPS_GetObject($a)['ObjectPosition'] <=> IPS_GetObject($b)['ObjectPosition'];
@@ -431,7 +434,7 @@ private function PruneArchive($categoryID)
         while (count($children) > $maxImages) {
             $oldestID = array_shift($children);
             IPS_DeleteMedia($oldestID, true);
-            $this->SendDebug('PruneArchive', "Altes Bild entfernt: $oldestID", 0);
+            $this->SendDebug('PruneArchive', "Entferntes Bild: $oldestID", 0);
         }
     }
 }
