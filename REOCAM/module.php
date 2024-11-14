@@ -346,12 +346,30 @@ public function ResetBoolean(string $ident)
             IPS_SetParent($categoryID, $this->InstanceID);
             IPS_SetIdent($categoryID, $archiveIdent);
             IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+    
+            // Position basierend auf dem Boolean-Ident setzen
+            switch ($booleanIdent) {
+                case "Person":
+                    IPS_SetPosition($categoryID, 22);
+                    break;
+                case "Tier":
+                    IPS_SetPosition($categoryID, 27);
+                    break;
+                case "Fahrzeug":
+                    IPS_SetPosition($categoryID, 32);
+                    break;
+                case "Test":
+                    IPS_SetPosition($categoryID, 37);
+                    break;
+                default:
+                    IPS_SetPosition($categoryID, 99); // Standardposition
+                    break;
+            }
         }
     
         return $categoryID;
     }
     
-
 private function CreateOrUpdateArchives()
 {
     // Boolean-Identifikatoren für die Archive
