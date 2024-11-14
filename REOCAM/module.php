@@ -400,14 +400,25 @@ private function PruneArchive($categoryID)
     if (count($children) > $maxImages) {
         // Sortiere die Kinder nach Position (höher = älter)
         usort($children, function ($a, $b) {
-            return IPS_GetObject($b)['ObjectPosition'] <=> IPS_GetObject($a)['ObjectPosition'];
+            $objectA = @IPS_GetObject($a); // Hole das Objekt sicher
+            $objectB = @IPS_GetObject($b); // Hole das Objekt sicher
+            if ($objectA === false || $objectB === false) {
+                return 0; // Wenn eines der Objekte fehlt, bleibt die Reihenfolge unverändert
+            }
+            return $objectB['ObjectPosition'] <=> $objectA['ObjectPosition'];
         });
 
         // Entferne überschüssige Bilder
         while (count($children) > $maxImages) {
             $oldestID = array_shift($children); // Nimm das erste Element (höchste Position = ältestes)
-            IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
-            $this->SendDebug('PruneArchive', "Entferntes Bild mit Position: " . IPS_GetObject($oldestID)['ObjectPosition'], 0);
+            
+            // Überprüfe, ob das Objekt existiert
+            if (@IPS_ObjectExists($oldestID) && IPS_MediaExists($oldestID)) {
+                IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
+                $this->SendDebug('PruneArchive', "Entferntes Bild mit ID: $oldestID", 0);
+            } else {
+                $this->SendDebug('PruneArchive', "Bild mit ID $oldestID existiert nicht mehr, übersprungen.", 0);
+            }
         }
     }
 }
