@@ -130,7 +130,6 @@ class Reolink extends IPSModule
             IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
         }
     }
-    
     private function PruneArchive($categoryID, $maxImages)
     {
         $children = IPS_GetChildrenIDs($categoryID);
@@ -184,6 +183,8 @@ class Reolink extends IPSModule
             $archiveID = @IPS_GetObjectIDByIdent("Archive_" . $booleanIdent, $this->InstanceID);
             if ($archiveID !== false) {
                 $this->CopySnapshotToArchive($mediaID, $archiveID, $this->ReadPropertyInteger("MaxArchiveImages"));
+            } else {
+                $this->SendDebug('CreateSnapshotAtPosition', "Archiv für $booleanIdent nicht gefunden.", 0);
             }
         } else {
             // Debugging: Fehler beim Abrufen des Snapshots
