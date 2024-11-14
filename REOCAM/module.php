@@ -192,21 +192,6 @@ class Reolink extends IPSModule
         }
     }
     
-    private function PruneArchive($categoryID, $maxImages)
-    {
-        $children = IPS_GetChildrenIDs($categoryID);
-        if (count($children) > $maxImages) {
-            usort($children, function ($a, $b) {
-                return IPS_GetObject($a)['ObjectIdent'] <=> IPS_GetObject($b)['ObjectIdent'];
-            });
-
-            while (count($children) > $maxImages) {
-                $oldestID = array_shift($children);
-                IPS_DeleteMedia($oldestID, true);
-            }
-        }
-    }
-
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
