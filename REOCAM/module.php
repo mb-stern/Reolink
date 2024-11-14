@@ -5,115 +5,69 @@ class Reolink extends IPSModule
     public function Create()
     {
         parent::Create();
-
+        
         // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Schalter und Archivkonfiguration
+        // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
         $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
-        $this->RegisterPropertyBoolean("ShowArchives", true);
-        $this->RegisterPropertyInteger("MaxArchiveImages", 20);
 
-        // Timer für Boolean-Reset
+        // Attribut für den aktuellen Webhook registrieren
+        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
+        
+        // Webhook registrieren
+        $this->RegisterHook();
+
+        // Standard-Boolean-Variablen für Bewegungen registrieren
+        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+
+        // Timer zur Rücksetzung der Boolean-Variablen
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
 
-        // Kategorien und Archivbilder verwalten
-        if ($this->ReadPropertyBoolean("ShowArchives")) {
-            $this->CreateOrUpdateArchives();
+        // Registriere den Webhook nur einmal
+        $this->RegisterHook();
+
+        // Verwalte Variablen und andere Einstellungen
+        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
+            $this->CreateWebhookVariables();
         } else {
-            $this->RemoveArchives();
+            $this->RemoveWebhookVariables();
         }
-    }
 
-    private function CreateOrUpdateArchives()
-    {
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung"];
-        $maxImages = $this->ReadPropertyInteger("MaxArchiveImages");
-
-        foreach ($categories as $category) {
-            $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
-
-            // Kategorie erstellen, falls nicht vorhanden
-            if ($categoryID === false) {
-                $categoryID = IPS_CreateCategory();
-                IPS_SetParent($categoryID, $this->InstanceID);
-                IPS_SetIdent($categoryID, "Archive_" . $category);
-                IPS_SetName($categoryID, "Bildarchiv " . $category);
-            }
-
-            // Schnappschuss ins Archiv kopieren
-            $snapshotID = @IPS_GetObjectIDByIdent("Snapshot_" . $category, $this->InstanceID);
-            if ($snapshotID !== false) {
-                $this->CopySnapshotToArchive($snapshotID, $categoryID, $maxImages);
-            }
-        }
-    }
-
-    private function RemoveArchives()
-    {
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung"];
-        foreach ($categories as $category) {
-            $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
-            if ($categoryID !== false) {
-                IPS_DeleteCategory($categoryID); // Nur ein Parameter erforderlich
-            }
-        }
-    }
-    
-    private function CopySnapshotToArchive($snapshotID, $categoryID, $maxImages)
-    {
-        $snapshot = IPS_GetMedia($snapshotID);
-        $snapshotPath = $snapshot['MediaFile'];
-    
-        if (file_exists($snapshotPath)) {
-            $archiveFileName = "archive_" . time() . ".jpg";
-            $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
-    
-            // Datei kopieren
-            if (copy($snapshotPath, $archiveFilePath)) {
-                $mediaID = IPS_CreateMedia(1);
-                IPS_SetParent($mediaID, $categoryID);
-                IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
-                IPS_SetMediaFile($mediaID, $archiveFilePath, false);
-    
-                $this->PruneArchive($categoryID, $maxImages);
-            } else {
-                IPS_LogMessage("Reolink", "Fehler beim Kopieren der Datei $snapshotPath.");
-            }
+        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
+            $this->CreateBooleanVariables();
         } else {
-            IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
+            $this->RemoveBooleanVariables();
         }
-    }
-    
-    private function PruneArchive($categoryID, $maxImages)
-    {
-        $children = IPS_GetChildrenIDs($categoryID);
-        if (count($children) > $maxImages) {
-            // Älteste Datei ermitteln und löschen
-            usort($children, function ($a, $b) {
-                return IPS_GetObject($a)['ObjectIdent'] <=> IPS_GetObject($b)['ObjectIdent'];
-            });
-    
-            while (count($children) > $maxImages) {
-                $oldestID = array_shift($children);
-                IPS_DeleteMedia($oldestID, true);
-            }
+
+        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+            $this->CreateOrUpdateSnapshots();
+        } else {
+            $this->RemoveSnapshots();
         }
+
+        // Stream-URL aktualisieren
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
-    
+
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
