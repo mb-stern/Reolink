@@ -104,7 +104,7 @@ private function CreateSnapshotAtPosition($booleanIdent, $position)
         $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
         IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
     }
-}
+    
 if ($this->ReadPropertyBoolean("ShowArchives")) {
     $archiveID = $this->CreateOrGetArchiveCategory($booleanIdent);
     $this->CopySnapshotToArchive($mediaID, $archiveID, $this->ReadPropertyInteger("MaxArchiveImages"));
