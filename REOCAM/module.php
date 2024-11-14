@@ -343,24 +343,26 @@ private function CreateOrGetArchiveCategory($booleanIdent)
 private function CopySnapshotToArchive($snapshotID, $categoryID)
 {
     $snapshot = IPS_GetMedia($snapshotID);
-    $snapshotPath = $snapshot['MediaFile'];
+    $snapshotPath = $snapshot['MediaFile']; // Der Pfad zur ursprünglichen Schnappschuss-Datei
 
     if (file_exists($snapshotPath)) {
+        // Archiv-Dateiname und -Pfad
         $archiveFileName = "snapshot_" . time() . ".jpg";
-        $archiveFilePath = IPS_GetKernelDir() . "media/archive_" . time() . ".jpg";
+        $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
 
-if (copy($tempImagePath, $archiveFilePath)) {
-    $this->SendDebug('CopySnapshotToArchive', "Datei erfolgreich kopiert: $archiveFilePath", 0);
-    // Medienobjekt für die Archivdatei erstellen
-    $archiveMediaID = IPS_CreateMedia(1);
-    IPS_SetParent($archiveMediaID, $categoryID);
-    IPS_SetName($archiveMediaID, "Snapshot " . date("Y-m-d H:i:s"));
-    IPS_SetMediaFile($archiveMediaID, $archiveFilePath, false);
-    IPS_SendMediaEvent($archiveMediaID);
-} else {
-    $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
-}
+        // Kopieren der Datei
+        if (copy($snapshotPath, $archiveFilePath)) {
+            $this->SendDebug('CopySnapshotToArchive', "Datei erfolgreich kopiert: $archiveFilePath", 0);
 
+            // Medienobjekt für die Archivdatei erstellen
+            $archiveMediaID = IPS_CreateMedia(1); // Erstellen eines Medienobjekts für das Bild
+            IPS_SetParent($archiveMediaID, $categoryID); // Dem Archiv-Kategorie zuweisen
+            IPS_SetName($archiveMediaID, "Snapshot " . date("Y-m-d H:i:s"));
+            IPS_SetMediaFile($archiveMediaID, $archiveFilePath, false); // Archiv-Datei verknüpfen
+            IPS_SendMediaEvent($archiveMediaID); // Aktualisieren des Medienobjekts
+        } else {
+            $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $snapshotPath", 0);
+        }
     } else {
         $this->SendDebug('CopySnapshotToArchive', "Schnappschuss-Datei existiert nicht: $snapshotPath", 0);
         IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
