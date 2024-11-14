@@ -206,7 +206,6 @@ class Reolink extends IPSModule
             }
         }
     }
-}
 
     private function RegisterHook()
     {
