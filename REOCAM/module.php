@@ -105,19 +105,21 @@ private function CreateSnapshotAtPosition($booleanIdent, $position)
         IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
+if ($this->ReadPropertyBoolean("ShowArchives")) {
+    $archiveID = $this->CreateOrGetArchiveCategory($booleanIdent);
+    $this->CopySnapshotToArchive($mediaID, $archiveID, $this->ReadPropertyInteger("MaxArchiveImages"));
+}
 
 private function CreateOrGetArchiveCategory($booleanIdent)
 {
     $archiveIdent = "Archive_" . $booleanIdent;
-    $archiveName = "Bildarchiv " . ucfirst($booleanIdent);
     $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
 
     if ($categoryID === false) {
         $categoryID = IPS_CreateCategory();
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, $archiveIdent);
-        IPS_SetName($categoryID, $archiveName);
-        $this->SendDebug('CreateOrGetArchiveCategory', "Archivkategorie $archiveName erstellt.", 0);
+        IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
     }
 
     return $categoryID;
