@@ -68,39 +68,52 @@ class Reolink extends IPSModule
         foreach ($categories as $category) {
             $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
             if ($categoryID !== false) {
-                IPS_DeleteCategory($categoryID, true);
+                IPS_DeleteCategory($categoryID); // Nur ein Parameter erforderlich
             }
         }
     }
-
+    
     private function CopySnapshotToArchive($snapshotID, $categoryID, $maxImages)
     {
         $snapshot = IPS_GetMedia($snapshotID);
         $snapshotPath = $snapshot['MediaFile'];
-
+    
         if (file_exists($snapshotPath)) {
             $archiveFileName = "archive_" . time() . ".jpg";
             $archiveFilePath = IPS_GetKernelDir() . "media/" . $archiveFileName;
-
-            copy($snapshotPath, $archiveFilePath);
-
-            $mediaID = IPS_CreateMedia(1);
-            IPS_SetParent($mediaID, $categoryID);
-            IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
-            IPS_SetMediaFile($mediaID, $archiveFilePath, false);
-
-            $this->PruneArchive($categoryID, $maxImages);
+    
+            // Datei kopieren
+            if (copy($snapshotPath, $archiveFilePath)) {
+                $mediaID = IPS_CreateMedia(1);
+                IPS_SetParent($mediaID, $categoryID);
+                IPS_SetName($mediaID, "Snapshot " . date("Y-m-d H:i:s"));
+                IPS_SetMediaFile($mediaID, $archiveFilePath, false);
+    
+                $this->PruneArchive($categoryID, $maxImages);
+            } else {
+                IPS_LogMessage("Reolink", "Fehler beim Kopieren der Datei $snapshotPath.");
+            }
+        } else {
+            IPS_LogMessage("Reolink", "Schnappschuss-Datei $snapshotPath existiert nicht.");
         }
     }
-
+    
     private function PruneArchive($categoryID, $maxImages)
     {
         $children = IPS_GetChildrenIDs($categoryID);
         if (count($children) > $maxImages) {
-            $oldestID = $children[0];
-            IPS_DeleteMedia($oldestID, true);
+            // Älteste Datei ermitteln und löschen
+            usort($children, function ($a, $b) {
+                return IPS_GetObject($a)['ObjectIdent'] <=> IPS_GetObject($b)['ObjectIdent'];
+            });
+    
+            while (count($children) > $maxImages) {
+                $oldestID = array_shift($children);
+                IPS_DeleteMedia($oldestID, true);
+            }
         }
     }
+    
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
