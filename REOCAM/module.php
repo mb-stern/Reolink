@@ -406,8 +406,8 @@ private function CopySnapshotToArchive($tempImagePath, $categoryID)
 
         $this->SendDebug('CopySnapshotToArchive', "Bild erfolgreich ins Archiv kopiert: $archiveFilePath", 0);
 
-        // Archivgröße beschränken
-        $this->PruneArchive($categoryID);
+        // **Archivgröße beschränken**
+        $this->PruneArchive($categoryID); // Maximale Anzahl überprüfen und überschüssige Bilder löschen
     } else {
         $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
     }
@@ -415,7 +415,7 @@ private function CopySnapshotToArchive($tempImagePath, $categoryID)
 
 private function PruneArchive($categoryID)
 {
-    $maxImages = $this->ReadPropertyInteger("MaxArchiveImages");
+    $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Maximale Anzahl aus den Einstellungen
     $children = IPS_GetChildrenIDs($categoryID);
 
     if (count($children) > $maxImages) {
