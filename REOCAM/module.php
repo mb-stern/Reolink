@@ -87,7 +87,7 @@ private function CreateSnapshotAtPosition($booleanIdent, $position)
     }
 
     $snapshotUrl = $this->GetSnapshotURL();
-    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+    $tempImagePath = IPS_GetKernelDir() . "media.DIRECTORY_SEPARATOR.snapshot_temp_" . $booleanIdent . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
