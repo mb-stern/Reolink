@@ -388,35 +388,6 @@ private function CreateOrUpdateArchives()
     }
 }
 
-/*
-private function CopySnapshotToArchive($tempImagePath, $categoryID)
-{
-    $archiveIdent = "Archive_" . time();
-    $mediaID = IPS_CreateMedia(1); // Neues Medienobjekt für das Archiv-Bild
-    IPS_SetParent($mediaID, $categoryID);
-    IPS_SetIdent($mediaID, $archiveIdent);
-    IPS_SetPosition($mediaID, -time()); // Negative Zeit für neueste zuerst
-    IPS_SetName($mediaID, "Archivbild " . date("Y-m-d H:i:s"));
-    IPS_SetMediaCached($mediaID, false);
-    $archiveFilePath = IPS_GetKernelDir() . "media/archive_" . time() . ".jpg";
-
-    // Kopieren des Schnappschusses in die Archivdatei
-    if (copy($tempImagePath, $archiveFilePath)) {
-        IPS_SetMediaFile($mediaID, $archiveFilePath, false);
-        IPS_SendMediaEvent($mediaID);
-
-        $this->SendDebug('CopySnapshotToArchive', "Bild erfolgreich ins Archiv kopiert: $archiveFilePath", 0);
-
-        // Archivgröße sofort prüfen
-        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
-        $this->SendDebug('PruneArchive', "PruneArchive wurde nach Hinzufügen eines Bildes aufgerufen.", 0);
-
-    } else {
-        $this->SendDebug('CopySnapshotToArchive', "Fehler beim Kopieren der Datei: $tempImagePath", 0);
-    }
-}
-*/
-
 private function PruneArchive($categoryID)
 {
     $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
@@ -427,15 +398,15 @@ private function PruneArchive($categoryID)
     $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder: $maxImages", 0);
 
     if (count($children) > $maxImages) {
-        // Sortiere die Kinder nach Position (älteste zuerst)
+        // Sortiere die Kinder nach ihrer ID (niedrigste zuerst = älteste zuerst)
         usort($children, function ($a, $b) {
-            return IPS_GetObject($a)['ObjectPosition'] <=> IPS_GetObject($b)['ObjectPosition'];
+            return $a - $b;
         });
 
         // Entferne überschüssige Bilder
         while (count($children) > $maxImages) {
-            $oldestID = array_shift($children);
-            IPS_DeleteMedia($oldestID, true);
+            $oldestID = array_shift($children); // Nimm das erste Element (ältestes)
+            IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
             $this->SendDebug('PruneArchive', "Entferntes Bild: $oldestID", 0);
         }
     }
