@@ -71,7 +71,7 @@ class Reolink extends IPSModule
 
     private function CreateOrUpdateArchives()
     {
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung"];
+        $categories = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
         foreach ($categories as $category) {
             $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
 
@@ -91,7 +91,7 @@ class Reolink extends IPSModule
 
     private function RemoveArchives()
     {
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung"];
+        $categories = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
         foreach ($categories as $category) {
             $categoryID = @IPS_GetObjectIDByIdent("Archive_" . $category, $this->InstanceID);
             if ($categoryID !== false) {
@@ -192,7 +192,7 @@ class Reolink extends IPSModule
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
     }
-    
+
     private function RegisterHook()
     {
         $hookName = '/hook/reolink'; // Fester Name für den Webhook
