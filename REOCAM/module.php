@@ -18,9 +18,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
-
-        // Attribut für den aktuellen Webhook registrieren
-        $this->RegisterAttributeString("CurrentHook", ""); // Initial leer
         
         // Webhook registrieren
         $this->RegisterHook();
@@ -44,7 +41,6 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        // Registriere den Webhook nur einmal
         $this->RegisterHook();
 
         // Verwalte Variablen und andere Einstellungen
@@ -162,6 +158,26 @@ class Reolink extends IPSModule
         }
     }
 
+    private function CreateBooleanVariables()
+    {
+        $this->RegisterVariableBoolean("Person", "Person", "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion", 30);
+        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+    }
+
+    private function RemoveBooleanVariables()
+    {
+        $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+        foreach ($booleans as $booleanIdent) {
+            $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
+            if ($varID !== false) {
+                $this->UnregisterVariable($booleanIdent);
+            }
+        }
+    }
+
     private function ActivateBoolean($ident, $position)
 {
     $timerName = $ident . "_Reset";
@@ -220,26 +236,6 @@ public function ResetBoolean(string $ident)
             $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
             if ($varID !== false) {
                 $this->UnregisterVariable($ident);
-            }
-        }
-    }
-
-    private function CreateBooleanVariables()
-    {
-        $this->RegisterVariableBoolean("Person", "Person", "~Motion", 20);
-        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion", 30);
-        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
-    }
-
-    private function RemoveBooleanVariables()
-    {
-        $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
-        foreach ($booleans as $booleanIdent) {
-            $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
-            if ($varID !== false) {
-                $this->UnregisterVariable($booleanIdent);
             }
         }
     }
