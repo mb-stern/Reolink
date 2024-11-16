@@ -559,7 +559,6 @@ private function RemoveArchives()
     }
 }
 
-
     private function CreateOrUpdateStream($ident, $name)
     {
         $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
