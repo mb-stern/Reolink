@@ -1,50 +1,81 @@
 {
     "elements": [
         {
-            "type": "ValidationTextBox",
-            "name": "CameraIP",
-            "caption": "Kamera-IP-Adresse",
-            "required": true
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "Username",
-            "caption": "Benutzername"
-        },
-        {
-            "type": "PasswordTextBox",
-            "name": "Password",
-            "caption": "Passwort"
-        },
-        {
-            "type": "Select",
-            "name": "StreamType",
-            "caption": "Stream-Typ",
-            "options": [
-                { "label": "Main", "value": "main" },
-                { "label": "Sub", "value": "sub" }
+            "type": "ExpansionPanel",
+            "caption": "Kameraeinstellungen",
+            "items": [
+                {
+                    "type": "ValidationTextBox",
+                    "name": "CameraIP",
+                    "caption": "Kamera-IP"
+                },
+                {
+                    "type": "ValidationTextBox",
+                    "name": "Username",
+                    "caption": "Benutzername"
+                },
+                {
+                    "type": "PasswordTextBox",
+                    "name": "Password",
+                    "caption": "Passwort"
+                },
+                {
+                    "type": "Select",
+                    "name": "StreamType",
+                    "caption": "Streamtyp",
+                    "options": [
+                        { "caption": "Mainstream", "value": "main" },
+                        { "caption": "Substream", "value": "sub" }
+                    ]
+                }
             ]
         },
         {
-            "type": "NumberSpinner",
-            "name": "MaxArchiveImages",
-            "caption": "Maximale Anzahl an Archivbildern",
-            "minimum": 1
+            "type": "ExpansionPanel",
+            "caption": "Webhook-Information",
+            "items": [
+                {
+                    "type": "Label",
+                    "caption": "Der aktuelle Webhook-Pfad ist:"
+                },
+                {
+                    "type": "Label",
+                    "name": "WebhookPath",
+                    "caption": ""
+                }
+            ]
         },
         {
-            "type": "SelectCategory",
-            "caption": "Kategorie"
-        },
-        {
-            "type": "Label",
-            "caption": "Der folgende Hook-Pfad wurde für diese Instanz generiert:"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "WebhookPathInfo",
-            "caption": "Webhook Pfad",
-            "enabled": false
+            "type": "ExpansionPanel",
+            "caption": "Optionen",
+            "items": [
+                {
+                    "type": "CheckBox",
+                    "name": "ShowWebhookVariables",
+                    "caption": "Webhook-Variablen anzeigen"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowBooleanVariables",
+                    "caption": "Boolean-Variablen anzeigen"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowSnapshots",
+                    "caption": "Snapshots anzeigen"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowArchives",
+                    "caption": "Archive anzeigen"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "MaxArchiveImages",
+                    "caption": "Maximale Anzahl Bilder im Archiv",
+                    "minimum": 1
+                }
+            ]
         }
-        
     ]
 }
