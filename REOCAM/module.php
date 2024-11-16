@@ -28,6 +28,8 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
+
+        $this->IPS_ApplyChanges()
     }
     
     public function ApplyChanges()
@@ -113,10 +115,6 @@ class Reolink extends IPSModule
         $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
-
-        // Webhook-Pfad in der Form anzeigen
-        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
-    
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
     }
