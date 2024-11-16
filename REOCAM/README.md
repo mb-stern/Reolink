@@ -36,10 +36,11 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 ### 2. Voraussetzungen
 
 - IP-Symcon ab Version 7.0
+- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center
 
 ### 3. Software-Installation
 
-* Über den Module Store kann das Modul unter dem genauen Namen gefunden und installiert werden.
+* Über den Module Store kann das Modul, weil aktuell beta, nur unter dem genauen Namen 'Reolink' gefunden und installiert werden.
 
 ### 4. Einrichten der Instanzen in IP-Symcon
 
