@@ -14,7 +14,7 @@
                     "caption": ""
                 }
             ]
-        }
+        },
         {
             "type": "ValidationTextBox",
             "name": "CameraIP",
