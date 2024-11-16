@@ -66,7 +66,7 @@ Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der 
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Diese kann in der Visualisierung angezeigt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
 
-![alt text](../images/image.png)
+![alt text](../images/form.png)
 
 ### 5. Statusvariablen und Profile
 
