@@ -1,68 +1,81 @@
 {
+    "elements": [
         {
-            "type": "Label",
-            "caption": "Der aktuelle Webhook-Pfad ist:"
-        },
-        {
-            "type": "Label",
-            "name": "WebhookPath",
-            "caption": ""
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "CameraIP",
-            "caption": "Kamera IP"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "Username",
-            "caption": "Benutzername"
-        },
-        {
-            "type": "PasswordTextBox",
-            "name": "Password",
-            "caption": "Passwort"
-        },
-        {
-            "type": "Select",
-            "name": "StreamType",
-            "caption": "Stream-Typ",
-            "options": [
+            "type": "ExpansionPanel",
+            "caption": "Kameraeinstellungen",
+            "items": [
                 {
-                    "caption": "Hauptstream",
-                    "value": "main"
+                    "type": "ValidationTextBox",
+                    "name": "CameraIP",
+                    "caption": "Kamera-IP"
                 },
                 {
-                    "caption": "Nebenstream",
-                    "value": "sub"
+                    "type": "ValidationTextBox",
+                    "name": "Username",
+                    "caption": "Benutzername"
+                },
+                {
+                    "type": "PasswordTextBox",
+                    "name": "Password",
+                    "caption": "Passwort"
+                },
+                {
+                    "type": "Select",
+                    "name": "StreamType",
+                    "caption": "Streamtyp",
+                    "options": [
+                        { "caption": "Mainstream", "value": "main" },
+                        { "caption": "Substream", "value": "sub" }
+                    ]
                 }
             ]
         },
         {
-            "type": "CheckBox",
-            "name": "ShowWebhookVariables",
-            "caption": "Webhook-Variablen anzeigen"
+            "type": "ExpansionPanel",
+            "caption": "Webhook-Information",
+            "items": [
+                {
+                    "type": "Label",
+                    "caption": "Der aktuelle Webhook-Pfad ist:"
+                },
+                {
+                    "type": "Label",
+                    "name": "WebhookPath",
+                    "caption": ""
+                }
+            ]
         },
         {
-            "type": "CheckBox",
-            "name": "ShowBooleanVariables",
-            "caption": "Boolean-Variablen anzeigen"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowSnapshots",
-            "caption": "Snapshots anzeigen"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowArchives",
-            "caption": "Archiv anzeigen"
-        },
-        {
-            "type": "NumberSpinner",
-            "name": "MaxArchiveImages",
-            "caption": "Maximale Anzahl Archivbilder",
-            "minimum": 1,
-            "suffix": "Bilder"
+            "type": "ExpansionPanel",
+            "caption": "Optionen",
+            "items": [
+                {
+                    "type": "CheckBox",
+                    "name": "ShowWebhookVariables",
+                    "caption": "Webhook-Variablen anzeigen"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowBooleanVariables",
+                    "caption": "Boolean-Variablen anzeigen"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowSnapshots",
+                    "caption": "Snapshots anzeigen"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "ShowArchives",
+                    "caption": "Archive anzeigen"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "MaxArchiveImages",
+                    "caption": "Maximale Anzahl Bilder im Archiv",
+                    "minimum": 1
+                }
+            ]
         }
+    ]
 }
