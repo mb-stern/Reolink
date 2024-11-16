@@ -36,20 +36,21 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
     }
-        public function ApplyChanges()
+    public function ApplyChanges()
     {
         parent::ApplyChanges();
-        
+    
         // Sicherstellen, dass der Hook existiert
         $hookPath = $this->ReadAttributeString("CurrentHook");
-        
+    
         // Wenn der Hook-Pfad leer ist, initialisiere ihn
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
         }
-        
+    
         // Webhook-Pfad in der Form anzeigen
         $this->UpdateFormField("WebhookPath", "caption", $hookPath);
+    }    
 
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
