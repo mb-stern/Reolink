@@ -152,6 +152,7 @@ class Reolink extends IPSModule
             IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
+    }
     
     private function ProcessAllData($data)
     {
