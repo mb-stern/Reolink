@@ -126,7 +126,7 @@ class Reolink extends IPSModule
         $hookPath = $this->ReadAttributeString("CurrentHook");
         $form['elements'][] = [
             "type"    => "Label",
-            "caption" => "Webhook: " . $hookPath
+            "caption" => "Verwendeter Webhook: " . $hookPath
         ];
 
         return json_encode($form);
