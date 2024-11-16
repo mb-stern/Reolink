@@ -34,7 +34,9 @@ Das Modul kann nicht:
 Aktuell getestete Reolink-Kameras:
 - Reolink Duo 2
 
-Wenn eine Kamera mit dem Modul funktioniert würde ich mich über eine Info freuen. Ebenfalls wenn etwas nicht funktioniert, hier bitte eine Sequenz Debug senden und die Info, um welches Modell es sich handelt. Eventuell kann ich dieses dann ins Modul integrieren.
+Wenn eine Kamera mit dem Modul funktioniert, würde ich mich über eine Info mit Angabe des Kameramodells freuen. 
+Ebenfalls wenn etwas nicht funktioniert, hier bitte eine Sequenz Debug senden und die Info, um welches Modell es sich handelt. 
+Eventuell kann ich dieses dann ins Modul integrieren.
 
 ### 2. Voraussetzungen
 
@@ -56,12 +58,12 @@ Name     | Beschreibung
 IP-Adresse                          |	IP-Adresse des Rechners auf dem der Libre Hardware Monitor läuft
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
-Stream-Typ                          |   Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden. Standard ist Substream.
+Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
 Webhook-Daten                       |	Aktiviert die Anzeige des JSON des Webhooks in Variablen. Dies ist nur für allfällige Diagnose nötig
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen weiterferabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
 Bildarchive anzeien                 |   Aktiviert die Bildarchive
-Anzahl Archivbilder                 |   Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden. Standard ist 20.
+Anzahl Archivbilder                 |   Standard ist 20. Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
 
 ### 5. Statusvariablen und Profile
 
