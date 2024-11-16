@@ -1,6 +1,6 @@
 <?php
 
-class Reolink extends IPSModule
+class REOCAM extends IPSModule
 {
     public function Create()
     {
