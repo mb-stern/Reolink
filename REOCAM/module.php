@@ -118,6 +118,20 @@ class Reolink extends IPSModule
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
     }
+
+    public function GetConfigurationForm()
+    {
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
+
+        // Webhook-Pfad dynamisch einfügen
+        $hookPath = $this->ReadAttributeString("CurrentHook");
+        $form['elements'][] = [
+            "type"    => "Label",
+            "caption" => "Webhook: " . $hookPath
+        ];
+
+        return json_encode($form);
+    }
     
     private function ProcessAllData($data)
     {
