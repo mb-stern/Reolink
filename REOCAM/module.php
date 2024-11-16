@@ -48,7 +48,7 @@ class Reolink extends IPSModule
         // Wenn der Hook-Pfad leer ist, initialisiere ihn
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
-            $this->SendDebug('ApplyChanges', 'Die Initialisierung des Hook-Pfades '$hookPath' gestartet.', 0);
+            $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
         }
     
         // Webhook-Pfad in der Form anzeigen
