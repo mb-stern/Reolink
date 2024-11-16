@@ -42,7 +42,7 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
 
         // Webhook dynamisch registrieren
-        $webhookPath = $this->RegisterAttributeString("CurrentHook");
+        $webhookPath = $this->RegisterAttributeString();
         $this->RegisterHook($webhookPath);
 
         // Verwalte Variablen und andere Einstellungen
