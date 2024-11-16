@@ -60,6 +60,7 @@ Benutzername                        |   Benutzername zur Anmeldung im Interface 
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
 Webhook-Daten                       |	Aktiviert die Anzeige der Variablen aus dem JSON des Webhooks. Dies ist nur für allfällige Diagnose nötig
+Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Varaible, um mit der Tesfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Diagnose erforderlich.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
 Bildarchive anzeien                 |   Aktiviert die Bildarchive

@@ -37,6 +37,11 @@
         },
         {
             "type": "CheckBox",
+            "name": "ShowTestElements",
+            "caption": "Test-Elemente anzeigen (nur für Diagnose)"
+        },
+        {
+            "type": "CheckBox",
             "name": "ShowBooleanVariables",
             "caption": "Intelligente Bewegungserkennung"
         },
@@ -56,11 +61,6 @@
             "caption": "Maximale Anzahl Archivbilder",
             "minimum": 1,
             "suffix": "Bilder"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowTestElements",
-            "caption": "Test-Elemente anzeigen"
         }
     ]
 }
