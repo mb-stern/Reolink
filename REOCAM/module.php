@@ -122,7 +122,7 @@ class Reolink extends IPSModule
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
     
-        // Webhook-Pfad dynamisch einfügen
+        // Webhook-Pfad dynamisch in das Konfigurationsformular einfügen
         $hookPath = $this->ReadAttributeString("CurrentHook");
         $webhookElement = [
             "type"    => "Label",
@@ -130,10 +130,28 @@ class Reolink extends IPSModule
         ];
     
         // Einfügen an einer bestimmten Position, z. B. ganz oben oder nach einem spezifischen Element
-        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 1 ein
+        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
     
         return json_encode($form);
     }
+
+    public function ProcessHookData()
+    {
+        $rawData = file_get_contents("php://input");
+        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+
+        if (!empty($rawData)) {
+            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
+            $data = json_decode($rawData, true);
+            if (is_array($data)) {
+                $this->ProcessAllData($data);
+            } else {
+                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
+            }
+        } else {
+            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+        }
     
     private function ProcessAllData($data)
     {
