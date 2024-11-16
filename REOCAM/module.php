@@ -72,6 +72,13 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveArchives();
         }
+
+        if ($this->ReadPropertyBoolean("ShowTestElements")) {
+            $this->CreateTestElements();
+        } else {
+            $this->RemoveTestElements();
+        }
+        
     
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -289,6 +296,54 @@ public function ResetBoolean(string $ident)
             }
         }
     }
+
+    private function CreateTestElements()
+{
+    // Test-Boolean-Variable
+    $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
+
+    // Test-Snapshot
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID))) {
+        $mediaID = IPS_CreateMedia(1); // 1 = Bild
+        IPS_SetParent($mediaID, $this->InstanceID);
+        IPS_SetIdent($mediaID, "Snapshot_Test");
+        IPS_SetName($mediaID, "Snapshot Test");
+        IPS_SetMediaCached($mediaID, false);
+    }
+
+    // Test-Bildarchiv
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Test", $this->InstanceID))) {
+        $categoryID = IPS_CreateCategory();
+        IPS_SetParent($categoryID, $this->InstanceID);
+        IPS_SetIdent($categoryID, "Archive_Test");
+        IPS_SetName($categoryID, "Bildarchiv Test");
+    }
+}
+
+private function RemoveTestElements()
+{
+    // Entfernen der Test-Boolean-Variable
+    $varID = @IPS_GetObjectIDByIdent("Test", $this->InstanceID);
+    if ($varID) {
+        $this->UnregisterVariable("Test");
+    }
+
+    // Entfernen des Test-Snapshots
+    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID);
+    if ($mediaID) {
+        IPS_DeleteMedia($mediaID, true);
+    }
+
+    // Entfernen des Test-Bildarchivs
+    $categoryID = @IPS_GetObjectIDByIdent("Archive_Test", $this->InstanceID);
+    if ($categoryID) {
+        $children = IPS_GetChildrenIDs($categoryID);
+        foreach ($children as $childID) {
+            IPS_DeleteMedia($childID, true);
+        }
+        IPS_DeleteCategory($categoryID);
+    }
+}
 
     private function updateVariable($name, $value)
     {

@@ -38,7 +38,7 @@
         {
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
-            "caption": "Intelligenten Bewegungserkennung"
+            "caption": "Intelligente Bewegungserkennung"
         },
         {
             "type": "CheckBox",
@@ -56,6 +56,11 @@
             "caption": "Maximale Anzahl Archivbilder",
             "minimum": 1,
             "suffix": "Bilder"
+        },
+        {
+            "type": "CheckBox",
+            "name": "ShowTestElements",
+            "caption": "Test-Elemente anzeigen"
         }
     ]
 }
