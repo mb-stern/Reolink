@@ -25,7 +25,7 @@ Das Modul kann folgendes:
 
 Das Modul kann nicht:
 - Alle Reolink-Kameras abdecken
-- Einstellungen an der Kamerakonfiguration vornehmen
+- Einstellungen an der Kamerakonfiguration vornehmen. Dies muss immer am Webinterface der Kamere geschehen.
 
 Aktuell getestete Reolink-Kameras:
 - Reolink Duo 2
