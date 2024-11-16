@@ -87,7 +87,7 @@ class Reolink extends IPSModule
     {
 
         $hookBase = '/hook/reolink_';
-        $hookPath = $this->ReadAttributeString("CurrentHook");
+        //$hookPath = $this->ReadAttributeString("CurrentHook");
 
         $this->WriteAttributeString("CurrentHook", $hookPath);
     
