@@ -13,8 +13,8 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Das Modul kann folgendes:
 
--Schnappschüsse bei Bewegungen aufnehmen (Allgemeine Bewegungen, Personen, Tiere und Fahrezeuge).
--Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
--Die intelligente Bewegungserkennung als Variable darstellen.
--Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
--Auswählen, ob Main- oder Substream angezigt werden soll.
+- Schnappschüsse bei Bewegungen aufnehmen (Allgemeine Bewegungen, Personen, Tiere und Fahrezeuge).
+- Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
+- Die intelligente Bewegungserkennung als Variable darstellen.
+- Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
+- Auswählen, ob Main- oder Substream angezigt werden soll.
