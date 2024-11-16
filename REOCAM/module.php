@@ -122,6 +122,9 @@ class Reolink extends IPSModule
         $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
+
+        // Webhook-Pfad in der Form anzeigen
+        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
     
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
