@@ -80,7 +80,6 @@ class REOCAM extends IPSModule
             $this->RemoveTestElements();
         }
         
-    
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
