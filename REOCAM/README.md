@@ -63,8 +63,10 @@ Webhook-Daten                       |	Aktiviert die Anzeige der Variablen aus de
 Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Varaible, um mit der Tesfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Diagnose erforderlich.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
-Bildarchive anzeien                 |   Aktiviert die Bildarchive
+Bildarchive anzeigen                |   Aktiviert die Bildarchive. Diese kann in der Visualisierung angezeigt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+
+images/image.png
 
 ### 5. Statusvariablen und Profile
 
