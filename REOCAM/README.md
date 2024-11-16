@@ -13,7 +13,7 @@
 
 ### 1. Funktionsumfang
 
-Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul kann mehrmals. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen.
+Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen.
 
 Das Modul kann folgendes:
 
@@ -30,7 +30,8 @@ Das Modul kann nicht:
 Aktuell getestete Reolink-Kameras:
 - Reolink Duo 2
 
-Wenn eine Kamera mit dem Modul funktioniert, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
+Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
+Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
 
 ### 2. Voraussetzungen
 
@@ -59,7 +60,7 @@ Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie B
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Diese kann in der Visualisierung angezeigt werden.
-Anzahl Archivbilder                 |   Standard ist 20. Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
 
 ### 5. Statusvariablen und Profile
 
@@ -75,7 +76,7 @@ Es werden keine Profile erstellt
 
 ### 6. WebFront
 
-Integration von Kamerastream, Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
+Integration von Kamerastream, Schnappschüssen und Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
 
 ### 7. Webhook
 
@@ -85,6 +86,6 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
-Version 1.0 (16.11.2024)
+Version 0.1 (16.11.2024)
 
-- Initiale Version
+- Initiale Beta-Version
