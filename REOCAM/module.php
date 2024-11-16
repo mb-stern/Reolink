@@ -217,33 +217,36 @@ class REOCAM extends IPSModule
 
     private function ActivateBoolean($ident, $position)
     {
+        // Wenn Test-Elemente deaktiviert sind, keine Aktionen für "Test" ausführen
+        if (!$this->ReadPropertyBoolean("ShowTestElements") && $ident === "Test") {
+            $this->SendDebug('ActivateBoolean', "Aktion für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
+            return;
+        }
+    
         $timerName = $ident . "_Reset";
-
-        // Debugging hinzufügen
+    
         $this->SendDebug('ActivateBoolean', "Schalte Variable $ident auf true.", 0);
-
         $this->SetValue($ident, true);
-
+    
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->CreateSnapshotAtPosition($ident, $position);
         }
-
-        // Debugging für den Timer
+    
         $this->SendDebug('ActivateBoolean', "Setze Timer für $timerName auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
+    
 
-public function ResetBoolean(string $ident)
-{
-    $timerName = $ident . "_Reset";
+    public function ResetBoolean(string $ident)
+    {
+        $timerName = $ident . "_Reset";
 
-    // Debugging hinzufügen
-    $this->SendDebug('ResetBoolean', "Setze Variable $ident auf false.", 0);
+        // Debugging hinzufügen
+        $this->SendDebug('ResetBoolean', "Setze Variable $ident auf false.", 0);
 
-    $this->SetValue($ident, false);
-    $this->SetTimerInterval($timerName, 0);
-}
-
+        $this->SetValue($ident, false);
+        $this->SetTimerInterval($timerName, 0);
+    }
 
     private function CreateWebhookVariables()
     {
