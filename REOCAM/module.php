@@ -36,10 +36,11 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
     }
+    
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-    
+        
         // Sicherstellen, dass der Hook existiert
         $hookPath = $this->ReadAttributeString("CurrentHook");
     
@@ -49,37 +50,37 @@ class Reolink extends IPSModule
         }
     
         // Webhook-Pfad in der Form anzeigen
-        $this->UpdateFormField("WebhookPath", "caption", $hookPath);
-
+        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
+    
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
             $this->RemoveWebhookVariables();
         }
-
+    
         if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
             $this->CreateBooleanVariables();
         } else {
             $this->RemoveBooleanVariables();
         }
-
+    
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->CreateOrUpdateSnapshots();
         } else {
             $this->RemoveSnapshots();
         }
-
+    
         if ($this->ReadPropertyBoolean("ShowArchives")) {
             $this->CreateOrUpdateArchives();
         } else {
             $this->RemoveArchives();
         }
-
+    
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
-
+    
     private function GenerateRandomHookPath()
     {
         $randomNumber = random_int(1000, 9999); // Zufallszahl generieren
@@ -87,46 +88,46 @@ class Reolink extends IPSModule
     }
 
     private function RegisterHook()
-{
-    $hookBase = '/hook/reolink_';
-    $hookPath = $this->ReadAttributeString("CurrentHook");
-
-    // Wenn kein Hook registriert ist, einen neuen erstellen
-    if ($hookPath === "") {
-        $hookPath = $hookBase . mt_rand(1000, 9999);
-        $this->WriteAttributeString("CurrentHook", $hookPath);
-    }
-
-    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-    if (count($ids) === 0) {
-        $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
-        return $hookPath;
-    }
-
-    $hookInstanceID = $ids[0];
-    $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-
-    if (!is_array($hooks)) {
-        $hooks = [];
-    }
-
-    // Prüfen, ob der Hook bereits existiert
-    foreach ($hooks as $hook) {
-        if ($hook['Hook'] === $hookPath && $hook['TargetID'] === $this->InstanceID) {
-            $this->SendDebug('RegisterHook', "Hook '$hookPath' ist bereits registriert.", 0);
+    {
+        $hookBase = '/hook/reolink_';
+        $hookPath = $this->ReadAttributeString("CurrentHook");
+    
+        // Wenn kein Hook registriert ist, einen neuen erstellen
+        if ($hookPath === "") {
+            $hookPath = $hookBase . mt_rand(1000, 9999);
+            $this->WriteAttributeString("CurrentHook", $hookPath);
+        }
+    
+        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+        if (count($ids) === 0) {
+            $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
             return $hookPath;
         }
+    
+        $hookInstanceID = $ids[0];
+        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
+    
+        if (!is_array($hooks)) {
+            $hooks = [];
+        }
+    
+        // Prüfen, ob der Hook bereits existiert
+        foreach ($hooks as $hook) {
+            if ($hook['Hook'] === $hookPath && $hook['TargetID'] === $this->InstanceID) {
+                $this->SendDebug('RegisterHook', "Hook '$hookPath' ist bereits registriert.", 0);
+                return $hookPath;
+            }
+        }
+    
+        // Neuen Hook hinzufügen
+        $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
+        IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
+        IPS_ApplyChanges($hookInstanceID);
+    
+        $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
+        return $hookPath;
     }
-
-    // Neuen Hook hinzufügen
-    $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
-    IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-    IPS_ApplyChanges($hookInstanceID);
-
-    $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
-    return $hookPath;
-}
-
+    
     private function ProcessAllData($data)
     {
         if (isset($data['alarm']['type'])) {
