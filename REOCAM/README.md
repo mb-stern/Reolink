@@ -60,7 +60,7 @@ Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie B
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Diese kann in der Visualisierung angezeigt werden.
-Anzahl Archivbilder                 |   Standard ist 20. Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
 
 ### 5. Statusvariablen und Profile
 
@@ -76,7 +76,7 @@ Es werden keine Profile erstellt
 
 ### 6. WebFront
 
-Integration von Kamerastream, Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
+Integration von Kamerastream, Schnappschüssen und Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
 
 ### 7. Webhook
 
