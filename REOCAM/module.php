@@ -456,7 +456,7 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetParent($mediaID, $categoryID); // In der Archiv-Kategorie speichern
     IPS_SetIdent($mediaID, $archiveIdent);
     IPS_SetPosition($mediaID, -time()); // Negative Zeit für neueste zuerst
-    IPS_SetName($mediaID, "Archivbild von " . $booleanIdent . " " . date("Y-m-d H:i:s"));
+    IPS_SetName($mediaID, "" . $booleanIdent . " " . date("Y-m-d H:i:s"));
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
