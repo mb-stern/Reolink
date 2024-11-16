@@ -125,8 +125,10 @@ class REOCAM extends IPSModule
         IPS_ApplyChanges($hookInstanceID);
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
-    }
+
         */
+    }
+        
 
     public function GetConfigurationForm()
     {
