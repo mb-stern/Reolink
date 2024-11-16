@@ -1,4 +1,4 @@
-# Reolink
+# Reolink für IP-Symcon
 
 Folgende Module beinhaltet das WPLUX Symcon Repository:
 - __Reolink__ ([Dokumentation](REOCAM))   
