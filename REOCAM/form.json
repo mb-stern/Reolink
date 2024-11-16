@@ -6,7 +6,7 @@
             "items": [
                 {
                     "type": "Label",
-                    "caption": "Der aktuelle Webhook-Pfad lautet:"
+                    "caption": "Der aktuelle Webhook-Pfad ist:"
                 },
                 {
                     "type": "Label",
@@ -14,7 +14,7 @@
                     "caption": ""
                 }
             ]
-        },
+        }
         {
             "type": "ValidationTextBox",
             "name": "CameraIP",
