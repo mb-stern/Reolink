@@ -1,11 +1,6 @@
 {
     "elements": [
         {
-            "type": "Label",
-            "name": "WebhookPath",
-            "caption": "Webhook-Pfad: "
-        },
-        {
             "type": "ValidationTextBox",
             "name": "CameraIP",
             "caption": "Kamera IP"
