@@ -13,7 +13,7 @@
 
 ### 1. Funktionsumfang
 
-Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul kann mehrmals. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen.
+Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen.
 
 Das Modul kann folgendes:
 
@@ -30,7 +30,8 @@ Das Modul kann nicht:
 Aktuell getestete Reolink-Kameras:
 - Reolink Duo 2
 
-Wenn eine Kamera mit dem Modul funktioniert, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
+Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
+Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
 
 ### 2. Voraussetzungen
 
