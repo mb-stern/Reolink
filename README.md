@@ -1,6 +1,6 @@
 # Reolink für IP-Symcon
 
-Folgende Module beinhaltet das WPLUX Symcon Repository:
+Folgende Module beinhaltet das REOCAM Symcon Repository:
 - __Reolink__ ([Dokumentation](REOCAM))   
 
 Integration von Reolink-Kameras in IP Symcon.
