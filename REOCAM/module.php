@@ -76,7 +76,6 @@ class Reolink extends IPSModule
     private function RegisterHook()
     {
 
-
         $hookBase = '/hook/reolink_';
         $hookPath = $this->ReadAttributeString("CurrentHook");
     
