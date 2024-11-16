@@ -130,7 +130,7 @@ class Reolink extends IPSModule
         ];
     
         // Einfügen an einer bestimmten Position, z. B. ganz oben oder nach einem spezifischen Element
-        array_splice($form['elements'], 1, 0, [$webhookElement]); // Fügt es an Position 1 ein
+        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 1 ein
     
         return json_encode($form);
     }
