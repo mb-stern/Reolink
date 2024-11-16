@@ -13,11 +13,11 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyString("StreamType", "sub");
 
         // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
-        $this->RegisterPropertyBoolean("ShowWebhookVariables", true);
+        $this->RegisterPropertyBoolean("ShowWebhookVariables", false);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
-        $this->RegisterPropertyBoolean("ShowTestElements", true);
+        $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
