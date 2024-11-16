@@ -18,3 +18,12 @@ Das Modul kann folgendes:
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
 - Auswählen, ob Main- oder Substream angezigt werden soll.
+
+Das Modul kann nicht:
+- Alle Reolink-Kameras abdecken
+- Einstellungen an der Kamerakonfiguration vornehmen
+
+Aktuell getestete Reolink-Kameras:
+- Reolink Duo 2
+
+Wenn eine Kamera mit dem Modul funktioniert würde ich mich über eine Info freuen. Ebenfalls wenn etwas nicht funktioniert, hier bitte eine Sequenz Debug senden und die iNfo, um welches Modell es sich handelt. Eventuell kann ich dieses dann ins Modul integrieren.
