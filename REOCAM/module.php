@@ -125,7 +125,6 @@ class REOCAM extends IPSModule
         return $hookPath;
     }
         
-
     public function GetConfigurationForm()
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
