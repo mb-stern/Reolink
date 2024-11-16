@@ -29,7 +29,7 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
 
-        $this->IPS_ApplyChanges();
+        $this->ApplyChanges();
     }
     
     public function ApplyChanges()
