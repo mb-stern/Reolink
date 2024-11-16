@@ -183,22 +183,22 @@ class Reolink extends IPSModule
     }
 
     private function ActivateBoolean($ident, $position)
-{
-    $timerName = $ident . "_Reset";
+    {
+        $timerName = $ident . "_Reset";
 
-    // Debugging hinzufügen
-    $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true.", 0);
+        // Debugging hinzufügen
+        $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true.", 0);
 
-    $this->SetValue($ident, true);
+        $this->SetValue($ident, true);
 
-    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-        $this->CreateSnapshotAtPosition($ident, $position);
+        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+            $this->CreateSnapshotAtPosition($ident, $position);
+        }
+
+        // Debugging für den Timer
+        $this->SendDebug('ActivateBoolean', "Setze Timer $timerName auf 5 Sekunden.", 0);
+        $this->SetTimerInterval($timerName, 5000);
     }
-
-    // Debugging für den Timer
-    $this->SendDebug('ActivateBoolean', "Setze Timer $timerName auf 5 Sekunden.", 0);
-    $this->SetTimerInterval($timerName, 5000);
-}
 
 public function ResetBoolean(string $ident)
 {
