@@ -21,11 +21,11 @@
             "caption": "Stream-Typ",
             "options": [
                 {
-                    "caption": "Hauptstream",
+                    "caption": "Mainstream",
                     "value": "main"
                 },
                 {
-                    "caption": "Nebenstream",
+                    "caption": "Substream",
                     "value": "sub"
                 }
             ]
