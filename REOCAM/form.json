@@ -18,7 +18,7 @@
         {
             "type": "Select",
             "name": "StreamType",
-            "caption": "Stream-Typ: Achtung, der Mainstream ist häufig H265 codiert, was IP-Symcon aktuell nicht wiedergeben kann",
+            "caption": "Stream-Typ: Mainstream meist H265 codiert, keine Wiedergabe in IP-Symcon",
             "options": [
                 {
                     "caption": "Mainstream",
