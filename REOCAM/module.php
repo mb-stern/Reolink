@@ -45,8 +45,8 @@ class Reolink extends IPSModule
         $this->RegisterHook();
 
         // Webhook-Pfad in der Form anzeigen
+        $hookPath = $this->ReadAttributeString("CurrentHook");
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
-    
     
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
