@@ -57,7 +57,7 @@ __Konfigurationsseite__:
 Name     | Beschreibung
 -------- | ------------------
 Webhook                             |	Hier wird der verwendete Webhook angezeigt. Diesen in der Kamerakonfiguration eintragen
-IP-Adresse                          |	IP-Adresse des Rechners auf dem der Libre Hardware Monitor läuft
+IP-Adresse                          |	IP-Adresse der Kamera
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
