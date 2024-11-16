@@ -14,6 +14,7 @@
 ### 1. Funktionsumfang
 
 Integration von Reolink-Kameras in IP Symcon.
+Bei Verwendung mehrerer Reolink-Kameras kann das Modul kann mehrmals 
 Dies ist kein ONVIF-Fähiges Modul.
 Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserennung für Personen, Tiere und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert.
 Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhhook unterstützen. 
@@ -55,6 +56,7 @@ __Konfigurationsseite__:
 
 Name     | Beschreibung
 -------- | ------------------
+Webhook                             |	Hier wird der verwendete Webhook angezeigt. Diesen in der Kamerakonfiguration eintragen
 IP-Adresse                          |	IP-Adresse des Rechners auf dem der Libre Hardware Monitor läuft
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
