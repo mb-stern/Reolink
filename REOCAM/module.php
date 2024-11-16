@@ -121,14 +121,17 @@ class Reolink extends IPSModule
     public function GetConfigurationForm()
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
-
+    
         // Webhook-Pfad dynamisch einfügen
         $hookPath = $this->ReadAttributeString("CurrentHook");
-        $form['elements'][] = [
+        $webhookElement = [
             "type"    => "Label",
-            "caption" => "Verwendeter Webhook: " . $hookPath
+            "caption" => "Webhook: " . $hookPath
         ];
-
+    
+        // Einfügen an einer bestimmten Position, z. B. ganz oben oder nach einem spezifischen Element
+        array_splice($form['elements'], 1, 0, [$webhookElement]); // Fügt es an Position 1 ein
+    
         return json_encode($form);
     }
     
