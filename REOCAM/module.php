@@ -35,19 +35,8 @@ class Reolink extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-    
-        // Sicherstellen, dass der Hook existiert
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        
-    
-        // Wenn der Hook-Pfad leer ist, initialisiere ihn
-        if ($hookPath === "") {
-            $hookPath = $this->RegisterHook();
-            $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
-        }
-    
-        // Webhook-Pfad in der Form anzeigen
-        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
+
+        $this->RegisterHook();
     
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -80,29 +69,28 @@ class Reolink extends IPSModule
 
     private function RegisterHook()
     {
-
         $hookBase = '/hook/reolink_';
         $hookPath = $this->ReadAttributeString("CurrentHook");
-    
+
         // Wenn kein Hook registriert ist, einen neuen erstellen
         if ($hookPath === "") {
             $hookPath = $hookBase . $this->InstanceID;
             $this->WriteAttributeString("CurrentHook", $hookPath);
         }
-        
+
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) === 0) {
             $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
             return $hookPath;
         }
-    
+
         $hookInstanceID = $ids[0];
         $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-    
+
         if (!is_array($hooks)) {
             $hooks = [];
         }
-    
+
         // Prüfen, ob der Hook bereits existiert
         foreach ($hooks as $hook) {
             if ($hook['Hook'] === $hookPath && $hook['TargetID'] === $this->InstanceID) {
@@ -110,15 +98,29 @@ class Reolink extends IPSModule
                 return $hookPath;
             }
         }
-    
+
         // Neuen Hook hinzufügen
         $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
+
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
     }
-    
+
+    public function GetConfigurationForm()
+    {
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
+
+        // Aktuellen Webhook-Pfad einfügen
+        $form['elements'][] = [
+            "type"    => "Label",
+            "caption" => "Webhook: " . $this->ReadAttributeString("CurrentHook")
+        ];
+
+        return json_encode($form);
+    }
+}
     private function ProcessAllData($data)
     {
         if (isset($data['alarm']['type'])) {
