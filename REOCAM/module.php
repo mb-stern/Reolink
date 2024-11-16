@@ -120,7 +120,7 @@ class Reolink extends IPSModule
 
         return json_encode($form);
     }
-}
+    
     private function ProcessAllData($data)
     {
         if (isset($data['alarm']['type'])) {
