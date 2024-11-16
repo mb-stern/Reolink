@@ -109,8 +109,6 @@ class REOCAM extends IPSModule
             $hooks = [];
         }
     
-        /*
-
         // Prüfen, ob der Hook bereits existiert
         foreach ($hooks as $hook) {
             if ($hook['Hook'] === $hookPath && $hook['TargetID'] === $this->InstanceID) {
@@ -125,8 +123,6 @@ class REOCAM extends IPSModule
         IPS_ApplyChanges($hookInstanceID);
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
-
-        */
     }
         
 
