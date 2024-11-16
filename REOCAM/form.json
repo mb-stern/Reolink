@@ -18,7 +18,7 @@
         {
             "type": "Select",
             "name": "StreamType",
-            "caption": "Stream-Typ: Mainstream meist H265 codiert, keine Wiedergabe in IP-Symcon",
+            "caption": "Stream-Typ",
             "options": [
                 {
                     "caption": "Mainstream",
@@ -38,17 +38,17 @@
         {
             "type": "CheckBox",
             "name": "ShowBooleanVariables",
-            "caption": "Boolean-Variablen anzeigen"
+            "caption": "Intelligenten Bewegungserkennung anzeigen"
         },
         {
             "type": "CheckBox",
             "name": "ShowSnapshots",
-            "caption": "Snapshots anzeigen"
+            "caption": "Schnappschüsse anzeigen"
         },
         {
             "type": "CheckBox",
             "name": "ShowArchives",
-            "caption": "Archiv anzeigen"
+            "caption": "Bildarchive anzeigen"
         },
         {
             "type": "NumberSpinner",
