@@ -71,7 +71,7 @@ Die Statusvariablen/Kategorien werden automatisch angelegt. Das Löschen einzeln
 
 #### Statusvariablen
 
-Es werden Variablen/Typen je nach Wahl im Konfigurationsformuler erstellt.
+Es werden Variablen/Typen je nach Wahl im Konfigurationsformular erstellt.
 
 #### Profile
 
@@ -79,7 +79,7 @@ Es werden keine Profile erstellt
 
 ### 6. WebFront
 
-Integration von Kamastream, Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
+Integration von Kamerastream, Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
 
 ### 7. Webhook
 
