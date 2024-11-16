@@ -40,9 +40,6 @@ class Reolink extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-        
-        // Sicherstellen, dass der Hook existiert
-        $hookPath = $this->ReadAttributeString("CurrentHook");
     
         // Den Hook registrieren
         $this->RegisterHook();
@@ -78,6 +75,8 @@ class Reolink extends IPSModule
 
     private function RegisterHook()
     {
+
+
         $hookBase = '/hook/reolink_';
         $hookPath = $this->ReadAttributeString("CurrentHook");
     
