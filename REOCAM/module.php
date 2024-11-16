@@ -40,15 +40,9 @@ class Reolink extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-        
-        // Sicherstellen, dass der Hook existiert
-        $hookPath = $this->ReadAttributeString("CurrentHook");
     
         // Den Hook registrieren
         $this->RegisterHook();
-    
-        // Webhook-Pfad in der Form anzeigen
-        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
     
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
