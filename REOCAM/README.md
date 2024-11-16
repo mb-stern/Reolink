@@ -35,9 +35,9 @@ Das Modul kann nicht:
 Aktuell getestete Reolink-Kameras:
 - Reolink Duo 2
 
-Wenn eine Kamera mit dem Modul funktioniert, würde ich mich über eine Info mit Angabe des Kameramodells freuen. 
-Ebenfalls wenn etwas nicht funktioniert, hier bitte eine Sequenz Debug senden und die Info, um welches Modell es sich handelt. 
-Eventuell kann ich dieses dann ins Modul integrieren.
+Wenn eine Kamera mit dem Modul funktioniert, benötige ich eine Info mit Angabe des Kameramodells. 
+Ebenfalls natürlich eine Sequenz Debug. 
+Eventuell kann ich die Kamera dann ins Modul integrieren.
 
 ### 2. Voraussetzungen
 
