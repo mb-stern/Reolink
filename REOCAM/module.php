@@ -213,7 +213,7 @@ class Reolink extends IPSModule
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ActivateBoolean', "Schalte Boolean $ident auf true.", 0);
+        $this->SendDebug('ActivateBoolean', "Schalte Variable $ident auf true.", 0);
 
         $this->SetValue($ident, true);
 
@@ -222,7 +222,7 @@ class Reolink extends IPSModule
         }
 
         // Debugging für den Timer
-        $this->SendDebug('ActivateBoolean', "Setze Timer $timerName auf 5 Sekunden.", 0);
+        $this->SendDebug('ActivateBoolean', "Setze Timer für $timerName auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
 
@@ -231,7 +231,7 @@ public function ResetBoolean(string $ident)
     $timerName = $ident . "_Reset";
 
     // Debugging hinzufügen
-    $this->SendDebug('ResetBoolean', "Setze Boolean $ident auf false.", 0);
+    $this->SendDebug('ResetBoolean', "Setze Variable $ident auf false.", 0);
 
     $this->SetValue($ident, false);
     $this->SetTimerInterval($timerName, 0);
@@ -332,9 +332,9 @@ public function ResetBoolean(string $ident)
             IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
             IPS_SetMediaCached($mediaID, false); // Kein Caching
     
-            $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Bild für Snapshot von $booleanIdent neu erstellt.", 0);
         } else {
-            $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Bild für Snapshot von $booleanIdent bereits vorhanden.", 0);
         }
     
         // Schnappschuss von der Kamera abrufen
