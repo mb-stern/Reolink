@@ -1,19 +1,9 @@
 {
     "elements": [
         {
-            "type": "ExpansionPanel",
-            "caption": "Webhook-Information",
-            "items": [
-                {
-                    "type": "Label",
-                    "caption": "Der aktuelle Webhook-Pfad lautet:"
-                },
-                {
-                    "type": "Label",
-                    "name": "WebhookPath",
-                    "caption": ""
-                }
-            ]
+            "type": "Label",
+            "name": "WebhookPath",
+            "caption": "Webhook-Pfad: "
         },
         {
             "type": "ValidationTextBox",
