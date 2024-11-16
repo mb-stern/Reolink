@@ -75,13 +75,13 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
-        private function GenerateRandomHookPath()
+    private function GenerateRandomHookPath()
     {
         $randomNumber = random_int(1000, 9999); // Zufallszahl generieren
         return "/hook/reolink_" . $randomNumber;
     }
 
-private function RegisterHook()
+    private function RegisterHook()
 {
     // Prüfen, ob der Hook-Pfad bereits existiert
     $currentHook = $this->ReadAttributeString("CurrentHook");
