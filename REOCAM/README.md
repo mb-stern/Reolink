@@ -59,8 +59,8 @@ IP-Adresse                          |	IP-Adresse des Rechners auf dem der Libre 
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
-Webhook-Daten                       |	Aktiviert die Anzeige der Variablen aus dem JSON des Webhooks. Dies ist nur für allfällige Diagnose nötig
-Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Varaible, um mit der Tesfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Diagnose erforderlich.
+Webhook-Daten                       |	Aktiviert die Anzeige der Variablen aus dem JSON des Webhooks. Dies ist nur für allfällige Tests und Diagnose nötig
+Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Varaible, um mit der Tesfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Diese kann in der Visualisierung angezeigt werden.

@@ -33,12 +33,12 @@
         {
             "type": "CheckBox",
             "name": "ShowWebhookVariables",
-            "caption": "Webhook-Daten als Variablen anzeigen (nur für Diagnose)"
+            "caption": "Webhook-Daten als Variablen anzeigen (nur für Tests und Diagnose)"
         },
         {
             "type": "CheckBox",
             "name": "ShowTestElements",
-            "caption": "Test-Elemente anzeigen (nur für Diagnose)"
+            "caption": "Test-Elemente anzeigen (nur für Tests und Diagnose)"
         },
         {
             "type": "CheckBox",
