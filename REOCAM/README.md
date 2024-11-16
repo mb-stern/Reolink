@@ -60,7 +60,7 @@ Stream-Typ                          |   Hier kann zwischen Main- und Substream g
 Webhook-Daten                       |	Aktiviert die Anzeige des JSON des Webhooks in Variablen. Dies ist nur für allfällige Diagnose nötig
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen weiterferabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
-Bildarchive anzeien                 |   HAktiviert die Bildarchive
+Bildarchive anzeien                 |   Aktiviert die Bildarchive
 Anzahl Archivbilder                 |   Maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden. Standard ist 20.
 
 ### 5. Statusvariablen und Profile
