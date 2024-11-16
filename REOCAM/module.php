@@ -39,12 +39,20 @@ class Reolink extends IPSModule
 
     public function ApplyChanges()
     {
-        parent::ApplyChanges();
-
-        // Webhook dynamisch registrieren
-        $this->RegisterHook();
-        $this->UpdateFormField("WebhookPathInfo", "value", $this->ReadAttributeString("CurrentHook"));
-
+        public function ApplyChanges()
+        {
+            parent::ApplyChanges();
+        
+            // Sicherstellen, dass der Hook existiert
+            $hookPath = $this->ReadAttributeString("CurrentHook");
+        
+            // Wenn der Hook-Pfad leer ist, initialisiere ihn
+            if ($hookPath === "") {
+                $hookPath = $this->RegisterHook();
+            }
+        
+            // Webhook-Pfad in der Form anzeigen
+            $this->UpdateFormField("WebhookPath", "caption", $hookPath);
 
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -83,17 +91,19 @@ class Reolink extends IPSModule
 
     private function RegisterHook()
 {
-    // Prüfen, ob der Hook-Pfad bereits existiert
-    $currentHook = $this->ReadAttributeString("CurrentHook");
-    if (empty($currentHook)) {
-        $currentHook = $this->GenerateRandomHookPath();
-        $this->WriteAttributeString("CurrentHook", $currentHook); // Speichern des generierten Hooks
+    $hookBase = '/hook/reolink_';
+    $hookPath = $this->ReadAttributeString("CurrentHook");
+
+    // Wenn kein Hook registriert ist, einen neuen erstellen
+    if ($hookPath === "") {
+        $hookPath = $hookBase . mt_rand(1000, 9999);
+        $this->WriteAttributeString("CurrentHook", $hookPath);
     }
 
     $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
     if (count($ids) === 0) {
         $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
-        return;
+        return $hookPath;
     }
 
     $hookInstanceID = $ids[0];
@@ -105,18 +115,19 @@ class Reolink extends IPSModule
 
     // Prüfen, ob der Hook bereits existiert
     foreach ($hooks as $hook) {
-        if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
-            $this->SendDebug('RegisterHook', "Hook '$currentHook' ist bereits registriert.", 0);
-            return; // Hook existiert bereits
+        if ($hook['Hook'] === $hookPath && $hook['TargetID'] === $this->InstanceID) {
+            $this->SendDebug('RegisterHook', "Hook '$hookPath' ist bereits registriert.", 0);
+            return $hookPath;
         }
     }
 
-    // Falls der Hook nicht existiert, hinzufügen
-    $hooks[] = ['Hook' => $currentHook, 'TargetID' => $this->InstanceID];
+    // Neuen Hook hinzufügen
+    $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
     IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
     IPS_ApplyChanges($hookInstanceID);
 
-    $this->SendDebug('RegisterHook', "Hook '$currentHook' wurde registriert.", 0);
+    $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
+    return $hookPath;
 }
 
     private function ProcessAllData($data)
