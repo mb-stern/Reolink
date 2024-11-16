@@ -94,7 +94,7 @@ class Reolink extends IPSModule
     
         // Wenn kein Hook registriert ist, einen neuen erstellen
         if ($hookPath === "") {
-            $hookPath = $hookBase . mt_rand(1000, 9999);
+            $hookPath = $hookBase . $this->InstanceID;
             $this->WriteAttributeString("CurrentHook", $hookPath);
         }
     
