@@ -44,10 +44,8 @@ class Reolink extends IPSModule
         // Sicherstellen, dass der Hook existiert
         $hookPath = $this->ReadAttributeString("CurrentHook");
     
-        // Wenn der Hook-Pfad leer ist, initialisiere ihn
-        if ($hookPath === "") {
-            $hookPath = $this->RegisterHook();
-        }
+        // Den Hook registrieren
+        $this->RegisterHook();
     
         // Webhook-Pfad in der Form anzeigen
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
@@ -81,11 +79,13 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
     
+    /*
     private function GenerateRandomHookPath()
     {
         $randomNumber = random_int(1000, 9999); // Zufallszahl generieren
         return "/hook/reolink_" . $randomNumber;
     }
+    */
 
     private function RegisterHook()
     {
