@@ -43,6 +43,10 @@ class Reolink extends IPSModule
     
         // Den Hook registrieren
         $this->RegisterHook();
+
+        // Webhook-Pfad in der Form anzeigen
+        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
+    
     
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -85,9 +89,6 @@ class Reolink extends IPSModule
             $this->WriteAttributeString("CurrentHook", $hookPath);
         }
         
-        // Webhook-Pfad in der Form anzeigen
-        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
-    
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) === 0) {
             $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
