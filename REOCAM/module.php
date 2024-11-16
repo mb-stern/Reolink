@@ -20,7 +20,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
-        $this->RegisterHook();
+        $this->RegisterAttributeString("CurrentHook", "");
 
         // Standard-Boolean-Variablen für Bewegungen registrieren
         $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
@@ -40,9 +40,15 @@ class Reolink extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+        
+        // Sicherstellen, dass der Hook existiert
+        $hookPath = $this->ReadAttributeString("CurrentHook");
     
-        // Webhook registrieren
+        // Den Hook registrieren
         $this->RegisterHook();
+    
+        // Webhook-Pfad in der Form anzeigen
+        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
     
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
