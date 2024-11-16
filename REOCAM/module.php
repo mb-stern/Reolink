@@ -375,6 +375,12 @@ private function RemoveTestElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
+        // Wenn Test-Elemente deaktiviert sind, keine Snapshots für "Test" erstellen
+        if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
+            return;
+        }
+    
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
@@ -387,9 +393,9 @@ private function RemoveTestElements()
             IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
             IPS_SetMediaCached($mediaID, false); // Kein Caching
     
-            $this->SendDebug('CreateSnapshotAtPosition', "Bild für Snapshot von $booleanIdent neu erstellt.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
         } else {
-            $this->SendDebug('CreateSnapshotAtPosition', "Bild für Snapshot von $booleanIdent bereits vorhanden.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
         // Schnappschuss von der Kamera abrufen
