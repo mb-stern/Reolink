@@ -2,13 +2,6 @@
     "elements": [
         {
             "type": "ValidationTextBox",
-            "name": "WebhookPath",
-            "caption": "Webhook-Pfad",
-            "required": true,
-            "default": "/hook/reolink"
-        },
-        {
-            "type": "ValidationTextBox",
             "name": "CameraIP",
             "caption": "Kamera-IP-Adresse",
             "required": true
@@ -37,6 +30,21 @@
             "name": "MaxArchiveImages",
             "caption": "Maximale Anzahl an Archivbildern",
             "minimum": 1
+        },
+        {
+            "type": "SelectCategory",
+            "caption": "Kategorie"
+        },
+        {
+            "type": "Label",
+            "caption": "Der folgende Hook-Pfad wurde für diese Instanz generiert:"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "WebhookPathInfo",
+            "caption": "Webhook Pfad",
+            "enabled": false
         }
+        
     ]
 }

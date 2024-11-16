@@ -74,56 +74,49 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
-    private function RegisterHook($hookName)
-    {
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-    
-        if (count($ids) === 0) {
-            $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
-            return;
-        }
-    
-        $hookInstanceID = $ids[0];
-        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-    
-        if (!is_array($hooks)) {
-            $hooks = [];
-        }
-    
-        // Prüfen, ob der Hook bereits existiert
-        foreach ($hooks as $hook) {
-            if ($hook['Hook'] === $hookName && $hook['TargetID'] === $this->InstanceID) {
-                $this->SendDebug('RegisterHook', "Hook '$hookName' ist bereits registriert.", 0);
-                return; // Hook existiert bereits, keine weiteren Aktionen nötig
-            }
-        }
-    
-        // Falls der Hook nicht existiert, hinzufügen
-        $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
-        IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-        IPS_ApplyChanges($hookInstanceID);
-    
-        $this->SendDebug('RegisterHook', "Hook '$hookName' wurde registriert.", 0);
-    }
-    
-    public function ProcessHookData()
-    {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+    private function GenerateRandomHookPath()
+{
+    $randomNumber = random_int(1000, 9999); // Zufallszahl generieren
+    return "/hook/reolink_" . $randomNumber;
+}
 
-        if (!empty($rawData)) {
-            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
-            $data = json_decode($rawData, true);
-            if (is_array($data)) {
-                $this->ProcessAllData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
-            }
-        } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+private function RegisterHook()
+{
+    // Prüfen, ob der Hook-Pfad bereits existiert
+    $currentHook = $this->ReadAttributeString("CurrentHook");
+    if (empty($currentHook)) {
+        $currentHook = $this->GenerateRandomHookPath();
+        $this->WriteAttributeString("CurrentHook", $currentHook); // Speichern des generierten Hooks
+    }
+
+    $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+    if (count($ids) === 0) {
+        $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
+        return;
+    }
+
+    $hookInstanceID = $ids[0];
+    $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
+
+    if (!is_array($hooks)) {
+        $hooks = [];
+    }
+
+    // Prüfen, ob der Hook bereits existiert
+    foreach ($hooks as $hook) {
+        if ($hook['Hook'] === $currentHook && $hook['TargetID'] === $this->InstanceID) {
+            $this->SendDebug('RegisterHook', "Hook '$currentHook' ist bereits registriert.", 0);
+            return; // Hook existiert bereits
         }
     }
+
+    // Falls der Hook nicht existiert, hinzufügen
+    $hooks[] = ['Hook' => $currentHook, 'TargetID' => $this->InstanceID];
+    IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
+    IPS_ApplyChanges($hookInstanceID);
+
+    $this->SendDebug('RegisterHook', "Hook '$currentHook' wurde registriert.", 0);
+}
 
     private function ProcessAllData($data)
     {
