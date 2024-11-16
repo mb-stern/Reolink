@@ -22,15 +22,6 @@ class Reolink extends IPSModule
         // Webhook registrieren
         $this->RegisterAttributeString("CurrentHook", "");
 
-        /*
-        // Standard-Boolean-Variablen für Bewegungen registrieren
-        $this->RegisterVariableBoolean("Person", "Person erkannt", "~Motion", 20);
-        $this->RegisterVariableBoolean("Tier", "Tier erkannt", "~Motion", 25);
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug erkannt", "~Motion", 30);
-        $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
-        */
-
         // Timer zur Rücksetzung der Boolean-Variablen
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
