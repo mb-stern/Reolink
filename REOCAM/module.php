@@ -87,18 +87,13 @@ class Reolink extends IPSModule
     {
 
         $hookBase = '/hook/reolink_';
-        //$hookPath = $this->ReadAttributeString("CurrentHook");
-
-        $this->WriteAttributeString("CurrentHook", $hookPath);
+        $hookPath = $this->ReadAttributeString("CurrentHook");
     
-        
-        /*
         // Wenn kein Hook registriert ist, einen neuen erstellen
         if ($hookPath === "") {
             $hookPath = $hookBase . $this->InstanceID;
             $this->WriteAttributeString("CurrentHook", $hookPath);
         }
-            */
         
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) === 0) {
