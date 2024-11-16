@@ -21,6 +21,7 @@ class Reolink extends IPSModule
         
         // Webhook registrieren
         $this->RegisterAttributeString("CurrentHook", "");
+        $this->RegisterHook();
 
         // Timer zur Rücksetzung der Boolean-Variablen
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
@@ -47,9 +48,6 @@ class Reolink extends IPSModule
     
         // Webhook-Pfad in der Form anzeigen
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
-
-        // Eingabeformular neu laden
-        $this->ReloadForm();
     
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
