@@ -41,7 +41,9 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        $this->RegisterHook();
+        // Webhook dynamisch registrieren
+        $webhookPath = $this->ReadPropertyString("WebhookPath");
+        $this->RegisterHook($webhookPath);
 
         // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
@@ -72,23 +74,22 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
-    private function RegisterHook()
+    private function RegisterHook($hookName)
     {
-        $hookName = '/hook/reolink'; // Fester Name für den Webhook
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-
+    
         if (count($ids) === 0) {
             $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
             return;
         }
-
+    
         $hookInstanceID = $ids[0];
         $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-
+    
         if (!is_array($hooks)) {
-        $hooks = [];
+            $hooks = [];
         }
-
+    
         // Prüfen, ob der Hook bereits existiert
         foreach ($hooks as $hook) {
             if ($hook['Hook'] === $hookName && $hook['TargetID'] === $this->InstanceID) {
@@ -96,15 +97,15 @@ class Reolink extends IPSModule
                 return; // Hook existiert bereits, keine weiteren Aktionen nötig
             }
         }
-
+    
         // Falls der Hook nicht existiert, hinzufügen
         $hooks[] = ['Hook' => $hookName, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
-
+    
         $this->SendDebug('RegisterHook', "Hook '$hookName' wurde registriert.", 0);
     }
-
+    
     public function ProcessHookData()
     {
         $rawData = file_get_contents("php://input");

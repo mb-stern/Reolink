@@ -2,8 +2,16 @@
     "elements": [
         {
             "type": "ValidationTextBox",
+            "name": "WebhookPath",
+            "caption": "Webhook-Pfad",
+            "required": true,
+            "default": "/hook/reolink"
+        },
+        {
+            "type": "ValidationTextBox",
             "name": "CameraIP",
-            "caption": "Kamera-IP"
+            "caption": "Kamera-IP-Adresse",
+            "required": true
         },
         {
             "type": "ValidationTextBox",
@@ -20,40 +28,14 @@
             "name": "StreamType",
             "caption": "Stream-Typ",
             "options": [
-                {
-                    "caption": "Hauptstream",
-                    "value": "main"
-                },
-                {
-                    "caption": "Substream",
-                    "value": "sub"
-                }
+                { "label": "Main", "value": "main" },
+                { "label": "Sub", "value": "sub" }
             ]
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowWebhookVariables",
-            "caption": "Webhook-Variablen anzeigen"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowBooleanVariables",
-            "caption": "Bewegungserkennungs-Variablen anzeigen"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowSnapshots",
-            "caption": "Schnappschüsse anzeigen"
-        },
-        {
-            "type": "CheckBox",
-            "name": "ShowArchives",
-            "caption": "Archive anzeigen"
         },
         {
             "type": "NumberSpinner",
             "name": "MaxArchiveImages",
-            "caption": "Maximale Anzahl Bilder im Archiv",
+            "caption": "Maximale Anzahl an Archivbildern",
             "minimum": 1
         }
     ]
