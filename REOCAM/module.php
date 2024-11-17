@@ -716,7 +716,8 @@ private function RemoveArchives()
         }
     }
 
-    function getToken($cameraIP, $username, $password) {
+    private function GetToken(string $cameraIP, string $username, string $password): string
+    {
         $url = "https://$cameraIP/api.cgi?cmd=Login";
         $data = [
             [
