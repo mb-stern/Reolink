@@ -17,8 +17,5 @@ Das Modul kann nicht:
 - Alle Reolink-Kameras abdecken
 - Einstellungen an der Kamerakonfiguration vornehmen. Dies muss immer am Webinterface der Kamera geschehen.
 
-Aktuell getestete Reolink-Kameras:
-- Reolink Duo 2
-
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
