@@ -19,7 +19,7 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
-        $this->RegisterPropertyBoolean("ApiFunktionen", false);
+        $this->RegisterPropertyBoolean("ApiFunktionen", true);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
