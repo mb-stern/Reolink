@@ -18,6 +18,7 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
+        $this->RegisterPropertyBoolean("ShowVisitorElements", false);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -29,6 +30,7 @@ class REOCAM extends IPSModule
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
+        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
 
     }
     
@@ -79,6 +81,12 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveTestElements();
         }
+        if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
+            $this->CreateVisitorElements();
+        } else {
+            $this->RemoveVisitorElements();
+        }
+        
         
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -180,8 +188,11 @@ class REOCAM extends IPSModule
                 case "MD":
                     $this->ActivateBoolean("Bewegung", 36);
                     break;
+                case "VISITOR":
+                    $this->ActivateBoolean("Besucher", 41);
+                    break;    
                 case "TEST":
-                    $this->ActivateBoolean("Test", 41);
+                    $this->ActivateBoolean("Test", 46);               
                     break;
             }
         }
@@ -201,12 +212,13 @@ class REOCAM extends IPSModule
         $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 40);
+        $this->RegisterVariableBoolean("Besucher", "Besucher", "~Motion", 40);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
     }
 
     private function RemoveBooleanVariables()
     {
-        $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+        $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
         foreach ($booleans as $booleanIdent) {
             $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
             if ($varID !== false) {
@@ -282,7 +294,7 @@ class REOCAM extends IPSModule
 
     private function CreateOrUpdateSnapshots()
     {
-        $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Bewegung"];
+        $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Besucher", "Bewegung"];
         foreach ($snapshots as $snapshot) {
             $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
             $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
@@ -291,7 +303,7 @@ class REOCAM extends IPSModule
 
     private function RemoveSnapshots()
     {
-        $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Bewegung"];
+        $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
         foreach ($snapshots as $snapshotIdent) {
             $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
             if ($mediaID) {
@@ -348,6 +360,53 @@ private function RemoveTestElements()
     }
 }
 
+private function CreateVisitorElements()
+{
+    // Besucher-Boolean-Variable
+    $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
+
+    // Besucher-Snapshot
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID))) {
+        $mediaID = IPS_CreateMedia(1); // 1 = Bild
+        IPS_SetParent($mediaID, $this->InstanceID);
+        IPS_SetIdent($mediaID, "Snapshot_Besucher");
+        IPS_SetName($mediaID, "Snapshot Besucher");
+        IPS_SetMediaCached($mediaID, false);
+    }
+
+    // Besucher-Bildarchiv
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID))) {
+        $categoryID = IPS_CreateCategory();
+        IPS_SetParent($categoryID, $this->InstanceID);
+        IPS_SetIdent($categoryID, "Archive_Besucher");
+        IPS_SetName($categoryID, "Bildarchiv Besucher");
+    }
+}
+
+private function RemoveVisitorElements()
+{
+    // Entfernen der Besucher-Boolean-Variable
+    $varID = @IPS_GetObjectIDByIdent("Besucher", $this->InstanceID);
+    if ($varID) {
+        $this->UnregisterVariable("Besucher");
+    }
+
+    // Entfernen des Besucher-Snapshots
+    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID);
+    if ($mediaID) {
+        IPS_DeleteMedia($mediaID, true);
+    }
+
+    // Entfernen des Besucher-Bildarchivs
+    $categoryID = @IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID);
+    if ($categoryID) {
+        $children = IPS_GetChildrenIDs($categoryID);
+        foreach ($children as $childID) {
+            IPS_DeleteMedia($childID, true);
+        }
+        IPS_DeleteCategory($categoryID);
+    }
+}
     private function updateVariable($name, $value)
     {
         $ident = $this->normalizeIdent($name);
@@ -378,12 +437,16 @@ private function RemoveTestElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
-        // Wenn Test-Elemente deaktiviert sind, keine Snapshots für "Test" erstellen
+        // Wenn Test- und Besucher-Elemente deaktiviert sind, keine Snapshots dafür erstellen
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
             return;
         }
-    
+        if (!$this->ReadPropertyBoolean("ShowVisitorElements") && $booleanIdent === "Besucher") {
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Besucher übersprungen, da Besucher-Elemente deaktiviert sind.", 0);
+            return;
+        }
+        
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
@@ -451,8 +514,11 @@ private function RemoveTestElements()
                 case "Bewegung":
                     IPS_SetPosition($categoryID, 37);
                     break;
-                case "Test":
+                case "Besucher":
                     IPS_SetPosition($categoryID, 42);
+                    break;
+                case "Test":
+                    IPS_SetPosition($categoryID, 47);
                     break;
                 default:
                     IPS_SetPosition($categoryID, 99); // Standardposition
@@ -466,7 +532,7 @@ private function RemoveTestElements()
 private function CreateOrUpdateArchives()
 {
     // Boolean-Identifikatoren für die Archive
-    $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"];
+    $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
     
     // Für jede Kategorie prüfen und aktualisieren
     foreach ($categories as $category) {
@@ -542,7 +608,7 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
 
 private function RemoveArchives()
 {
-    $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Test"]; // Alle möglichen Archiv-Kategorien
+    $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"]; // Alle möglichen Archiv-Kategorien
     foreach ($categories as $category) {
         $archiveIdent = "Archive_" . $category;
         $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
