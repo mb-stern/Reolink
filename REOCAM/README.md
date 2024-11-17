@@ -13,7 +13,7 @@
 
 ### 1. Funktionsumfang
 
-Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen.
+Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. Dieses Modul ist nur für Reolink Kameras ausgelegt, welche Webhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen.
 
 Das Modul kann folgendes:
 
@@ -24,13 +24,19 @@ Das Modul kann folgendes:
 - Auswählen, ob Main- oder Substream angezeigt werden soll.
 
 Das Modul kann nicht:
-- Alle Reolink-Kameras abdecken
+- Alle Reolink-Kameras abdecken, insbesondere wenn diese kein Webhook unterstützen.
 - Einstellungen an der Kamerakonfiguration vornehmen. Dies muss immer am Webinterface der Kamera geschehen.
 
-Aktuell getestete Reolink-Kameras:
+Aktuell getestete Reolink-Kameras welche funktionieren:
 - Reolink Duo 2
 - Reolink RLC-810A
 - Reolink Doorbell
+
+Aktuell getestete Reolink-Kameras welche nicht funktionieren, da keine Webhook-Unterstützung:
+- Reolink E1 Outdoor (inkl. Pro)
+- Reolink Trackmix
+- Argus 3 Pro (und wahrscheinlich sämtliche akkubetriebenen Kameras)
+
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
@@ -38,7 +44,7 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 ### 2. Voraussetzungen
 
 - IP-Symcon ab Version 7.0
-- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center
+- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center.
 
 ### 3. Software-Installation
 
@@ -59,7 +65,9 @@ Benutzername                        |   Benutzername zur Anmeldung im Interface 
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
 Webhook-Daten                       |	Aktiviert die Anzeige der Variablen aus dem JSON des Webhooks. Dies ist nur für allfällige Tests und Diagnose nötig
-Test-Elemnte anzeigen               |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Varaible, um mit der Tesfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
+Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
+Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
+API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst nur die Kamera-LED
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Diese kann in der Visualisierung angezeigt werden.
@@ -83,14 +91,15 @@ Integration von Kamerastream, Schnappschüssen und Variablen zur intelligenten B
 
 ### 7. Webhook
 
-Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konfiguratinsformular angezeigt. Dieser Pfad muss im Webinterface der Kamera in den Einstellungen unter Push eingetragen werden. 
-Es ist nur noch die IPvonSYMCON:3777 davor aufzuführen.
+Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konfigurationsformular angezeigt. Dieser Pfad muss im Webinterface der Kamera in den Einstellungen unter Push eingetragen werden. Dort den Webhook-Pfad mit dem Default-Content hinzufügen.
+Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
 Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
 Version 1.1 (17.11.2024)
 - Unterstützung der Doorbell
+- Einführung API-Funktionen (vorerst mal die LED)
 
 Version 1.0 (16.11.2024)
 - Initiale Beta-Version

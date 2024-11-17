@@ -19,6 +19,7 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
+        $this->RegisterPropertyBoolean("ApiFunktionen", true);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -31,6 +32,9 @@ class REOCAM extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
+
+        $this->RegisterVariableBoolean("WhiteLed", "White LED", "~Switch", 10);
+        $this->EnableAction("WhiteLed");
 
     }
     
@@ -86,10 +90,26 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveVisitorElements();
         }
-        
+        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
+            $this->CreateApiFunctions();
+        } else {
+            $this->RemoveApiFunctions();
+        }
         
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+    }
+
+    public function RequestAction($Ident, $Value)
+    {
+        switch ($Ident) {
+            case "WhiteLed":
+                $this->SetWhiteLed($Value);
+                SetValue($this->GetIDForIdent($Ident), $Value);
+                break;
+            default:
+                throw new Exception("Invalid Ident");
+        }
     }
 
     private function RegisterHook()
@@ -661,4 +681,108 @@ private function RemoveArchives()
 
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
+
+    private function SetWhiteLed(bool $state)
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+
+        // Hole Token für die API-Authentifizierung
+        $token = $this->GetToken($cameraIP, $username, $password);
+
+        // LED-Einstellungen setzen
+        $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
+        $data = [
+            [
+                "cmd" => "SetWhiteLed",
+                "param" => [
+                    "WhiteLed" => [
+                        "state" => $state ? 1 : 0, // 1 = Ein, 0 = Aus
+                        "channel" => 0
+                    ]
+                ]
+            ]
+        ];
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        // Überprüfen, ob der Befehl erfolgreich war
+        $responseData = json_decode($response, true);
+        if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
+            IPS_LogMessage("Reolink", "Fehler beim Setzen der LED: " . json_encode($responseData));
+        }
+    }
+
+    private function GetToken(string $cameraIP, string $username, string $password): string
+    {
+        $url = "https://$cameraIP/api.cgi?cmd=Login";
+        $data = [
+            [
+                "cmd" => "Login",
+                "param" => [
+                    "User" => [
+                        "Version" => "0",
+                        "userName" => $username,
+                        "password" => $password
+                    ]
+                ]
+            ]
+        ];
+    
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    
+        $response = curl_exec($ch);
+        if ($response === false) {
+            throw new Exception("cURL-Fehler: " . curl_error($ch));
+        }
+        curl_close($ch);
+        
+        $this->SendDebug('API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
+        
+        $responseData = json_decode($response, true);
+        if (isset($responseData[0]['value']['Token']['name'])) {
+            return $responseData[0]['value']['Token']['name'];
+        }
+        
+        throw new Exception("Failed to retrieve token. API response: " . json_encode($responseData));
+    }
+
+    private function CreateApiFunctions()
+{
+    // White LED-Variable erstellen
+    if (!@IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID)) {
+        $this->RegisterVariableBoolean("WhiteLed", "Weisse LED", "~Switch", 0);
+        $this->EnableAction("WhiteLed");
+    }
+
+    // Hier können zukünftige API-Funktionen ergänzt werden
+}
+
+private function RemoveApiFunctions()
+{
+    // White LED-Variable entfernen
+    $varID = @IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID);
+    if ($varID) {
+        $this->UnregisterVariable("WhiteLed");
+    }
+
+    // Hier können zukünftige API-Funktionen ergänzt werden
+}
+
 }
