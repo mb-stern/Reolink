@@ -767,7 +767,7 @@ private function RemoveArchives()
 {
     // White LED-Variable erstellen
     if (!@IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID)) {
-        $this->RegisterVariableBoolean("WhiteLed", "Kamera LED", "~Switch", 0);
+        $this->RegisterVariableBoolean("WhiteLed", "Weisse LED", "~Switch", 0);
         $this->EnableAction("WhiteLed");
     }
 
