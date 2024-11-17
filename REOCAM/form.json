@@ -47,6 +47,11 @@
         },
         {
             "type": "CheckBox",
+            "name": "ApiFunktionen",
+            "caption": "API-Funktionen anzeigen"
+        },
+        {
+            "type": "CheckBox",
             "name": "ShowBooleanVariables",
             "caption": "Intelligente Bewegungserkennung"
         },

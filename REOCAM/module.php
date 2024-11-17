@@ -19,6 +19,7 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
+        $this->RegisterPropertyBoolean("ApiFunktionen", false);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -89,7 +90,11 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveVisitorElements();
         }
-        
+        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
+            $this->CreateApiFunctions();
+        } else {
+            $this->RemoveApiFunctions();
+        }
         
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -757,4 +762,27 @@ private function RemoveArchives()
         
         throw new Exception("Failed to retrieve token. API response: " . json_encode($responseData));
     }
+
+    private function CreateApiFunctions()
+{
+    // White LED-Variable erstellen
+    if (!@IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID)) {
+        $this->RegisterVariableBoolean("WhiteLed", "White LED", "~Switch", 10);
+        $this->EnableAction("WhiteLed");
+    }
+
+    // Hier können zukünftige API-Funktionen ergänzt werden
+}
+
+private function RemoveApiFunctions()
+{
+    // White LED-Variable entfernen
+    $varID = @IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID);
+    if ($varID) {
+        $this->UnregisterVariable("WhiteLed");
+    }
+
+    // Hier können zukünftige API-Funktionen ergänzt werden
+}
+
 }
