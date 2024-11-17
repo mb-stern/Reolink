@@ -18,6 +18,7 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
+        $this->RegisterPropertyBoolean("ShowVisitorElements", false);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -80,6 +81,12 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveTestElements();
         }
+        if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
+            $this->CreateVisitorElements();
+        } else {
+            $this->RemoveVisitorElements();
+        }
+        
         
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -353,6 +360,53 @@ private function RemoveTestElements()
     }
 }
 
+private function CreateVisitorElements()
+{
+    // Besucher-Boolean-Variable
+    $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
+
+    // Besucher-Snapshot
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID))) {
+        $mediaID = IPS_CreateMedia(1); // 1 = Bild
+        IPS_SetParent($mediaID, $this->InstanceID);
+        IPS_SetIdent($mediaID, "Snapshot_Besucher");
+        IPS_SetName($mediaID, "Snapshot Besucher");
+        IPS_SetMediaCached($mediaID, false);
+    }
+
+    // Besucher-Bildarchiv
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID))) {
+        $categoryID = IPS_CreateCategory();
+        IPS_SetParent($categoryID, $this->InstanceID);
+        IPS_SetIdent($categoryID, "Archive_Besucher");
+        IPS_SetName($categoryID, "Bildarchiv Besucher");
+    }
+}
+
+private function RemoveVisitorElements()
+{
+    // Entfernen der Besucher-Boolean-Variable
+    $varID = @IPS_GetObjectIDByIdent("Besucher", $this->InstanceID);
+    if ($varID) {
+        $this->UnregisterVariable("Besucher");
+    }
+
+    // Entfernen des Besucher-Snapshots
+    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID);
+    if ($mediaID) {
+        IPS_DeleteMedia($mediaID, true);
+    }
+
+    // Entfernen des Besucher-Bildarchivs
+    $categoryID = @IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID);
+    if ($categoryID) {
+        $children = IPS_GetChildrenIDs($categoryID);
+        foreach ($children as $childID) {
+            IPS_DeleteMedia($childID, true);
+        }
+        IPS_DeleteCategory($categoryID);
+    }
+}
     private function updateVariable($name, $value)
     {
         $ident = $this->normalizeIdent($name);
@@ -383,12 +437,16 @@ private function RemoveTestElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
-        // Wenn Test-Elemente deaktiviert sind, keine Snapshots für "Test" erstellen
+        // Wenn Test- und Besucher-Elemente deaktiviert sind, keine Snapshots dafür erstellen
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
             return;
         }
-    
+        if (!$this->ReadPropertyBoolean("ShowVisitorElements") && $booleanIdent === "Besucher") {
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Besucher übersprungen, da Besucher-Elemente deaktiviert sind.", 0);
+            return;
+        }
+        
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     

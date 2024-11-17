@@ -42,6 +42,11 @@
         },
         {
             "type": "CheckBox",
+            "name": "ShowVisitorElements",
+            "caption": "Besucher-Erkennung aktivieren (für Doorbell)"
+        },
+        {
+            "type": "CheckBox",
             "name": "ShowBooleanVariables",
             "caption": "Intelligente Bewegungserkennung"
         },
