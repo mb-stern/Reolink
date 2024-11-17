@@ -739,14 +739,19 @@ private function RemoveArchives()
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     
         $response = curl_exec($ch);
+        if ($response === false) {
+            throw new Exception("cURL-Fehler: " . curl_error($ch));
+        }
         curl_close($ch);
-    
+        
+        $this->SendDebug('API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
+        
         $responseData = json_decode($response, true);
         if (isset($responseData[0]['value']['Token']['name'])) {
             return $responseData[0]['value']['Token']['name'];
         }
-    
-        throw new Exception("Failed to retrieve token.");
-    }
+        
+        throw new Exception("Failed to retrieve token. API response: " . json_encode($responseData));
+        
     
 }
