@@ -29,6 +29,8 @@ Das Modul kann nicht:
 
 Aktuell getestete Reolink-Kameras:
 - Reolink Duo 2
+- Reolink RLC-810A
+- Reolink Doorbell
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
