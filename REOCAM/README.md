@@ -90,9 +90,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 ### 8. Versionen
 
 Version 1.1 (17.11.2024)
-
 - Unterstützung der Doorbell
 
 Version 1.0 (16.11.2024)
-
 - Initiale Beta-Version
