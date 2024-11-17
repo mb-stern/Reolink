@@ -24,7 +24,7 @@ Das Modul kann folgendes:
 - Auswählen, ob Main- oder Substream angezeigt werden soll.
 
 Das Modul kann nicht:
-- Alle Reolink-Kameras abdecken
+- Alle Reolink-Kameras abdecken, insbesondere wenn diese kein Webhook unterstützen.
 - Einstellungen an der Kamerakonfiguration vornehmen. Dies muss immer am Webinterface der Kamera geschehen.
 
 Aktuell getestete Reolink-Kameras:
@@ -38,7 +38,7 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 ### 2. Voraussetzungen
 
 - IP-Symcon ab Version 7.0
-- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center
+- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center.
 
 ### 3. Software-Installation
 
@@ -84,8 +84,8 @@ Integration von Kamerastream, Schnappschüssen und Variablen zur intelligenten B
 
 ### 7. Webhook
 
-Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konfiguratinsformular angezeigt. Dieser Pfad muss im Webinterface der Kamera in den Einstellungen unter Push eingetragen werden. 
-Es ist nur noch die IPvonSYMCON:3777 davor aufzuführen.
+Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konfigurationsformular angezeigt. Dieser Pfad muss im Webinterface der Kamera in den Einstellungen unter Push eingetragen werden. Dort den Webhook-Pfad mit dem Default-Content hinzufügen.
+Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
 Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
