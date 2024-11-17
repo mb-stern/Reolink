@@ -752,6 +752,5 @@ private function RemoveArchives()
         }
         
         throw new Exception("Failed to retrieve token. API response: " . json_encode($responseData));
-        
-    
+    }
 }
