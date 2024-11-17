@@ -99,7 +99,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 1.1 (17.11.2024)
 - Unterstützung der Doorbell
-- Einführung API-Funktionen (vorerst mal die LED)
+- Unterstützung der API-Funktionen (vorerst mal die LED)
 
 Version 1.0 (16.11.2024)
 - Initiale Beta-Version
