@@ -858,7 +858,7 @@ private function SendApiRequest(string $url, array $data)
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Alarmabhängig", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
             $this->SendDebug("Variablenprofil", "Variablenprofil REOCAM.WLED erstellt", 0);
-            $this->RegisterVariableString("Mode", "LED Modus", "", 1);
+            $this->RegisterVariableString("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
             
         }
