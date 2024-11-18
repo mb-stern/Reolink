@@ -840,7 +840,7 @@ private function SendApiRequest(string $url, array $data)
             IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
             IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Alarmabhängig", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
         }
 
