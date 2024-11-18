@@ -861,7 +861,7 @@ private function SendApiRequest(string $url, array $data)
 
         if (!@IPS_GetObjectIDByIdent("Mode", $this->InstanceID)) {
             $this->SendDebug("Variablenprofil", "Variablenprofil REOCAM.WLED erstellt", 0);
-            $this->RegisterVariableString("Mode", "LED Modus", "REOCAM.WLED", 1);
+            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
     
