@@ -850,17 +850,19 @@ private function SendApiRequest(string $url, array $data)
         }
     
         // Mode-Variable
-        if (!@IPS_GetObjectIDByIdent("Mode", $this->InstanceID)) {
+        if (!IPS_VariableProfileExists("WPLUX.Wwhe")) {
             IPS_CreateVariableProfile("REOCAM.WLED", 1); //1 für Integer
             IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
             IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Alarmabhängig", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
+        }
+
+        if (!@IPS_GetObjectIDByIdent("Mode", $this->InstanceID)) {
             $this->SendDebug("Variablenprofil", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableString("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
-            
         }
     
         // Bright-Variable
