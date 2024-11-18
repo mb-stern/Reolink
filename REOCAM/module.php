@@ -759,7 +759,7 @@ private function RemoveArchives()
         $this->SendApiRequest($url, $data);
     }
 
-    private function SetMode(string $mode)
+    private function SetMode(int $mode)
 {
     $cameraIP = $this->ReadPropertyString("CameraIP");
     $username = $this->ReadPropertyString("Username");
