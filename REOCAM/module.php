@@ -756,22 +756,7 @@ private function RemoveArchives()
             ]
         ];
 
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        // Überprüfen, ob der Befehl erfolgreich war
-        $responseData = json_decode($response, true);
-        if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-            IPS_LogMessage("Reolink", "Fehler beim Setzen der LED: " . json_encode($responseData));
-        }
+        $this->SendApiRequest($url, $data);
     }
 
     private function SetMode(string $mode)
@@ -795,22 +780,7 @@ private function RemoveArchives()
         ]
     ];
 
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    // Überprüfen, ob der Befehl erfolgreich war
-    $responseData = json_decode($response, true);
-    if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-        IPS_LogMessage("Reolink", "Fehler beim Setzen der LED: " . json_encode($responseData));
-    }
+    $this->SendApiRequest($url, $data);
 }
 
 private function SetBrightness(int $brightness)
@@ -834,22 +804,7 @@ private function SetBrightness(int $brightness)
         ]
     ];
 
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    // Überprüfen, ob der Befehl erfolgreich war
-    $responseData = json_decode($response, true);
-    if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-        IPS_LogMessage("Reolink", "Fehler beim Setzen der LED: " . json_encode($responseData));
-    }
+    $this->SendApiRequest($url, $data);
 }
 
 private function SendApiRequest(string $url, array $data)
