@@ -835,7 +835,7 @@ private function SendApiRequest(string $url, array $data)
         }
     
         // Mode-Variable
-        if (!IPS_VariableProfileExists("WPLUX.Wwhe")) {
+        if (!IPS_VariableProfileExists("REOCAM.WLED")) {
             IPS_CreateVariableProfile("REOCAM.WLED", 1); //1 für Integer
             IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
             IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
