@@ -830,7 +830,7 @@ private function SendApiRequest(string $url, array $data)
     {
         // White LED-Variable
         if (!@IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID)) {
-            $this->RegisterVariableBoolean("WhiteLed", "Weisse LED", "~Switch", 0);
+            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
             $this->EnableAction("WhiteLed");
         }
     
