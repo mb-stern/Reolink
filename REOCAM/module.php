@@ -760,71 +760,71 @@ private function RemoveArchives()
     }
 
     private function SetMode(int $mode)
-{
-    $cameraIP = $this->ReadPropertyString("CameraIP");
-    $username = $this->ReadPropertyString("Username");
-    $password = $this->ReadPropertyString("Password");
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
 
-    $token = $this->GetToken($cameraIP, $username, $password);
+        $token = $this->GetToken($cameraIP, $username, $password);
 
-    $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
-    $data = [
-        [
-            "cmd" => "SetWhiteLed",
-            "param" => [
-                "WhiteLed" => [
-                    "mode" => $mode,
-                    "channel" => 0
+        $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
+        $data = [
+            [
+                "cmd" => "SetWhiteLed",
+                "param" => [
+                    "WhiteLed" => [
+                        "mode" => $mode,
+                        "channel" => 0
+                    ]
                 ]
             ]
-        ]
-    ];
+        ];
 
-    $this->SendApiRequest($url, $data);
-}
-
-private function SetBrightness(int $brightness)
-{
-    $cameraIP = $this->ReadPropertyString("CameraIP");
-    $username = $this->ReadPropertyString("Username");
-    $password = $this->ReadPropertyString("Password");
-
-    $token = $this->GetToken($cameraIP, $username, $password);
-
-    $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
-    $data = [
-        [
-            "cmd" => "SetWhiteLed",
-            "param" => [
-                "WhiteLed" => [
-                    "bright" => $brightness,
-                    "channel" => 0
-                ]
-            ]
-        ]
-    ];
-
-    $this->SendApiRequest($url, $data);
-}
-
-private function SendApiRequest(string $url, array $data)
-{
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    $responseData = json_decode($response, true);
-    if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-        IPS_LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
+        $this->SendApiRequest($url, $data);
     }
-}
+
+    private function SetBrightness(int $brightness)
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+
+        $token = $this->GetToken($cameraIP, $username, $password);
+
+        $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
+        $data = [
+            [
+                "cmd" => "SetWhiteLed",
+                "param" => [
+                    "WhiteLed" => [
+                        "bright" => $brightness,
+                        "channel" => 0
+                    ]
+                ]
+            ]
+        ];
+
+        $this->SendApiRequest($url, $data);
+    }
+
+    private function SendApiRequest(string $url, array $data)
+    {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $responseData = json_decode($response, true);
+        if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
+            IPS_LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
+        }
+    }
 
     private function CreateApiFunctions()
     {
