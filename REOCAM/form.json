@@ -32,6 +32,19 @@
         },
         {
             "type": "CheckBox",
+            "name": "EnablePolling",
+            "caption": "Polling aktivieren (für Kameras ohne Webhook-Unterstützung)"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "PollingInterval",
+            "caption": "Polling-Intervall (Sekunden)",
+            "suffix": "Sekunden",
+            "minimum": 2,
+            "maximum": 3600
+        },
+        {
+            "type": "CheckBox",
             "name": "ShowWebhookVariables",
             "caption": "Webhook-Daten als Variablen anzeigen (nur für Tests und Diagnose)"
         },
@@ -71,7 +84,7 @@
             "caption": "Maximale Anzahl Archivbilder",
             "minimum": 1,
             "suffix": "Bilder"
-        },
+        },      
         {
             "type": "Label",
             "caption": "Sag danke und unterstütze den Modulentwickler:"

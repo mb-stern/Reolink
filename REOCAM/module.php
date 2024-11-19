@@ -20,6 +20,10 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
         $this->RegisterPropertyBoolean("ApiFunktionen", true);
+        $this->RegisterPropertyBoolean("EnablePolling", false);
+        $this->RegisterPropertyInteger("PollingInterval", 2);
+        
+
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -32,10 +36,7 @@ class REOCAM extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
-
-        $this->RegisterVariableBoolean("WhiteLed", "White LED", "~Switch", 10);
-        $this->EnableAction("WhiteLed");
-
+        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
     }
     
     public function ApplyChanges()
@@ -95,6 +96,13 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveApiFunctions();
         }
+        if ($this->ReadPropertyBoolean("EnablePolling")) {
+            $interval = $this->ReadPropertyInteger("PollingInterval");
+            $this->SetTimerInterval("PollingTimer", $interval * 1000); // Polling-Intervall setzen
+        } else {
+            $this->SetTimerInterval("PollingTimer", 0); // Polling deaktivieren
+        }
+        
         
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -681,7 +689,7 @@ private function RemoveArchives()
 
         return $streamType === "main" ? 
                "rtsp://$username:$password@$cameraIP:554" :
-               "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
+               "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
     public function GetSnapshotURL()
@@ -878,4 +886,81 @@ private function RemoveArchives()
         }
     }
     
+    private function UpdateAIState(string $type, int $state)
+    {
+        // Mapping der AI-Typen zu den Variablen
+        $mapping = [
+            "dog_cat" => "Tier",
+            "people"  => "Person",
+            "vehicle" => "Fahrzeug"
+        ];
+    
+        if (!isset($mapping[$type])) {
+            $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
+            return;
+        }
+    
+        $ident = $mapping[$type];
+        $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+    
+        if ($variableID !== false) {
+            $currentValue = GetValue($variableID);
+    
+            // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
+            if ($currentValue != ($state == 1)) {
+                $this->SetValue($ident, $state == 1);
+                $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
+    
+                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
+                $timerName = $ident . "_Reset";
+                if ($state == 1) {
+                    $this->SetTimerInterval($timerName, 5000);
+                    // Schnappschuss auslösen
+                    $this->SendDebug("UpdateAIState", "Löse Schnappschuss für '$ident' aus.", 0);
+                    $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
+                } else {
+                    $this->SetTimerInterval($timerName, 0); // Timer stoppen
+                }
+            } else {
+                $this->SendDebug("UpdateAIState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
+            }
+        } else {
+            $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
+        }
+    }
+    
+public function Polling()
+{
+    if (!$this->ReadPropertyBoolean("EnablePolling")) {
+        $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
+        return;
+    }
+
+    $cameraIP = $this->ReadPropertyString("CameraIP");
+    $username = $this->ReadPropertyString("Username");
+    $password = $this->ReadPropertyString("Password");
+
+    $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
+
+    $response = @file_get_contents($url);
+    if ($response === false) {
+        $this->SendDebug("Polling", "Fehler beim Abrufen der Daten von der Kamera.", 0);
+        return;
+    }
+
+    $this->SendDebug("Polling", "Rohdaten: $response", 0);
+
+    $data = json_decode($response, true);
+    if ($data === null || !isset($data[0]['value'])) {
+        $this->SendDebug("Polling", "Ungültige Daten empfangen: $response", 0);
+        return;
+    }
+
+    $aiState = $data[0]['value'];
+
+    $this->UpdateAIState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
+    $this->UpdateAIState("people", $aiState['people']['alarm_state'] ?? 0);
+    $this->UpdateAIState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
+}
+
 }
