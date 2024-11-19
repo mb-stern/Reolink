@@ -82,7 +82,7 @@
             "name": "PollingInterval",
             "caption": "Polling-Intervall (Sekunden)",
             "suffix": "Sekunden",
-            "minimum": 10,
+            "minimum": 2,
             "maximum": 3600
         },        
         {
