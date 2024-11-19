@@ -25,16 +25,12 @@ Das Modul kann folgendes:
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
 - Auswählen, ob Main- oder Substream angezeigt werden soll.
 
-Das Modul kann nicht:
-- Alle Reolink-Kameras abdecken, insbesondere wenn diese kein Webhook unterstützen.
-- Einstellungen an der Kamerakonfiguration vornehmen. Dies muss immer am Webinterface der Kamera geschehen.
-
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren:
 - Reolink Duo 2
 - Reolink RLC-810A
 - Reolink Doorbell
 
-Aktuell getestete Reolink-Kameras welche kein Webhook unterstützen und allenfalls über die Polling-Option abgefragt werden können.
+Aktuell getestete Reolink-Kameras welche kein Webhook unterstützen und allenfalls über die Polling-Option abgefragt werden können:
 - Reolink E1 Outdoor (inkl. Pro)
 - Reolink Trackmix
 - Argus 3 Pro (und wahrscheinlich sämtliche akkubetriebenen Kameras)
