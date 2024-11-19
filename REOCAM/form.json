@@ -33,7 +33,7 @@
         {
             "type": "CheckBox",
             "name": "EnablePolling",
-            "caption": "Polling aktivieren"
+            "caption": "Polling aktivieren (für Kameras ohne Webhook-Unterstützung)"
         },
         {
             "type": "NumberSpinner",
