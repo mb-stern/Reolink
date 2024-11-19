@@ -942,8 +942,6 @@ public function Polling()
 
     $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
 
-    $this->SendDebug("Polling", "Aufruf-URL: $url", 0);
-
     $response = @file_get_contents($url);
     if ($response === false) {
         $this->SendDebug("Polling", "Fehler beim Abrufen der Daten von der Kamera.", 0);
