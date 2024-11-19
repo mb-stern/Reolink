@@ -73,6 +73,19 @@
             "suffix": "Bilder"
         },
         {
+            "type": "CheckBox",
+            "name": "EnablePolling",
+            "caption": "Polling aktivieren"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "PollingInterval",
+            "caption": "Polling-Intervall (Sekunden)",
+            "suffix": "Sekunden",
+            "minimum": 10,
+            "maximum": 3600
+        },        
+        {
             "type": "Label",
             "caption": "Sag danke und unterstütze den Modulentwickler:"
         },
