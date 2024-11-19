@@ -887,48 +887,48 @@ private function RemoveArchives()
     }
     
     private function UpdateAIState(string $type, int $state)
-{
-    // Mapping der AI-Typen zu den Variablen
-    $mapping = [
-        "dog_cat" => "Tier",
-        "people"  => "Person",
-        "vehicle" => "Fahrzeug"
-    ];
-
-    if (!isset($mapping[$type])) {
-        $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
-        return;
-    }
-
-    $ident = $mapping[$type];
-    $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-
-    if ($variableID !== false) {
-        $currentValue = GetValue($variableID);
-
-        // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
-        if ($currentValue != ($state == 1)) {
-            $this->SetValue($ident, $state == 1);
-            $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
-
-            // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
-            $timerName = $ident . "_Reset";
-            if ($state == 1) {
-                $this->SetTimerInterval($timerName, 5000);
-            } else {
-                $this->SetTimerInterval($timerName, 0); // Timer stoppen
-            }
-
-            // Schnappschuss auslösen, wenn die Variable auf true gesetzt wird
-            if ($state == 1) {
-                $this->CreateSnapshot($ident);
-            }
+    {
+        // Mapping der AI-Typen zu den Variablen
+        $mapping = [
+            "dog_cat" => "Tier",
+            "people"  => "Person",
+            "vehicle" => "Fahrzeug"
+        ];
+    
+        if (!isset($mapping[$type])) {
+            $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
+            return;
         }
-    } else {
-        $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
+    
+        $ident = $mapping[$type];
+        $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+    
+        if ($variableID !== false) {
+            $currentValue = GetValue($variableID);
+    
+            // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
+            if ($currentValue != ($state == 1)) {
+                $this->SetValue($ident, $state == 1);
+                $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
+    
+                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
+                $timerName = $ident . "_Reset";
+                if ($state == 1) {
+                    $this->SetTimerInterval($timerName, 5000);
+                    // Schnappschuss auslösen
+                    $this->SendDebug("UpdateAIState", "Löse Schnappschuss für '$ident' aus.", 0);
+                    $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
+                } else {
+                    $this->SetTimerInterval($timerName, 0); // Timer stoppen
+                }
+            } else {
+                $this->SendDebug("UpdateAIState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
+            }
+        } else {
+            $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
+        }
     }
-}
-
+    
 public function Polling()
 {
     if (!$this->ReadPropertyBoolean("EnablePolling")) {
