@@ -689,7 +689,7 @@ private function RemoveArchives()
 
         return $streamType === "main" ? 
                "rtsp://$username:$password@$cameraIP:554" :
-               "rtsp://$username:$password@$cameraIP:554//h264Preview_01_sub";
+               "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
     public function GetSnapshotURL()
