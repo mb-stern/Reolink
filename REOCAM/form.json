@@ -31,6 +31,10 @@
             ]
         },
         {
+            "type": "Label",
+            "caption": "~Divider~"
+        },
+        {
             "type": "CheckBox",
             "name": "EnablePolling",
             "caption": "Polling aktivieren (für Kameras ohne Webhook-Unterstützung)"
@@ -42,6 +46,10 @@
             "suffix": "Sekunden",
             "minimum": 2,
             "maximum": 3600
+        },
+        {
+            "type": "Label",
+            "caption": "~Divider~"
         },
         {
             "type": "CheckBox",
@@ -74,6 +82,10 @@
             "caption": "Schnappschüsse anzeigen"
         },
         {
+            "type": "Label",
+            "caption": "~Divider~"
+        },
+        {
             "type": "CheckBox",
             "name": "ShowArchives",
             "caption": "Bildarchive anzeigen"
@@ -85,6 +97,10 @@
             "minimum": 1,
             "suffix": "Bilder"
         },      
+        {
+            "type": "Label",
+            "caption": "~Divider~"
+        },
         {
             "type": "Label",
             "caption": "Sag danke und unterstütze den Modulentwickler:"
