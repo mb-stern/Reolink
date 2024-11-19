@@ -96,6 +96,13 @@ class REOCAM extends IPSModule
         } else {
             $this->RemoveApiFunctions();
         }
+        if ($this->ReadPropertyBoolean("EnablePolling")) {
+            $interval = $this->ReadPropertyInteger("PollingInterval");
+            $this->SetTimerInterval("PollingTimer", $interval * 1000); // Polling-Intervall setzen
+        } else {
+            $this->SetTimerInterval("PollingTimer", 0); // Polling deaktivieren
+        }
+        
         
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -924,9 +931,8 @@ private function RemoveArchives()
 
 public function Polling()
 {
-    // Überprüfen, ob Polling aktiviert ist
     if (!$this->ReadPropertyBoolean("EnablePolling")) {
-        $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren, wenn Polling nicht aktiv
+        $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
         return;
     }
 
@@ -934,15 +940,17 @@ public function Polling()
     $username = $this->ReadPropertyString("Username");
     $password = $this->ReadPropertyString("Password");
 
-    // API-Endpunkt für das Abrufen des AI-Status
     $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
 
-    // API-Aufruf ausführen
+    $this->SendDebug("Polling", "Aufruf-URL: $url", 0);
+
     $response = @file_get_contents($url);
     if ($response === false) {
         $this->SendDebug("Polling", "Fehler beim Abrufen der Daten von der Kamera.", 0);
         return;
     }
+
+    $this->SendDebug("Polling", "Rohdaten: $response", 0);
 
     $data = json_decode($response, true);
     if ($data === null || !isset($data[0]['value'])) {
@@ -952,7 +960,6 @@ public function Polling()
 
     $aiState = $data[0]['value'];
 
-    // Aktualisiere Variablen basierend auf dem AI-Status
     $this->UpdateAIState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
     $this->UpdateAIState("people", $aiState['people']['alarm_state'] ?? 0);
     $this->UpdateAIState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
