@@ -128,6 +128,16 @@ class REOCAM extends IPSModule
             default:
                 throw new Exception("Invalid Ident");
         }
+
+            // Setze den Variablenwert
+            $this->SetValue($ident, $value);
+
+            // Prüfe, ob ein Snapshot ausgelöst werden soll
+            $snapshotTriggers = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
+            if ($value && in_array($ident, $snapshotTriggers)) {
+                $this->SendDebug('RequestAction', "Schnappschuss für $ident wird erstellt.", 0);
+                $this->CreateSnapshot($ident);
+            }
     }
     
     private function RegisterHook()
@@ -265,27 +275,16 @@ class REOCAM extends IPSModule
         }
     }
 
-    private function ActivateBoolean($ident, $position)
+    private function ActivateBoolean($ident)
     {
-        // Wenn Test-Elemente deaktiviert sind, keine Aktionen für "Test" ausführen
-        if (!$this->ReadPropertyBoolean("ShowTestElements") && $ident === "Test") {
-            $this->SendDebug('ActivateBoolean', "Aktion für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
-            return;
-        }
-    
         $timerName = $ident . "_Reset";
     
         $this->SendDebug('ActivateBoolean', "Schalte Variable $ident auf true.", 0);
         $this->SetValue($ident, true);
     
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateSnapshotAtPosition($ident, $position);
-        }
-    
         $this->SendDebug('ActivateBoolean', "Setze Timer für $timerName auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
-    }
-    
+    }    
 
     public function ResetBoolean(string $ident)
     {
@@ -472,6 +471,36 @@ private function RemoveVisitorElements()
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
         return substr($ident, 0, 32); 
     }
+
+    private function CreateSnapshot(string $booleanIdent)
+{
+    $snapshotIdent = "Snapshot_" . $booleanIdent;
+    $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
+
+    // Neues Medienobjekt erstellen, falls nicht vorhanden
+    if ($mediaID === false) {
+        $mediaID = IPS_CreateMedia(1); // 1 = Bild
+        IPS_SetParent($mediaID, $this->InstanceID);
+        IPS_SetIdent($mediaID, $snapshotIdent);
+        IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
+        IPS_SetMediaCached($mediaID, false); // Kein Caching
+    }
+
+    // Schnappschuss abrufen
+    $snapshotUrl = $this->GetSnapshotURL();
+    $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+    $imageData = @file_get_contents($snapshotUrl);
+
+    if ($imageData !== false) {
+        file_put_contents($tempImagePath, $imageData);
+        IPS_SetMediaFile($mediaID, $tempImagePath, false); // Datei mit Medienobjekt verbinden
+        IPS_SendMediaEvent($mediaID); // Aktualisieren
+        $this->SendDebug('CreateSnapshot', "Snapshot für $booleanIdent erstellt.", 0);
+    } else {
+        $this->SendDebug('CreateSnapshot', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
+    }
+}
+
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
@@ -887,7 +916,6 @@ private function RemoveArchives()
     
     private function UpdateAIState(string $type, int $state)
     {
-        // Mappe die AI-Typen auf bestehende Variablen
         $mapping = [
             "dog_cat" => "Tier",
             "people"  => "Person",
@@ -910,12 +938,13 @@ private function RemoveArchives()
                 $this->SetValue($ident, $state == 1);
                 $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
     
-                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
+                // Timer setzen
                 $timerName = $ident . "_Reset";
+                $this->SetTimerInterval($timerName, $state == 1 ? 5000 : 0);
+    
+                // Schnappschuss auslösen, wenn auf true gesetzt
                 if ($state == 1) {
-                    $this->SetTimerInterval($timerName, 5000); // 5 Sekunden
-                } else {
-                    $this->SetTimerInterval($timerName, 0); // Timer stoppen, falls zurückgesetzt
+                    $this->CreateSnapshot($ident);
                 }
             }
         } else {
