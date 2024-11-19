@@ -886,61 +886,74 @@ private function RemoveArchives()
     }
     
     private function UpdateAIState(string $type, int $state)
-{
-    // Mappe die AI-Typen auf bestehende Variablen
-    $mapping = [
-        "dog_cat" => "Tier",
-        "people"  => "Person",
-        "vehicle" => "Fahrzeug"
-    ];
-
-    if (!isset($mapping[$type])) {
-        $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
-        return;
+    {
+        // Mappe die AI-Typen auf bestehende Variablen
+        $mapping = [
+            "dog_cat" => "Tier",
+            "people"  => "Person",
+            "vehicle" => "Fahrzeug"
+        ];
+    
+        if (!isset($mapping[$type])) {
+            $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
+            return;
+        }
+    
+        $ident = $mapping[$type];
+        $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+    
+        if ($variableID !== false) {
+            $currentValue = GetValue($variableID);
+    
+            // Nur aktualisieren, wenn sich der Zustand geändert hat
+            if ($currentValue != ($state == 1)) {
+                $this->SetValue($ident, $state == 1);
+                $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
+    
+                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
+                $timerName = $ident . "_Reset";
+                if ($state == 1) {
+                    $this->SetTimerInterval($timerName, 5000); // 5 Sekunden
+                } else {
+                    $this->SetTimerInterval($timerName, 0); // Timer stoppen, falls zurückgesetzt
+                }
+            }
+        } else {
+            $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
+        }
     }
-
-    $ident = $mapping[$type];
-    $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-
-    if ($variableID !== false) {
-        $this->SetValue($ident, $state == 1);
-        $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
-    } else {
-        $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
+    
+    public function Polling()
+    {
+        if (!$this->ReadPropertyBoolean("EnablePolling")) {
+            $this->SetTimerInterval("PollingTimer", 0);
+            return;
+        }
+    
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+    
+        $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
+    
+        $response = @file_get_contents($url);
+        if ($response === false) {
+            $this->SendDebug("Polling", "Fehler beim Abrufen der Daten von der Kamera.", 0);
+            return;
+        }
+    
+        $data = json_decode($response, true);
+        if ($data === null || !isset($data[0]['value'])) {
+            $this->SendDebug("Polling", "Ungültige Daten empfangen: $response", 0);
+            return;
+        }
+    
+        $aiState = $data[0]['value'];
+    
+        // Aktualisiere bestehende Variablen
+        $this->UpdateAIState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
+        $this->UpdateAIState("people", $aiState['people']['alarm_state'] ?? 0);
+        $this->UpdateAIState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
     }
-}
-
-public function Polling()
-{
-    if (!$this->ReadPropertyBoolean("EnablePolling")) {
-        $this->SetTimerInterval("PollingTimer", 0);
-        return;
-    }
-
-    $cameraIP = $this->ReadPropertyString("CameraIP");
-    $username = $this->ReadPropertyString("Username");
-    $password = $this->ReadPropertyString("Password");
-
-    $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
-
-    $response = @file_get_contents($url);
-    if ($response === false) {
-        $this->SendDebug("Polling", "Fehler beim Abrufen der Daten von der Kamera.", 0);
-        return;
-    }
-
-    $data = json_decode($response, true);
-    if ($data === null || !isset($data[0]['value'])) {
-        $this->SendDebug("Polling", "Ungültige Daten empfangen: $response", 0);
-        return;
-    }
-
-    $aiState = $data[0]['value'];
-
-    // Aktualisiere bestehende Variablen
-    $this->UpdateAIState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
-    $this->UpdateAIState("people", $aiState['people']['alarm_state'] ?? 0);
-    $this->UpdateAIState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
-}
-
+    
 }
