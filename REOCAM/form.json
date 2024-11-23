@@ -74,22 +74,16 @@
             "caption": "Schnappschüsse anzeigen"
         },
         {
-            "type": "RowLayout",
-            "items": 
-            [
-            {
-                "type": "CheckBox",
-                "name": "ShowArchives",
-                "caption": "Bildarchive anzeigen"
-            },
-            {
-                "type": "NumberSpinner",
-                "name": "MaxArchiveImages",
-                "caption": "Maximale Anzahl Archivbilder",
-                "minimum": 1,
-                "suffix": "Bilder"
-            }
-            ]
+            "type": "CheckBox",
+            "name": "ShowArchives",
+            "caption": "Bildarchive anzeigen"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "MaxArchiveImages",
+            "caption": "Maximale Anzahl Archivbilder",
+            "minimum": 1,
+            "suffix": "Bilder"
         },      
         {
             "type": "Label",
