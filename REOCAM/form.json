@@ -38,7 +38,7 @@
         {
             "type": "NumberSpinner",
             "name": "PollingInterval",
-            "caption": "Polling-Intervall (Sekunden)",
+            "caption": "Polling-Intervall",
             "suffix": "Sekunden",
             "minimum": 2,
             "maximum": 3600
@@ -74,16 +74,22 @@
             "caption": "Schnappschüsse anzeigen"
         },
         {
-            "type": "CheckBox",
-            "name": "ShowArchives",
-            "caption": "Bildarchive anzeigen"
-        },
-        {
-            "type": "NumberSpinner",
-            "name": "MaxArchiveImages",
-            "caption": "Maximale Anzahl Archivbilder",
-            "minimum": 1,
-            "suffix": "Bilder"
+            "type": "RowLayout",
+            "items": 
+            [
+            {
+                "type": "CheckBox",
+                "name": "ShowArchives",
+                "caption": "Bildarchive anzeigen"
+            },
+            {
+                "type": "NumberSpinner",
+                "name": "MaxArchiveImages",
+                "caption": "Maximale Anzahl Archivbilder",
+                "minimum": 1,
+                "suffix": "Bilder"
+            }
+            ]
         },      
         {
             "type": "Label",
