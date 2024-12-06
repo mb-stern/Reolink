@@ -322,9 +322,11 @@ class REOCAM extends IPSModule
     {
         $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
         foreach ($webhookVariables as $ident) {
-            $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-            if ($varID !== false) {
+            try {
+                $varID = $this->GetIDForIdent($ident);
                 $this->UnregisterVariable($ident);
+            } catch (Exception $e) {
+                $this->SendDebug('RemoveWebhookVariables', "Variable mit Ident '$ident' konnte nicht entfernt werden: " . $e->getMessage(), 0);
             }
         }
     }
