@@ -331,6 +331,15 @@ class REOCAM extends IPSModule
         }
     }
 
+    private function CreateOrUpdateSnapshots()
+    {
+        $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Besucher", "Bewegung"];
+        foreach ($snapshots as $snapshot) {
+            $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
+            $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
+        }
+    }
+
     private function RemoveSnapshots()
     {
         $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
