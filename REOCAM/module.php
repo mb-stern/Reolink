@@ -201,7 +201,7 @@ class REOCAM extends IPSModule
                 $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
             }
         } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
     }
@@ -508,7 +508,6 @@ private function RemoveVisitorElements()
             }
         } else {
             $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
     }
     
@@ -627,7 +626,6 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
         $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
     } else {
         $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
-        IPS_LogMessage("Reolink", "Archivbild konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
 
@@ -816,7 +814,7 @@ private function RemoveArchives()
 
         $responseData = json_decode($response, true);
         if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-            IPS_LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
+            $this->LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
         }
     }
 
