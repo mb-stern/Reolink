@@ -496,9 +496,8 @@ private function RemoveVisitorElements()
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            //file_put_contents($filePath, $imageData);
+            file_put_contents($filePath, $imageData);
             IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
-            PS_SetMediaContent($mediaID, $filePath);
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
@@ -616,22 +615,28 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
-    $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . time() . ".jpg";
+
+    // Schnappschuss von der Kamera abrufen
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        //file_put_contents($archiveImagePath, $imageData);
-        IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
-        IPS_SetMediaContent($mediaID, $archiveImagePath);
+        // Bildinhalt in Base64 kodieren
+        $base64Data = base64_encode($imageData);
+
+        // Inhalt dem Medienobjekt zuweisen
+        IPS_SetMediaContent($mediaID, $base64Data);
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
         $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
-        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
+
+        // Maximale Anzahl der Bilder überprüfen
+        $this->PruneArchive($categoryID);
     } else {
         $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
         IPS_LogMessage("Reolink", "Archivbild konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
+
 
 private function RemoveArchives()
 {
