@@ -498,7 +498,7 @@ private function RemoveVisitorElements()
         if ($imageData !== false) {
             //file_put_contents($filePath, $imageData);
             IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
-            IPS_SetMediaContent($mediaID, $imageData);
+            IPS_SetMediaContent($mediaID, $filePath);
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
 
     
