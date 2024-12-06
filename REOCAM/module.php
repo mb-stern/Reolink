@@ -465,7 +465,6 @@ private function RemoveVisitorElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
-        // Prüfen, ob Test- oder Besucherelemente deaktiviert sind
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
             return;
@@ -475,11 +474,9 @@ private function RemoveVisitorElements()
             return;
         }
     
-        // Identifikator für das Medienobjekt
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
-        // Neues Medienobjekt erstellen, falls nicht vorhanden
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(1); // 1 = Bild
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -492,17 +489,18 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
-        // URL für den Schnappschuss abrufen
         $snapshotUrl = $this->GetSnapshotURL();
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            $base64Data = base64_encode($imageData); // Daten in Base64 umwandeln
-            IPS_SetMediaContent($mediaID, $base64Data); // Inhalt direkt ins Medienobjekt setzen
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+            // Bilddaten direkt in das Medienobjekt schreiben
+            $base64Data = base64_encode($imageData);
+            IPS_SetMediaContent($mediaID, $base64Data);
+            IPS_SendMediaEvent($mediaID);
+    
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
     
-            // Archivbild erstellen, falls aktiviert
+            // Archivbild erstellen
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID);
@@ -512,6 +510,7 @@ private function RemoveVisitorElements()
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
     }
+    
     
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
