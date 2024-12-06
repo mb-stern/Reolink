@@ -98,6 +98,9 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
+Version 2.0
+- Diverse Anpassungen um die Store-Kompatibilät zu erlangen
+
 Version 1.2 (19.11.2024)
 - Unterstützung für Kameras ohne Webhook (pollen)
 
