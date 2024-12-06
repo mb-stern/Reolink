@@ -70,7 +70,7 @@ class REOCAM extends IPSModule
         }
     
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateOrUpdateSnapshots();
+            $this->CreateSnapshotAtPosition();
         } else {
             $this->RemoveSnapshots();
         }
@@ -328,15 +328,6 @@ class REOCAM extends IPSModule
             if ($varID !== false) {
                 $this->UnregisterVariable($ident);
             }
-        }
-    }
-
-    private function CreateOrUpdateSnapshots()
-    {
-        $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Besucher", "Bewegung"];
-        foreach ($snapshots as $snapshot) {
-            $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
-            $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
         }
     }
 
