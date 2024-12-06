@@ -70,7 +70,7 @@ class REOCAM extends IPSModule
         }
     
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateSnapshotAtPosition();
+          
         } else {
             $this->RemoveSnapshots();
         }
