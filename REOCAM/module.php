@@ -335,7 +335,7 @@ class REOCAM extends IPSModule
     {
         $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
         foreach ($snapshots as $snapshotIdent) {
-            $mediaID = $this->GetIDForIdent($snapshotIdent);
+            $mediaID = $this->GetIDForIdent($snapshotIdent, $this->InstanceID);
             if ($mediaID) {
                 IPS_DeleteMedia($mediaID, true);
             }
