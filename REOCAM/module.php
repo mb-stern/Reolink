@@ -496,11 +496,9 @@ private function RemoveVisitorElements()
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            //file_put_contents($filePath, $imageData);
+            file_put_contents($filePath, $imageData);
             IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
-            IPS_SetMediaContent($mediaID, $filePath);
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
-
     
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
     
