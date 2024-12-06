@@ -496,7 +496,7 @@ private function RemoveVisitorElements()
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            IPS_SetMediaContent($mediaID, $imageData);
+            file_put_contents($filePath, $imageData);
             IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
@@ -619,7 +619,7 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        IPS_SetMediaContent($mediaID, $imageData);
+        file_put_contents($archiveImagePath, $imageData);
         IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
