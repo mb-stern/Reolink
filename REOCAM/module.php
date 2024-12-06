@@ -259,7 +259,7 @@ class REOCAM extends IPSModule
     {
         $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
         foreach ($booleans as $booleanIdent) {
-            $varID = $this->GetIDForIdent($booleanIdent, $this->InstanceID);
+            $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
             if ($varID !== false) {
                 $this->UnregisterVariable($booleanIdent);
             }
@@ -314,7 +314,7 @@ class REOCAM extends IPSModule
         ];
 
         foreach ($webhookVariables as $ident => $name) {
-            if (!IPS_VariableExists($this->GetIDForIdent($ident, $this->InstanceID))) {
+            if (!IPS_VariableExists(@IPS_GetObjectIDByIdent($ident, $this->InstanceID))) {
                 $this->RegisterVariableString($ident, $name);
             }
         }
@@ -324,7 +324,7 @@ class REOCAM extends IPSModule
     {
         $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
         foreach ($webhookVariables as $ident) {
-            $varID = $this->GetIDForIdent($ident, $this->InstanceID);
+            $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
             if ($varID !== false) {
                 $this->UnregisterVariable($ident);
             }
@@ -335,7 +335,7 @@ class REOCAM extends IPSModule
     {
         $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
         foreach ($snapshots as $snapshotIdent) {
-            $mediaID = $this->GetIDForIdent($snapshotIdent, $this->InstanceID);
+            $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
             if ($mediaID) {
                 IPS_DeleteMedia($mediaID, true);
             }
@@ -348,7 +348,7 @@ class REOCAM extends IPSModule
     $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
     // Test-Snapshot
-    if (!IPS_ObjectExists($this->GetIDForIdent("Snapshot_Test", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID))) {
         $mediaID = IPS_CreateMedia(1); // 1 = Bild
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, "Snapshot_Test");
@@ -357,7 +357,7 @@ class REOCAM extends IPSModule
     }
 
     // Test-Bildarchiv
-    if (!IPS_ObjectExists($this->GetIDForIdent("Archive_Test", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Test", $this->InstanceID))) {
         $categoryID = IPS_CreateCategory();
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, "Archive_Test");
@@ -368,19 +368,19 @@ class REOCAM extends IPSModule
 private function RemoveTestElements()
 {
     // Entfernen der Test-Boolean-Variable
-    $varID = $this->GetIDForIdent("Test", $this->InstanceID);
+    $varID = @IPS_GetObjectIDByIdent("Test", $this->InstanceID);
     if ($varID) {
         $this->UnregisterVariable("Test");
     }
 
     // Entfernen des Test-Snapshots
-    $mediaID = $this->GetIDForIdent("Snapshot_Test", $this->InstanceID);
+    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID);
     if ($mediaID) {
         IPS_DeleteMedia($mediaID, true);
     }
 
     // Entfernen des Test-Bildarchivs
-    $categoryID = $this->GetIDForIdent("Archive_Test", $this->InstanceID);
+    $categoryID = @IPS_GetObjectIDByIdent("Archive_Test", $this->InstanceID);
     if ($categoryID) {
         $children = IPS_GetChildrenIDs($categoryID);
         foreach ($children as $childID) {
@@ -396,7 +396,7 @@ private function CreateVisitorElements()
     $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
 
     // Besucher-Snapshot
-    if (!IPS_ObjectExists($this->GetIDForIdent("Snapshot_Besucher", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID))) {
         $mediaID = IPS_CreateMedia(1); // 1 = Bild
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, "Snapshot_Besucher");
@@ -405,7 +405,7 @@ private function CreateVisitorElements()
     }
 
     // Besucher-Bildarchiv
-    if (!IPS_ObjectExists($this->GetIDForIdent("Archive_Besucher", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID))) {
         $categoryID = IPS_CreateCategory();
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, "Archive_Besucher");
@@ -416,19 +416,19 @@ private function CreateVisitorElements()
 private function RemoveVisitorElements()
 {
     // Entfernen der Besucher-Boolean-Variable
-    $varID = $this->GetIDForIdent("Besucher", $this->InstanceID);
+    $varID = @IPS_GetObjectIDByIdent("Besucher", $this->InstanceID);
     if ($varID) {
         $this->UnregisterVariable("Besucher");
     }
 
     // Entfernen des Besucher-Snapshots
-    $mediaID = $this->GetIDForIdent("Snapshot_Besucher", $this->InstanceID);
+    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID);
     if ($mediaID) {
         IPS_DeleteMedia($mediaID, true);
     }
 
     // Entfernen des Besucher-Bildarchivs
-    $categoryID = $this->GetIDForIdent("Archive_Besucher", $this->InstanceID);
+    $categoryID = @IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID);
     if ($categoryID) {
         $children = IPS_GetChildrenIDs($categoryID);
         foreach ($children as $childID) {
@@ -478,7 +478,7 @@ private function RemoveVisitorElements()
         }
         
         $snapshotIdent = "Snapshot_" . $booleanIdent;
-        $mediaID = $this->GetIDForIdent($snapshotIdent, $this->InstanceID);
+        $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
         // Neues Medienobjekt für den Schnappschuss erstellen, falls es nicht existiert
         if ($mediaID === false) {
@@ -521,7 +521,7 @@ private function RemoveVisitorElements()
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
         $archiveIdent = "Archive_" . $booleanIdent;
-        $categoryID = $this->GetIDForIdent($archiveIdent, $this->InstanceID);
+        $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
     
         if ($categoryID === false) {
             // Archivkategorie erstellen
@@ -641,7 +641,7 @@ private function RemoveArchives()
     $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"]; // Alle möglichen Archiv-Kategorien
     foreach ($categories as $category) {
         $archiveIdent = "Archive_" . $category;
-        $categoryID = $this->GetIDForIdent($archiveIdent, $this->InstanceID);
+        $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
         if ($categoryID !== false) {
             $children = IPS_GetChildrenIDs($categoryID);
             foreach ($children as $childID) {
@@ -657,7 +657,7 @@ private function RemoveArchives()
 
     private function CreateOrUpdateStream($ident, $name)
     {
-        $mediaID = $this->GetIDForIdent($ident, $this->InstanceID);
+        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
 
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3);
@@ -828,7 +828,7 @@ private function RemoveArchives()
     private function CreateApiFunctions()
     {
         // White LED-Variable
-        if (!$this->GetIDForIdent("WhiteLed", $this->InstanceID)) {
+        if (!@IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID)) {
             $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
             $this->EnableAction("WhiteLed");
         }
@@ -843,14 +843,14 @@ private function RemoveArchives()
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
         }
 
-        if (!$this->GetIDForIdent("Mode", $this->InstanceID)) {
+        if (!@IPS_GetObjectIDByIdent("Mode", $this->InstanceID)) {
             $this->SendDebug("Variablenprofil", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
     
         // Bright-Variable
-        if (!$this->GetIDForIdent("Bright", $this->InstanceID)) {
+        if (!@IPS_GetObjectIDByIdent("Bright", $this->InstanceID)) {
             $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
             $this->EnableAction("Bright");
         }
@@ -859,19 +859,19 @@ private function RemoveArchives()
     private function RemoveApiFunctions()
     {
         // White LED-Variable entfernen
-        $varID = $this->GetIDForIdent("WhiteLed", $this->InstanceID);
+        $varID = @IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID);
         if ($varID) {
             $this->UnregisterVariable("WhiteLed");
         }
     
         // Mode-Variable entfernen
-        $varID = $this->GetIDForIdent("Mode", $this->InstanceID);
+        $varID = @IPS_GetObjectIDByIdent("Mode", $this->InstanceID);
         if ($varID) {
             $this->UnregisterVariable("Mode");
         }
     
         // Bright-Variable entfernen
-        $varID = $this->GetIDForIdent("Bright", $this->InstanceID);
+        $varID = @IPS_GetObjectIDByIdent("Bright", $this->InstanceID);
         if ($varID) {
             $this->UnregisterVariable("Bright");
         }
@@ -892,7 +892,7 @@ private function RemoveArchives()
         }
     
         $ident = $mapping[$type];
-        $variableID = $this->GetIDForIdent($ident, $this->InstanceID);
+        $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
     
         if ($variableID !== false) {
             $currentValue = GetValue($variableID);
