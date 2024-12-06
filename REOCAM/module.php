@@ -496,8 +496,9 @@ private function RemoveVisitorElements()
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            file_put_contents($filePath, $imageData);
+            //file_put_contents($filePath, $imageData);
             IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
+            PS_SetMediaContent($mediaID, $filePath);
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
@@ -619,8 +620,9 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        file_put_contents($archiveImagePath, $imageData);
+        //file_put_contents($archiveImagePath, $imageData);
         IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
+        IPS_SetMediaContent($mediaID, $archiveImagePath);
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
         $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
