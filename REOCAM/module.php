@@ -615,7 +615,7 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
-    $archiveImagePath = IPS_GetKernelDir() . "media/archive_temp_" . $booleanIdent . "_" . time() . ".jpg";
+    $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . time() . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
