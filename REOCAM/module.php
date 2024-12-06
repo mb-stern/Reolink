@@ -322,11 +322,9 @@ class REOCAM extends IPSModule
     {
         $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
         foreach ($webhookVariables as $ident) {
-            try {
-                $varID = $this->GetIDForIdent($ident);
+            $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+            if ($varID !== false) {
                 $this->UnregisterVariable($ident);
-            } catch (Exception $e) {
-                $this->SendDebug('RemoveWebhookVariables', "Variable mit Ident '$ident' konnte nicht entfernt werden: " . $e->getMessage(), 0);
             }
         }
     }
@@ -467,7 +465,6 @@ private function RemoveVisitorElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
-        // Wenn Test- und Besucher-Elemente deaktiviert sind, keine Snapshots dafür erstellen
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
             return;
@@ -476,11 +473,10 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Besucher übersprungen, da Besucher-Elemente deaktiviert sind.", 0);
             return;
         }
-        
+    
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
-        // Neues Medienobjekt für den Schnappschuss erstellen, falls es nicht existiert
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(1); // 1 = Bild
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -494,20 +490,18 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
-        // Schnappschuss von der Kamera abrufen
         $snapshotUrl = $this->GetSnapshotURL();
-        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+        $fileName = "snapshot_" . $mediaID . ".jpg"; // Dateiname basierend auf der ObjektID
+        $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            // Schnappschuss speichern
-            file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Medienobjekt mit Datei verbinden
+            file_put_contents($filePath, $imageData);
+            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
     
-            // Wenn Schnappschüsse aktiviert sind, auch ins Archiv kopieren
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
@@ -517,6 +511,7 @@ private function RemoveVisitorElements()
             IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
     }
+    
     
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
