@@ -484,26 +484,27 @@ private function RemoveVisitorElements()
             IPS_SetPosition($mediaID, $position);
             IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
             IPS_SetMediaCached($mediaID, false); // Kein Caching
+    
             $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
         } else {
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
         $snapshotUrl = $this->GetSnapshotURL();
+        $fileName = "snapshot_" . $mediaID . ".jpg"; // Dateiname basierend auf der ObjektID
+        $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            // Bilddaten direkt in das Medienobjekt schreiben
-            $base64Data = base64_encode($imageData);
-            IPS_SetMediaContent($mediaID, $base64Data);
-            IPS_SendMediaEvent($mediaID);
+            file_put_contents($filePath, $imageData);
+            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
     
-            // Archivbild erstellen
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
-                $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID);
+                $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
             }
         } else {
             $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
@@ -614,22 +615,21 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
+    $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . time() . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        $base64Data = base64_encode($imageData); // Daten in Base64 umwandeln
-        IPS_SetMediaContent($mediaID, $base64Data); // Inhalt direkt ins Medienobjekt setzen
-        IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
-        $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
+        file_put_contents($archiveImagePath, $imageData);
+        IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
+        IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
-        // Maximale Anzahl der Bilder überprüfen
-        $this->PruneArchive($categoryID);
+        $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
+        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
     } else {
         $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
         IPS_LogMessage("Reolink", "Archivbild konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
-
 
 private function RemoveArchives()
 {
