@@ -69,9 +69,7 @@ class REOCAM extends IPSModule
             $this->RemoveBooleanVariables();
         }
     
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-          
-        } else {
+        if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->RemoveSnapshots();
         }
     
