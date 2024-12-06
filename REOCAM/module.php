@@ -615,21 +615,22 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
-    $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . time() . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        file_put_contents($archiveImagePath, $imageData);
-        IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
-        IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
-
+        $base64Data = base64_encode($imageData); // Daten in Base64 umwandeln
+        IPS_SetMediaContent($mediaID, $base64Data); // Inhalt direkt ins Medienobjekt setzen
+        IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
         $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
-        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
+
+        // Maximale Anzahl der Bilder überprüfen
+        $this->PruneArchive($categoryID);
     } else {
         $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
         IPS_LogMessage("Reolink", "Archivbild konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
+
 
 private function RemoveArchives()
 {
