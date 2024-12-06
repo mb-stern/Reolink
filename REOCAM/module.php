@@ -465,7 +465,6 @@ private function RemoveVisitorElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
-        // Prüfen, ob Test- oder Besucherelemente deaktiviert sind
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
             return;
@@ -475,11 +474,9 @@ private function RemoveVisitorElements()
             return;
         }
     
-        // Identifikator für das Medienobjekt
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
-        // Erstellen eines neuen Medienobjekts, falls nicht vorhanden
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(1); // 1 = Bild
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -493,20 +490,18 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
-        // URL für den Schnappschuss abrufen
         $snapshotUrl = $this->GetSnapshotURL();
+        $fileName = "snapshot_" . $mediaID . ".jpg"; // Dateiname basierend auf der ObjektID
+        $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
     
-        // Wenn der Schnappschuss erfolgreich abgerufen wurde
         if ($imageData !== false) {
-            // Bildinhalt in Base64 kodieren und dem Medienobjekt zuweisen
-            $base64Data = base64_encode($imageData);
-            IPS_SetMediaContent($mediaID, $base64Data);
-            IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
+            file_put_contents($filePath, $imageData);
+            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
     
-            // Wenn Schnappschüsse aktiviert sind, ein Archivbild erstellen
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
@@ -620,28 +615,21 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
-
-    // Schnappschuss von der Kamera abrufen
+    $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . time() . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        // Bildinhalt in Base64 kodieren
-        $base64Data = base64_encode($imageData);
-
-        // Inhalt dem Medienobjekt zuweisen
-        IPS_SetMediaContent($mediaID, $base64Data);
+        file_put_contents($archiveImagePath, $imageData);
+        IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
         $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
-
-        // Maximale Anzahl der Bilder überprüfen
-        $this->PruneArchive($categoryID);
+        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
     } else {
         $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
         IPS_LogMessage("Reolink", "Archivbild konnte nicht abgerufen werden für $booleanIdent.");
     }
 }
-
 
 private function RemoveArchives()
 {
