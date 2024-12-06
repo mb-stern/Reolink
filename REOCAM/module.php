@@ -324,7 +324,7 @@ class REOCAM extends IPSModule
     {
         $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
         foreach ($webhookVariables as $ident) {
-            $varID = $this->GetIDForIdent($this->InstanceID);
+            $varID = $this->GetIDForIdent;
             if ($varID !== false) {
                 $this->UnregisterVariable($ident);
             }
