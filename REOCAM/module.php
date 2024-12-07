@@ -486,7 +486,7 @@ private function RemoveVisitorElements()
         }
     
         $snapshotUrl = $this->GetSnapshotURL();
-        $fileName = . $booleanIdent . "_" . $mediaID . ".jpg";
+        $fileName = $booleanIdent . "_" . $mediaID . ".jpg";
         $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
     
