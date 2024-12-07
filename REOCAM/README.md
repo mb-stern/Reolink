@@ -28,7 +28,7 @@ Das Modul kann folgendes:
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren:
 - Reolink Duo 2
 - Reolink RLC-810A
-- Reolink Doorbell
+- Reolink Doorbell (nur D340P)
 
 Aktuell getestete Reolink-Kameras welche kein Webhook unterstützen und allenfalls über die Polling-Option abgefragt werden können:
 - Reolink E1 Outdoor (inkl. Pro)
