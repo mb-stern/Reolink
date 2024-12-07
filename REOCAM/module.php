@@ -709,7 +709,7 @@ private function RemoveArchives()
         }
         curl_close($ch);
         
-        $this->SendDebug('API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
+        $this->SendDebug('GetToken API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
         
         $responseData = json_decode($response, true);
         if (isset($responseData[0]['value']['Token']['name'])) {
@@ -831,7 +831,7 @@ private function RemoveArchives()
         }
 
         if (!@$this->GetIDForIdent("Mode")) {
-            $this->SendDebug("Variablenprofil", "Variablenprofil REOCAM.WLED erstellt", 0);
+            $this->SendDebug("CreateApiFunctions", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
