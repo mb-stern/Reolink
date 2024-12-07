@@ -558,7 +558,7 @@ private function CreateOrUpdateArchives()
         $categoryID = $this->CreateOrGetArchiveCategory($category);
 
         // Optional: Prune-Logik hier direkt anwenden
-        $this->PruneArchive($categoryID); // Archivgröße sofort prüfen
+        //$this->PruneArchive($categoryID); // Archivgröße sofort prüfen
     }
 }
 
