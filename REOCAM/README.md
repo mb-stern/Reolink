@@ -42,7 +42,7 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 ### 2. Voraussetzungen
 
 - IP-Symcon ab Version 7.0
-- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center.
+- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center. Falls die Kamera keinen Webhook unterstützt kann im Konfigurationsformuler die Pollingfunktion aktiviert werden.
 
 ### 3. Software-Installation
 
@@ -99,7 +99,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 ### 8. Versionen
 
 Version 2.0 (7.12.2024)
-- Diverse interne Anpassungen um die Store-Kompatibilät zu erlangen
+- Es geht Richtung Store-Kompatibilität, diverse interne Anpassungen..
 
 Version 1.2 (19.11.2024)
 - Unterstützung für Kameras ohne Webhook (pollen)
