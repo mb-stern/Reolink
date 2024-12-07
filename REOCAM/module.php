@@ -341,7 +341,7 @@ class REOCAM extends IPSModule
     $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
     // Test-Snapshot
-    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID))) {
+    if (!IPS_ObjectExists($this->GetIDForIdent("Snapshot_Test"))) {
         $mediaID = IPS_CreateMedia(1); // 1 = Bild
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, "Snapshot_Test");
