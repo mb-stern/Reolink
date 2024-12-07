@@ -562,7 +562,7 @@ private function CreateOrUpdateArchives()
     }
 }
 
-private function PruneArchive($categoryID)
+private function PruneArchive($categoryID, $booleanIdent)
 {
     $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
     $children = IPS_GetChildrenIDs($categoryID); // Bilder im Archiv abrufen
@@ -617,7 +617,7 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
         $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
-        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
+        $this->PruneArchive($categoryID, $booleanIdent); // Maximale Anzahl der Bilder überprüfen
     } else {
         $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
     }
