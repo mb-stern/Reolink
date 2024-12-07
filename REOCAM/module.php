@@ -589,7 +589,7 @@ private function PruneArchive($categoryID, $booleanIdent)
             // Überprüfe, ob das Objekt existiert
             if (@IPS_ObjectExists($oldestID) && IPS_MediaExists($oldestID)) {
                 IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
-                $this->SendDebug('PruneArchive', "Entferntes Bild mit ID: $oldestID", 0);
+                $this->SendDebug('PruneArchive', "Entfernte das Bild mit der ID: $oldestID", 0);
             } else {
                 $this->SendDebug('PruneArchive', "Bild mit ID $oldestID existiert nicht mehr, übersprungen.", 0);
             }
@@ -616,10 +616,10 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
         IPS_SetMediaContent($mediaID,base64_encode($imageData));
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
-        $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
+        $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt.", 0);
         $this->PruneArchive($categoryID, $booleanIdent); // Maximale Anzahl der Bilder überprüfen
     } else {
-        $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
+        $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für '$booleanIdent'.", 0);
     }
 }
 
