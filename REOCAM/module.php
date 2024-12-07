@@ -589,7 +589,7 @@ private function PruneArchive($categoryID, $booleanIdent)
             // Überprüfe, ob das Objekt existiert
             if (@IPS_ObjectExists($oldestID) && IPS_MediaExists($oldestID)) {
                 IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
-                $this->SendDebug('PruneArchive', "Entfernte das Bild mit der ID: $oldestID", 0);
+                $this->SendDebug('PruneArchive', "Entferne das Bild mit der ID: $oldestID", 0);
             } else {
                 $this->SendDebug('PruneArchive', "Bild mit ID $oldestID existiert nicht mehr, übersprungen.", 0);
             }
