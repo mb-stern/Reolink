@@ -269,14 +269,14 @@ class REOCAM extends IPSModule
     
         $timerName = $ident . "_Reset";
     
-        $this->SendDebug('ActivateBoolean', "Schalte Variable $ident auf true.", 0);
+        $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
         $this->SetValue($ident, true);
     
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->CreateSnapshotAtPosition($ident, $position);
         }
     
-        $this->SendDebug('ActivateBoolean', "Setze Timer für $timerName auf 5 Sekunden.", 0);
+        $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
     
@@ -286,7 +286,7 @@ class REOCAM extends IPSModule
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ResetBoolean', "Setze Variable $ident auf false.", 0);
+        $this->SendDebug('ResetBoolean', "Setze Variable '$ident' auf false.", 0);
 
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
