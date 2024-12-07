@@ -556,9 +556,6 @@ private function CreateOrUpdateArchives()
     foreach ($categories as $category) {
         // Archiv-Kategorie erstellen oder abrufen
         $categoryID = $this->CreateOrGetArchiveCategory($category);
-
-        // Optional: Prune-Logik hier direkt anwenden
-        //$this->PruneArchive($categoryID); // Archivgröße sofort prüfen
     }
 }
 
