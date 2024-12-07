@@ -38,7 +38,7 @@
         {
             "type": "NumberSpinner",
             "name": "PollingInterval",
-            "caption": "Polling-Intervall (Sekunden)",
+            "caption": "Polling-Intervall",
             "suffix": "Sekunden",
             "minimum": 2,
             "maximum": 3600
