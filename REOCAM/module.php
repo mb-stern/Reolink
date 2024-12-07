@@ -568,7 +568,7 @@ private function PruneArchive($categoryID, $booleanIdent)
     $children = IPS_GetChildrenIDs($categoryID); // Bilder im Archiv abrufen
 
     // Debug-Ausgaben zur Überprüfung
-    $this->SendDebug('PruneArchive', "Anzahl der Bilder im Archiv: " . count($children), 0);
+    $this->SendDebug('PruneArchive', "Anzahl der Bilder im Archiv $booleanIdent: " . count($children), 0);
     $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder: $maxImages", 0);
 
     if (count($children) > $maxImages) {
