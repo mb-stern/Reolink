@@ -6,13 +6,11 @@ class REOCAM extends IPSModule
     {
         parent::Create();
         
-        // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
         $this->RegisterPropertyBoolean("ShowWebhookVariables", false);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
@@ -22,8 +20,6 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ApiFunktionen", true);
         $this->RegisterPropertyBoolean("EnablePolling", false);
         $this->RegisterPropertyInteger("PollingInterval", 2);
-        
-
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -36,7 +32,7 @@ class REOCAM extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
-        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);'); //Aufrufen der Polling Funktion
     }
     
     public function ApplyChanges()
@@ -181,7 +177,6 @@ class REOCAM extends IPSModule
             "caption" => "Webhook: " . $hookPath
         ];
     
-        // Einfügen an einer bestimmten Position, z. B. ganz oben oder nach einem spezifischen Element
         array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
     
         return json_encode($form);
@@ -510,7 +505,6 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
         }
     }
-    
     
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
@@ -870,50 +864,7 @@ private function RemoveArchives()
         }
     }
     
-    private function UpdateAIState(string $type, int $state)
-    {
-        // Mapping der AI-Typen zu den Variablen
-        $mapping = [
-            "dog_cat" => "Tier",
-            "people"  => "Person",
-            "vehicle" => "Fahrzeug"
-        ];
-    
-        if (!isset($mapping[$type])) {
-            $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
-            return;
-        }
-    
-        $ident = $mapping[$type];
-        $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-    
-        if ($variableID !== false) {
-            $currentValue = GetValue($variableID);
-    
-            // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
-            if ($currentValue != ($state == 1)) {
-                $this->SetValue($ident, $state == 1);
-                $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
-    
-                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
-                $timerName = $ident . "_Reset";
-                if ($state == 1) {
-                    $this->SetTimerInterval($timerName, 5000);
-                    // Schnappschuss auslösen
-                    $this->SendDebug("UpdateAIState", "Löse Schnappschuss für '$ident' aus.", 0);
-                    $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
-                } else {
-                    $this->SetTimerInterval($timerName, 0); // Timer stoppen
-                }
-            } else {
-                $this->SendDebug("UpdateAIState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
-            }
-        } else {
-            $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
-        }
-    }
-    
-public function Polling()
+public function Polling() //Aufruf direkt vom Timer
 {
     if (!$this->ReadPropertyBoolean("EnablePolling")) {
         $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
@@ -942,9 +893,52 @@ public function Polling()
 
     $aiState = $data[0]['value'];
 
-    $this->UpdateAIState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
-    $this->UpdateAIState("people", $aiState['people']['alarm_state'] ?? 0);
-    $this->UpdateAIState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
+    $this->PollingUpdateState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
+    $this->PollingUpdateState("people", $aiState['people']['alarm_state'] ?? 0);
+    $this->PollingUpdateState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
+}
+
+private function PollingUpdateState(string $type, int $state)
+{
+    // Mapping der AI-Typen zu den Variablen
+    $mapping = [
+        "dog_cat" => "Tier",
+        "people"  => "Person",
+        "vehicle" => "Fahrzeug"
+    ];
+
+    if (!isset($mapping[$type])) {
+        $this->SendDebug("PollingUpdateState", "Unbekannter Typ: $type", 0);
+        return;
+    }
+
+    $ident = $mapping[$type];
+    $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+    if ($variableID !== false) {
+        $currentValue = GetValue($variableID);
+
+        // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
+        if ($currentValue != ($state == 1)) {
+            $this->SetValue($ident, $state == 1);
+            $this->SendDebug("PollingUpdateState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
+
+            // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
+            $timerName = $ident . "_Reset";
+            if ($state == 1) {
+                $this->SetTimerInterval($timerName, 5000);
+                // Schnappschuss auslösen
+                $this->SendDebug("PollingUpdateState", "Löse Schnappschuss für '$ident' aus.", 0);
+                $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
+            } else {
+                $this->SetTimerInterval($timerName, 0); // Timer stoppen
+            }
+        } else {
+            $this->SendDebug("PollingUpdateState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
+        }
+    } else {
+        $this->SendDebug("PollingUpdateState", "Variable '$ident' nicht gefunden.", 0);
+    }
 }
 
 }
