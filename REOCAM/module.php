@@ -6,13 +6,11 @@ class REOCAM extends IPSModule
     {
         parent::Create();
         
-        // Moduleigenschaften registrieren
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        // Schalter zum Ein-/Ausblenden von Variablen und Schnappschüssen
         $this->RegisterPropertyBoolean("ShowWebhookVariables", false);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
@@ -22,8 +20,6 @@ class REOCAM extends IPSModule
         $this->RegisterPropertyBoolean("ApiFunktionen", true);
         $this->RegisterPropertyBoolean("EnablePolling", false);
         $this->RegisterPropertyInteger("PollingInterval", 2);
-        
-
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         // Webhook registrieren
@@ -36,7 +32,7 @@ class REOCAM extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
-        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);'); //Aufrufen der Polling Funktion
     }
     
     public function ApplyChanges()
@@ -69,9 +65,7 @@ class REOCAM extends IPSModule
             $this->RemoveBooleanVariables();
         }
     
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateOrUpdateSnapshots();
-        } else {
+        if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->RemoveSnapshots();
         }
     
@@ -183,7 +177,6 @@ class REOCAM extends IPSModule
             "caption" => "Webhook: " . $hookPath
         ];
     
-        // Einfügen an einer bestimmten Position, z. B. ganz oben oder nach einem spezifischen Element
         array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
     
         return json_encode($form);
@@ -203,7 +196,7 @@ class REOCAM extends IPSModule
                 $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
             }
         } else {
-            IPS_LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
     }
@@ -259,7 +252,7 @@ class REOCAM extends IPSModule
     {
         $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
         foreach ($booleans as $booleanIdent) {
-            $varID = @IPS_GetObjectIDByIdent($booleanIdent, $this->InstanceID);
+            $varID = @$this->GetIDForIdent($booleanIdent);
             if ($varID !== false) {
                 $this->UnregisterVariable($booleanIdent);
             }
@@ -276,14 +269,14 @@ class REOCAM extends IPSModule
     
         $timerName = $ident . "_Reset";
     
-        $this->SendDebug('ActivateBoolean', "Schalte Variable $ident auf true.", 0);
+        $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
         $this->SetValue($ident, true);
     
         if ($this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->CreateSnapshotAtPosition($ident, $position);
         }
     
-        $this->SendDebug('ActivateBoolean', "Setze Timer für $timerName auf 5 Sekunden.", 0);
+        $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
     
@@ -293,7 +286,7 @@ class REOCAM extends IPSModule
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ResetBoolean', "Setze Variable $ident auf false.", 0);
+        $this->SendDebug('ResetBoolean', "Setze Variable '$ident' auf false.", 0);
 
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
@@ -314,7 +307,7 @@ class REOCAM extends IPSModule
         ];
 
         foreach ($webhookVariables as $ident => $name) {
-            if (!IPS_VariableExists(@IPS_GetObjectIDByIdent($ident, $this->InstanceID))) {
+            if (!IPS_VariableExists(@$this->GetIDForIdent($ident))) {
                 $this->RegisterVariableString($ident, $name);
             }
         }
@@ -324,19 +317,10 @@ class REOCAM extends IPSModule
     {
         $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
         foreach ($webhookVariables as $ident) {
-            $varID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+            $varID = @$this->GetIDForIdent($ident);
             if ($varID !== false) {
                 $this->UnregisterVariable($ident);
             }
-        }
-    }
-
-    private function CreateOrUpdateSnapshots()
-    {
-        $snapshots = ["Person", "Tier", "Fahrzeug", "Test", "Besucher", "Bewegung"];
-        foreach ($snapshots as $snapshot) {
-            $booleanID = @IPS_GetObjectIDByIdent($snapshot, $this->InstanceID);
-            $position = $booleanID !== false ? IPS_GetObject($booleanID)['ObjectPosition'] + 1 : 0;
         }
     }
 
@@ -344,7 +328,7 @@ class REOCAM extends IPSModule
     {
         $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
         foreach ($snapshots as $snapshotIdent) {
-            $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
+            $mediaID = @$this->GetIDForIdent($snapshotIdent);
             if ($mediaID) {
                 IPS_DeleteMedia($mediaID, true);
             }
@@ -357,7 +341,7 @@ class REOCAM extends IPSModule
     $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
     // Test-Snapshot
-    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
         $mediaID = IPS_CreateMedia(1); // 1 = Bild
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, "Snapshot_Test");
@@ -366,7 +350,7 @@ class REOCAM extends IPSModule
     }
 
     // Test-Bildarchiv
-    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Test", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@$this->GetIDForIdent("Archive_Test"))) {
         $categoryID = IPS_CreateCategory();
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, "Archive_Test");
@@ -377,19 +361,19 @@ class REOCAM extends IPSModule
 private function RemoveTestElements()
 {
     // Entfernen der Test-Boolean-Variable
-    $varID = @IPS_GetObjectIDByIdent("Test", $this->InstanceID);
+    $varID = @$this->GetIDForIdent("Test");
     if ($varID) {
         $this->UnregisterVariable("Test");
     }
 
     // Entfernen des Test-Snapshots
-    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Test", $this->InstanceID);
+    $mediaID = @$this->GetIDForIdent("Snapshot_Test");
     if ($mediaID) {
         IPS_DeleteMedia($mediaID, true);
     }
 
     // Entfernen des Test-Bildarchivs
-    $categoryID = @IPS_GetObjectIDByIdent("Archive_Test", $this->InstanceID);
+    $categoryID = @$this->GetIDForIdent("Archive_Test");
     if ($categoryID) {
         $children = IPS_GetChildrenIDs($categoryID);
         foreach ($children as $childID) {
@@ -405,7 +389,7 @@ private function CreateVisitorElements()
     $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
 
     // Besucher-Snapshot
-    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
         $mediaID = IPS_CreateMedia(1); // 1 = Bild
         IPS_SetParent($mediaID, $this->InstanceID);
         IPS_SetIdent($mediaID, "Snapshot_Besucher");
@@ -414,7 +398,7 @@ private function CreateVisitorElements()
     }
 
     // Besucher-Bildarchiv
-    if (!IPS_ObjectExists(@IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID))) {
+    if (!IPS_ObjectExists(@$this->GetIDForIdent("Archive_Besucher"))) {
         $categoryID = IPS_CreateCategory();
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, "Archive_Besucher");
@@ -425,19 +409,19 @@ private function CreateVisitorElements()
 private function RemoveVisitorElements()
 {
     // Entfernen der Besucher-Boolean-Variable
-    $varID = @IPS_GetObjectIDByIdent("Besucher", $this->InstanceID);
+    $varID = @$this->GetIDForIdent("Besucher");
     if ($varID) {
         $this->UnregisterVariable("Besucher");
     }
 
     // Entfernen des Besucher-Snapshots
-    $mediaID = @IPS_GetObjectIDByIdent("Snapshot_Besucher", $this->InstanceID);
+    $mediaID = @$this->GetIDForIdent("Snapshot_Besucher");
     if ($mediaID) {
         IPS_DeleteMedia($mediaID, true);
     }
 
     // Entfernen des Besucher-Bildarchivs
-    $categoryID = @IPS_GetObjectIDByIdent("Archive_Besucher", $this->InstanceID);
+    $categoryID = @$this->GetIDForIdent("Archive_Besucher");
     if ($categoryID) {
         $children = IPS_GetChildrenIDs($categoryID);
         foreach ($children as $childID) {
@@ -476,7 +460,6 @@ private function RemoveVisitorElements()
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
-        // Wenn Test- und Besucher-Elemente deaktiviert sind, keine Snapshots dafür erstellen
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
             return;
@@ -485,11 +468,10 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Besucher übersprungen, da Besucher-Elemente deaktiviert sind.", 0);
             return;
         }
-        
-        $snapshotIdent = "Snapshot_" . $booleanIdent;
-        $mediaID = @IPS_GetObjectIDByIdent($snapshotIdent, $this->InstanceID);
     
-        // Neues Medienobjekt für den Schnappschuss erstellen, falls es nicht existiert
+        $snapshotIdent = "Snapshot_" . $booleanIdent;
+        $mediaID = @$this->GetIDForIdent($snapshotIdent);
+    
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(1); // 1 = Bild
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -503,34 +485,31 @@ private function RemoveVisitorElements()
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
-        // Schnappschuss von der Kamera abrufen
         $snapshotUrl = $this->GetSnapshotURL();
-        $tempImagePath = IPS_GetKernelDir() . "media/snapshot_temp_" . $booleanIdent . ".jpg";
+        $fileName = $booleanIdent . "_" . $mediaID . ".jpg";
+        $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
     
         if ($imageData !== false) {
-            // Schnappschuss speichern
-            file_put_contents($tempImagePath, $imageData);
-            IPS_SetMediaFile($mediaID, $tempImagePath, false); // Medienobjekt mit Datei verbinden
+            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
+            IPS_SetMediaContent($mediaID,base64_encode($imageData));
             IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
     
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt.", 0);
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
     
-            // Wenn Schnappschüsse aktiviert sind, auch ins Archiv kopieren
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
             }
         } else {
             $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
-            IPS_LogMessage("Reolink", "Snapshot konnte nicht abgerufen werden für $booleanIdent.");
         }
     }
     
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
         $archiveIdent = "Archive_" . $booleanIdent;
-        $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
+        $categoryID = @$this->GetIDForIdent($archiveIdent);
     
         if ($categoryID === false) {
             // Archivkategorie erstellen
@@ -577,20 +556,17 @@ private function CreateOrUpdateArchives()
     foreach ($categories as $category) {
         // Archiv-Kategorie erstellen oder abrufen
         $categoryID = $this->CreateOrGetArchiveCategory($category);
-
-        // Optional: Prune-Logik hier direkt anwenden
-        $this->PruneArchive($categoryID); // Archivgröße sofort prüfen
     }
 }
 
-private function PruneArchive($categoryID)
+private function PruneArchive($categoryID, $booleanIdent)
 {
     $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
     $children = IPS_GetChildrenIDs($categoryID); // Bilder im Archiv abrufen
 
     // Debug-Ausgaben zur Überprüfung
-    $this->SendDebug('PruneArchive', "Anzahl der Bilder im Archiv: " . count($children), 0);
-    $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder: $maxImages", 0);
+    $this->SendDebug('PruneArchive', "Anzahl der Bilder im Archiv '$booleanIdent': " . count($children), 0);
+    $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder im Archiv '$booleanIdent': $maxImages", 0);
 
     if (count($children) > $maxImages) {
         // Sortiere die Bilder nach Position (höher = älter)
@@ -610,7 +586,7 @@ private function PruneArchive($categoryID)
             // Überprüfe, ob das Objekt existiert
             if (@IPS_ObjectExists($oldestID) && IPS_MediaExists($oldestID)) {
                 IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
-                $this->SendDebug('PruneArchive', "Entferntes Bild mit ID: $oldestID", 0);
+                $this->SendDebug('PruneArchive', "Entferne das Bild mit der ID: $oldestID", 0);
             } else {
                 $this->SendDebug('PruneArchive', "Bild mit ID $oldestID existiert nicht mehr, übersprungen.", 0);
             }
@@ -629,19 +605,18 @@ private function CreateArchiveSnapshot($booleanIdent, $categoryID)
     IPS_SetMediaCached($mediaID, false); // Kein Caching
 
     $snapshotUrl = $this->GetSnapshotURL();
-    $archiveImagePath = IPS_GetKernelDir() . "media/archive_temp_" . $booleanIdent . "_" . time() . ".jpg";
+    $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . $mediaID . ".jpg";
     $imageData = @file_get_contents($snapshotUrl);
 
     if ($imageData !== false) {
-        file_put_contents($archiveImagePath, $imageData);
         IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
+        IPS_SetMediaContent($mediaID,base64_encode($imageData));
         IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
-        $this->SendDebug('CreateArchiveSnapshot', "Archivbild für $booleanIdent erfolgreich erstellt.", 0);
-        $this->PruneArchive($categoryID); // Maximale Anzahl der Bilder überprüfen
+        $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt.", 0);
+        $this->PruneArchive($categoryID, $booleanIdent); // Maximale Anzahl der Bilder überprüfen
     } else {
-        $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für $booleanIdent.", 0);
-        IPS_LogMessage("Reolink", "Archivbild konnte nicht abgerufen werden für $booleanIdent.");
+        $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für '$booleanIdent'.", 0);
     }
 }
 
@@ -650,7 +625,7 @@ private function RemoveArchives()
     $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"]; // Alle möglichen Archiv-Kategorien
     foreach ($categories as $category) {
         $archiveIdent = "Archive_" . $category;
-        $categoryID = @IPS_GetObjectIDByIdent($archiveIdent, $this->InstanceID);
+        $categoryID = @$this->GetIDForIdent($archiveIdent);
         if ($categoryID !== false) {
             $children = IPS_GetChildrenIDs($categoryID);
             foreach ($children as $childID) {
@@ -666,7 +641,7 @@ private function RemoveArchives()
 
     private function CreateOrUpdateStream($ident, $name)
     {
-        $mediaID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        $mediaID = @$this->GetIDForIdent($ident);
 
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3);
@@ -731,7 +706,7 @@ private function RemoveArchives()
         }
         curl_close($ch);
         
-        $this->SendDebug('API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
+        $this->SendDebug('GetToken API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
         
         $responseData = json_decode($response, true);
         if (isset($responseData[0]['value']['Token']['name'])) {
@@ -830,14 +805,14 @@ private function RemoveArchives()
 
         $responseData = json_decode($response, true);
         if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-            IPS_LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
+            $this->LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
         }
     }
 
     private function CreateApiFunctions()
     {
         // White LED-Variable
-        if (!@IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID)) {
+        if (!@$this->GetIDForIdent("WhiteLed")) {
             $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
             $this->EnableAction("WhiteLed");
         }
@@ -852,14 +827,14 @@ private function RemoveArchives()
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
         }
 
-        if (!@IPS_GetObjectIDByIdent("Mode", $this->InstanceID)) {
-            $this->SendDebug("Variablenprofil", "Variablenprofil REOCAM.WLED erstellt", 0);
+        if (!@$this->GetIDForIdent("Mode")) {
+            $this->SendDebug("CreateApiFunctions", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
     
         // Bright-Variable
-        if (!@IPS_GetObjectIDByIdent("Bright", $this->InstanceID)) {
+        if (!@$this->GetIDForIdent("Bright")) {
             $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
             $this->EnableAction("Bright");
         }
@@ -868,68 +843,25 @@ private function RemoveArchives()
     private function RemoveApiFunctions()
     {
         // White LED-Variable entfernen
-        $varID = @IPS_GetObjectIDByIdent("WhiteLed", $this->InstanceID);
+        $varID = @$this->GetIDForIdent("WhiteLed");
         if ($varID) {
             $this->UnregisterVariable("WhiteLed");
         }
     
         // Mode-Variable entfernen
-        $varID = @IPS_GetObjectIDByIdent("Mode", $this->InstanceID);
+        $varID = @$this->GetIDForIdent("Mode");
         if ($varID) {
             $this->UnregisterVariable("Mode");
         }
     
         // Bright-Variable entfernen
-        $varID = @IPS_GetObjectIDByIdent("Bright", $this->InstanceID);
+        $varID = @$this->GetIDForIdent("Bright");
         if ($varID) {
             $this->UnregisterVariable("Bright");
         }
     }
     
-    private function UpdateAIState(string $type, int $state)
-    {
-        // Mapping der AI-Typen zu den Variablen
-        $mapping = [
-            "dog_cat" => "Tier",
-            "people"  => "Person",
-            "vehicle" => "Fahrzeug"
-        ];
-    
-        if (!isset($mapping[$type])) {
-            $this->SendDebug("UpdateAIState", "Unbekannter Typ: $type", 0);
-            return;
-        }
-    
-        $ident = $mapping[$type];
-        $variableID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-    
-        if ($variableID !== false) {
-            $currentValue = GetValue($variableID);
-    
-            // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
-            if ($currentValue != ($state == 1)) {
-                $this->SetValue($ident, $state == 1);
-                $this->SendDebug("UpdateAIState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
-    
-                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
-                $timerName = $ident . "_Reset";
-                if ($state == 1) {
-                    $this->SetTimerInterval($timerName, 5000);
-                    // Schnappschuss auslösen
-                    $this->SendDebug("UpdateAIState", "Löse Schnappschuss für '$ident' aus.", 0);
-                    $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
-                } else {
-                    $this->SetTimerInterval($timerName, 0); // Timer stoppen
-                }
-            } else {
-                $this->SendDebug("UpdateAIState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
-            }
-        } else {
-            $this->SendDebug("UpdateAIState", "Variable '$ident' nicht gefunden.", 0);
-        }
-    }
-    
-public function Polling()
+public function Polling() //Aufruf direkt vom Timer
 {
     if (!$this->ReadPropertyBoolean("EnablePolling")) {
         $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
@@ -958,9 +890,52 @@ public function Polling()
 
     $aiState = $data[0]['value'];
 
-    $this->UpdateAIState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
-    $this->UpdateAIState("people", $aiState['people']['alarm_state'] ?? 0);
-    $this->UpdateAIState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
+    $this->PollingUpdateState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
+    $this->PollingUpdateState("people", $aiState['people']['alarm_state'] ?? 0);
+    $this->PollingUpdateState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
+}
+
+private function PollingUpdateState(string $type, int $state)
+{
+    // Mapping der AI-Typen zu den Variablen
+    $mapping = [
+        "dog_cat" => "Tier",
+        "people"  => "Person",
+        "vehicle" => "Fahrzeug"
+    ];
+
+    if (!isset($mapping[$type])) {
+        $this->SendDebug("PollingUpdateState", "Unbekannter Typ: $type", 0);
+        return;
+    }
+
+    $ident = $mapping[$type];
+    $variableID = @$this->GetIDForIdent($ident);
+
+    if ($variableID !== false) {
+        $currentValue = GetValue($variableID);
+
+        // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
+        if ($currentValue != ($state == 1)) {
+            $this->SetValue($ident, $state == 1);
+            $this->SendDebug("PollingUpdateState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
+
+            // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
+            $timerName = $ident . "_Reset";
+            if ($state == 1) {
+                $this->SetTimerInterval($timerName, 5000);
+                // Schnappschuss auslösen
+                $this->SendDebug("PollingUpdateState", "Löse Schnappschuss für '$ident' aus.", 0);
+                $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
+            } else {
+                $this->SetTimerInterval($timerName, 0); // Timer stoppen
+            }
+        } else {
+            $this->SendDebug("PollingUpdateState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
+        }
+    } else {
+        $this->SendDebug("PollingUpdateState", "Variable '$ident' nicht gefunden.", 0);
+    }
 }
 
 }
