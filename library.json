@@ -1,12 +1,12 @@
 {
     "id": "{37A9DF25-CC0D-6EAB-1E0A-18EEB0D09E99}",
-    "name": "REOCAM",
+    "name": "Reolink",
     "author": "Stefan Künzli",
     "url": "https://github.com/mb-stern/Reolink",
     "compatibility": {
         "version": "7.0"
     },
-    "version": "2.0",
+    "version": "2.1",
     "build": 0,
     "date": 0
 }

@@ -1,6 +1,6 @@
 {
     "id": "{37A9DF25-CC0D-6EAB-1E0A-18EEB0D09E99}",
-    "name": "REOCAM",
+    "name": "Reolink",
     "type": 3,
     "vendor": "",
     "aliases": [
@@ -10,5 +10,5 @@
     "childRequirements": [],
     "implemented": [],
     "prefix": "REOCAM",
-    "url": "https://github.com/mb-stern/Reolink/tree/main/REOCAM"
+    "url": "https://github.com/mb-stern/Reolink/tree/beta"
 }
