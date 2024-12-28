@@ -22,18 +22,17 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("PollingInterval", 2);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
+        // Webhook registrieren
         $this->RegisterAttributeString("CurrentHook", "");
-        $this->RegisterAttributeString("ApiToken", "");
 
+        // Timer zur Rücksetzung der Boolean-Variablen
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
-        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
-        $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
-        $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_RenewToken($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);'); //Aufrufen der Polling Funktion
     }
     
     public function ApplyChanges()
@@ -93,23 +92,12 @@ class Reolink extends IPSModule
         }
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = $this->ReadPropertyInteger("PollingInterval");
-            $this->SetTimerInterval("PollingTimer", $interval * 1000);
+            $this->SetTimerInterval("PollingTimer", $interval * 1000); // Polling-Intervall setzen
         } else {
-            $this->SetTimerInterval("PollingTimer", 0);
+            $this->SetTimerInterval("PollingTimer", 0); // Polling deaktivieren
         }
         
-        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
-            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
-            $this->CreateApiFunctions();
-            $this->RenewToken();
-
-        } else {
-            $this->SetTimerInterval("ApiRequestTimer", 0);
-            $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $this->RemoveApiFunctions();
-        }
-            
+        
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
@@ -688,19 +676,8 @@ private function RemoveArchives()
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    private function GetToken(string $cameraIP, string $username, string $password)
+    private function GetToken(string $cameraIP, string $username, string $password): string
     {
-        // Prüfen, ob bereits ein Token existiert
-        $currentToken = $this->ReadAttributeString("ApiToken");
-    
-        if (!empty($currentToken)) {
-            $this->SendDebug("GetToken", "Ein bestehender Token wurde gefunden. Versuch, diesen abzumelden.", 0);
-            
-            // Alten Token abmelden
-            $this->LogoutToken($cameraIP, $currentToken);
-        }
-    
-        // Neuen Token anfordern
         $url = "https://$cameraIP/api.cgi?cmd=Login";
         $data = [
             [
@@ -715,68 +692,38 @@ private function RemoveArchives()
             ]
         ];
     
-        $response = $this->SendApiRequest($url, $data);
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     
-        if ($response === null || !isset($response[0]['value']['Token']['name'])) {
-            throw new Exception("Fehler beim Abrufen des Tokens: " . json_encode($response));
+        $response = curl_exec($ch);
+        if ($response === false) {
+            throw new Exception("cURL-Fehler: " . curl_error($ch));
         }
-    
-        // Neuen Token speichern und zurückgeben
-        $newToken = $response[0]['value']['Token']['name'];
-        $this->WriteAttributeString("ApiToken", $newToken);
-    
-        $this->SendDebug("GetToken", "Neuer Token erfolgreich abgerufen: $newToken", 0);
-    
-        return $newToken;
+        curl_close($ch);
+        
+        $this->SendDebug('GetToken API Response', $response, 0); // Debugging-Ausgabe für die API-Antwort
+        
+        $responseData = json_decode($response, true);
+        if (isset($responseData[0]['value']['Token']['name'])) {
+            return $responseData[0]['value']['Token']['name'];
+        }
+        
+        throw new Exception("Failed to retrieve token. API response: " . json_encode($responseData));
     }
-    
-    private function LogoutToken(string $cameraIP, string $token): void
-    {
-        if (empty($token)) {
-            $this->SendDebug("LogoutToken", "Kein gültiger Token vorhanden. Logout übersprungen.", 0);
-            return;
-        }
-    
-        $url = "https://$cameraIP/api.cgi?cmd=Logout&token=$token";
-        $data = [
-            [
-                "cmd" => "Logout",
-                "action" => 0
-            ]
-        ];
-    
-        $response = $this->SendApiRequest($url, $data);
-    
-        if ($response === null || $response[0]['code'] !== 0) {
-            $this->SendDebug("LogoutToken", "Fehler beim Abmelden des Tokens. Token: $token", 0);
-        } else {
-            $this->SendDebug("LogoutToken", "Token erfolgreich abgemeldet. Token: $token", 0);
-        }
-    }
-    
-    public function RenewToken()
-{
-    $cameraIP = $this->ReadPropertyString("CameraIP");
-    $username = $this->ReadPropertyString("Username");
-    $password = $this->ReadPropertyString("Password");
 
-    try {
-        $this->SendDebug("RenewToken", "Starte Token-Erneuerung...", 0);
-        $newToken = $this->GetToken($cameraIP, $username, $password);
-        $this->SendDebug("RenewToken", "Token erfolgreich erneuert: $newToken", 0);
-    } catch (Exception $e) {
-        $this->SendDebug("RenewToken", "Fehler bei der Token-Erneuerung: " . $e->getMessage(), 0);
-        $this->LogMessage("Reolink: Fehler bei der Token-Erneuerung: " . $e->getMessage(), KL_ERROR);
-    }
-}
-
-    
     private function SetWhiteLed(bool $state)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
-        $token = $this->ReadAttributeString("ApiToken");
+
+        // Hole Token für die API-Authentifizierung
+        $token = $this->GetToken($cameraIP, $username, $password);
 
         // LED-Einstellungen setzen
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
@@ -800,7 +747,8 @@ private function RemoveArchives()
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
-        $token = $this->ReadAttributeString("ApiToken");
+
+        $token = $this->GetToken($cameraIP, $username, $password);
 
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
         $data = [
@@ -823,7 +771,8 @@ private function RemoveArchives()
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
-        $token = $this->ReadAttributeString("ApiToken");
+
+        $token = $this->GetToken($cameraIP, $username, $password);
 
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
         $data = [
@@ -1020,74 +969,6 @@ private function PollingUpdateState(string $type, int $state)
     } else {
         $this->SendDebug("PollingUpdateState", "Variable '$ident' nicht gefunden.", 0);
     }
-}
-
-public function ExecuteApiRequests()
-{
-    $this->SendDebug("ExecuteApiRequests", "Starte API-Abfragen...", 0);
-
-    // API-Funktion: GetWhiteLed
-    $this->UpdateWhiteLedStatus();
-
-    // Weitere API-Funktionen können hier hinzugefügt werden
-}
-
-private function UpdateWhiteLedStatus()
-{
-    $cameraIP = $this->ReadPropertyString("CameraIP");
-    $username = $this->ReadPropertyString("Username");
-    $password = $this->ReadPropertyString("Password");
-    $token = $this->ReadAttributeString("ApiToken");
-
-    $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
-    $data = json_encode([
-        [
-            "cmd" => "GetWhiteLed",
-            "action" => 0,
-            "param" => [
-                "channel" => 0
-            ]
-        ]
-    ]);
-
-    $this->SendDebug("UpdateWhiteLedStatus", "URL: $url", 0);
-    $this->SendDebug("UpdateWhiteLedStatus", "Daten: $data", 0);
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-
-    $response = curl_exec($ch);
-
-    if ($response === false) {
-        $error = curl_error($ch);
-        $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
-        curl_close($ch);
-        return;
-    }
-
-    curl_close($ch);
-
-    $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
-    $responseData = json_decode($response, true);
-
-    if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
-        $this->SendDebug("UpdateWhiteLedStatus", "Fehlerhafte API-Antwort: " . json_encode($responseData), 0);
-        return;
-    }
-
-    $whiteLedData = $responseData[0]['value']['WhiteLed'];
-
-    // Variablen aktualisieren
-    $this->SetValue("WhiteLed", $whiteLedData['state']);
-    $this->SetValue("Mode", $whiteLedData['mode']);
-    $this->SetValue("Bright", $whiteLedData['bright']);
-
-    $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
 }
 
 }
