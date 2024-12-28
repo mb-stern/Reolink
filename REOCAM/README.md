@@ -100,6 +100,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.2 (28.12.2024)
 - Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
+- Die API-Istwerte werden nund alle 60 sec abgefragt, um den Wert im Falle einer externen ÄNderung zu aktualisieren.
 
 Version 2.1 (22.12.2024)
 - Anpassung Modulname

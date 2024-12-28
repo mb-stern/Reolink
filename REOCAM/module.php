@@ -99,7 +99,7 @@ class Reolink extends IPSModule
         }
         
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
+            $this->SetTimerInterval("ApiRequestTimer", 60 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
             $this->CreateApiFunctions();
             $this->GetToken();
