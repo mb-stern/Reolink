@@ -688,12 +688,19 @@ private function RemoveArchives()
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    private function GetToken(): void
+    private function GetToken(string $cameraIP, string $username, string $password): string
     {
-        $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        // Prüfen, ob bereits ein Token existiert
+        $currentToken = $this->ReadAttributeString("ApiToken");
     
+        if (!empty($currentToken)) {
+            $this->SendDebug("GetToken", "Ein bestehender Token wurde gefunden. Versuch, diesen abzumelden.", 0);
+            
+            // Alten Token abmelden
+            $this->LogoutToken($cameraIP, $currentToken);
+        }
+    
+        // Neuen Token anfordern
         $url = "https://$cameraIP/api.cgi?cmd=Login";
         $data = [
             [
@@ -708,34 +715,39 @@ private function RemoveArchives()
             ]
         ];
     
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        $response = $this->SendApiRequest($url, $data);
     
-        $response = curl_exec($ch);
-    
-        if ($response === false) {
-            $error = curl_error($ch);
-            curl_close($ch);
-            throw new Exception("cURL-Fehler: $error");
+        if ($response === null || !isset($response[0]['value']['Token']['name'])) {
+            throw new Exception("Fehler beim Abrufen des Tokens: " . json_encode($response));
         }
     
-        curl_close($ch);
-        $this->SendDebug("GetToken", "Antwort: $response", 0);
+        // Neuen Token speichern und zurückgeben
+        $newToken = $response[0]['value']['Token']['name'];
+        $this->WriteAttributeString("ApiToken", $newToken);
     
-        $responseData = json_decode($response, true);
-        if (isset($responseData[0]['value']['Token']['name'])) {
-            $token = $responseData[0]['value']['Token']['name'];
-            $this->WriteAttributeString("ApiToken", $token);
-            $this->SendDebug("GetToken", "Token erfolgreich gespeichert: $token", 0);
+        $this->SendDebug("GetToken", "Neuer Token erfolgreich abgerufen: $newToken", 0);
+    
+        return $newToken;
+    }
+    
+    private function LogoutToken(string $cameraIP, string $token): void
+    {
+        $url = "https://$cameraIP/api.cgi?cmd=Logout&token=$token";
+        $data = [
+            [
+                "cmd" => "Logout",
+                "action" => 0
+            ]
+        ];
+
+        $response = $this->SendApiRequest($url, $data);
+
+        if ($response === null || $response[0]['code'] !== 0) {
+            $this->SendDebug("LogoutToken", "Fehler beim Abmelden des Tokens. Token: $token", 0);
         } else {
-            throw new Exception("Fehler beim Abrufen des Tokens: " . json_encode($responseData));
+            $this->SendDebug("LogoutToken", "Token erfolgreich abgemeldet. Token: $token", 0);
         }
-    }    
+    }
     
     private function SetWhiteLed(bool $state)
     {
