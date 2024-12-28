@@ -33,7 +33,7 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
         $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
-        $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_RenewToken($_IPS[\'TARGET\']);');
     }
     
     public function ApplyChanges()
@@ -102,6 +102,7 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
             $this->CreateApiFunctions();
+            $this->RenewToken();
 
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
@@ -747,6 +748,23 @@ private function RemoveArchives()
             $this->SendDebug("LogoutToken", "Token erfolgreich abgemeldet. Token: $token", 0);
         }
     }
+
+    public function RenewToken()
+{
+    $cameraIP = $this->ReadPropertyString("CameraIP");
+    $username = $this->ReadPropertyString("Username");
+    $password = $this->ReadPropertyString("Password");
+
+    try {
+        $this->SendDebug("RenewToken", "Starte Token-Erneuerung...", 0);
+        $newToken = $this->GetToken($cameraIP, $username, $password);
+        $this->SendDebug("RenewToken", "Token erfolgreich erneuert: $newToken", 0);
+    } catch (Exception $e) {
+        $this->SendDebug("RenewToken", "Fehler bei der Token-Erneuerung: " . $e->getMessage(), 0);
+        $this->LogMessage("Reolink: Fehler bei der Token-Erneuerung: " . $e->getMessage(), KL_ERROR);
+    }
+}
+
     
     private function SetWhiteLed(bool $state)
     {
