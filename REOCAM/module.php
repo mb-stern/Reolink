@@ -792,6 +792,10 @@ private function RemoveArchives()
 
     private function SendApiRequest(string $url, array $data)
     {
+        // Anfrage-Daten debuggen
+        $this->SendDebug("SendApiRequest", "URL: $url", 0);
+        $this->SendDebug("SendApiRequest", "Daten: " . json_encode($data), 0);
+    
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -799,16 +803,45 @@ private function RemoveArchives()
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-
+    
         $response = curl_exec($ch);
-        curl_close($ch);
-
-        $responseData = json_decode($response, true);
-        if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
-            $this->LogMessage("Reolink", "API-Befehl fehlgeschlagen: " . json_encode($responseData));
+    
+        // Fehler beim Abruf debuggen
+        if ($response === false) {
+            $error = curl_error($ch);
+            $this->SendDebug("SendApiRequest", "cURL-Fehler: $error", 0);
+            $this->LogMessage("Reolink: cURL-Fehler: $error", KL_ERROR);
+            curl_close($ch);
+            return null;
         }
+    
+        curl_close($ch);
+    
+        // Antwort debuggen
+        $this->SendDebug("SendApiRequest", "Antwort: $response", 0);
+    
+        $responseData = json_decode($response, true);
+    
+        // Debug-Ausgabe für die decodierten Daten
+        if ($responseData !== null) {
+            $this->SendDebug("SendApiRequest", "Decoded Response: " . json_encode($responseData), 0);
+        } else {
+            $this->SendDebug("SendApiRequest", "Antwort konnte nicht decodiert werden.", 0);
+        }
+    
+        // Prüfung der API-Antwort
+        if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
+            $this->SendDebug("SendApiRequest", "API-Befehl fehlgeschlagen: " . json_encode($responseData), 0);
+            $this->LogMessage("Reolink: API-Befehl fehlgeschlagen: " . json_encode($responseData), KL_ERROR);
+            return null;
+        }
+    
+        // Erfolgreiche Antwort debuggen
+        $this->SendDebug("SendApiRequest", "API-Befehl erfolgreich: " . json_encode($responseData), 0);
+    
+        return $responseData;
     }
-
+    
     private function CreateApiFunctions()
     {
         // White LED-Variable
