@@ -32,7 +32,8 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
-        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);'); //Aufrufen der Polling Funktion
+        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
     }
     
     public function ApplyChanges()
@@ -92,12 +93,19 @@ class Reolink extends IPSModule
         }
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = $this->ReadPropertyInteger("PollingInterval");
-            $this->SetTimerInterval("PollingTimer", $interval * 1000); // Polling-Intervall setzen
+            $this->SetTimerInterval("PollingTimer", $interval * 1000);
         } else {
-            $this->SetTimerInterval("PollingTimer", 0); // Polling deaktivieren
+            $this->SetTimerInterval("PollingTimer", 0);
         }
         
-        
+        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
+            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
+            $this->CreateApiFunctions();
+        } else {
+            $this->SetTimerInterval("ApiRequestTimer", 0);
+            $this->RemoveApiFunctions();
+        }
+            
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
@@ -969,6 +977,55 @@ private function PollingUpdateState(string $type, int $state)
     } else {
         $this->SendDebug("PollingUpdateState", "Variable '$ident' nicht gefunden.", 0);
     }
+}
+
+public function ExecuteApiRequests()
+{
+    $this->SendDebug("ExecuteApiRequests", "Starte API-Abfragen...", 0);
+
+    // API-Funktion: GetWhiteLed
+    $this->UpdateWhiteLedStatus();
+
+    // Weitere API-Funktionen können hier hinzugefügt werden
+}
+
+private function UpdateWhiteLedStatus()
+{
+    $cameraIP = $this->ReadPropertyString("CameraIP");
+    $username = $this->ReadPropertyString("Username");
+    $password = $this->ReadPropertyString("Password");
+    $token = $this->GetToken($cameraIP, $username, $password);
+
+    $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
+    $data = [
+        [
+            "cmd" => "GetWhiteLed",
+            "action" => 0,
+            "param" => [
+                "channel" => 0
+            ]
+        ]
+    ];
+
+    $response = $this->SendApiRequest($url, $data);
+    if ($response === null) {
+        $this->SendDebug("UpdateWhiteLedStatus", "Fehler bei der API-Abfrage.", 0);
+        return;
+    }
+
+    if (!isset($response[0]['value']['WhiteLed'])) {
+        $this->SendDebug("UpdateWhiteLedStatus", "Unerwartete API-Antwort: " . json_encode($response), 0);
+        return;
+    }
+
+    $whiteLedData = $response[0]['value']['WhiteLed'];
+
+    // Variablen aktualisieren
+    $this->SetValue("WhiteLed", $whiteLedData['state']);
+    $this->SetValue("Mode", $whiteLedData['mode']);
+    $this->SetValue("Bright", $whiteLedData['bright']);
+
+    $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
 }
 
 }
