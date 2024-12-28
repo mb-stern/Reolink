@@ -1048,22 +1048,17 @@ class Reolink extends IPSModule
 
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
 
-        // Variablenwerte aktualisieren, nur wenn sie sich ändern oder noch keinen Wert haben
-        $variableID = @$this->GetIDForIdent("WhiteLed");
-        if ($variableID === false || GetValue($variableID) !== (bool)$whiteLedData['state']) {
-            $this->SetValue("WhiteLed", (bool)$whiteLedData['state']);
+        // Variablen aktualisieren
+        if (!$this->VariableExistsOrDiffers("WhiteLed", $whiteLedData['state'])) {
+            $this->SetValue("WhiteLed", $whiteLedData['state']);
+        }
+        if (!$this->VariableExistsOrDiffers("Mode", $whiteLedData['mode'])) {
+            $this->SetValue("Mode", $whiteLedData['mode']);
+        }
+        if (!$this->VariableExistsOrDiffers("Bright", $whiteLedData['bright'])) {
+            $this->SetValue("Bright", $whiteLedData['bright']);
         }
 
-        $variableID = @$this->GetIDForIdent("Mode");
-        if ($variableID === false || GetValue($variableID) !== (int)$whiteLedData['mode']) {
-            $this->SetValue("Mode", (int)$whiteLedData['mode']);
-        }
-
-        $variableID = @$this->GetIDForIdent("Bright");
-        if ($variableID === false || GetValue($variableID) !== (int)$whiteLedData['bright']) {
-            $this->SetValue("Bright", (int)$whiteLedData['bright']);
-        }
-        
         $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
     }
 }
