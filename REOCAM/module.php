@@ -732,6 +732,11 @@ private function RemoveArchives()
     
     private function LogoutToken(string $cameraIP, string $token): void
     {
+        if (empty($token)) {
+            $this->SendDebug("LogoutToken", "Kein gültiger Token vorhanden. Logout übersprungen.", 0);
+            return;
+        }
+    
         $url = "https://$cameraIP/api.cgi?cmd=Logout&token=$token";
         $data = [
             [
@@ -739,16 +744,16 @@ private function RemoveArchives()
                 "action" => 0
             ]
         ];
-
+    
         $response = $this->SendApiRequest($url, $data);
-
+    
         if ($response === null || $response[0]['code'] !== 0) {
             $this->SendDebug("LogoutToken", "Fehler beim Abmelden des Tokens. Token: $token", 0);
         } else {
             $this->SendDebug("LogoutToken", "Token erfolgreich abgemeldet. Token: $token", 0);
         }
     }
-
+    
     public function RenewToken()
 {
     $cameraIP = $this->ReadPropertyString("CameraIP");
