@@ -997,7 +997,7 @@ private function UpdateWhiteLedStatus()
     $token = $this->GetToken($cameraIP, $username, $password);
 
     $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
-    $data = json_encode([
+    $data = [
         [
             "cmd" => "GetWhiteLed",
             "action" => 0,
@@ -1005,39 +1005,20 @@ private function UpdateWhiteLedStatus()
                 "channel" => 0
             ]
         ]
-    ]);
+    ];
 
-    $this->SendDebug("UpdateWhiteLedStatus", "URL: $url", 0);
-    $this->SendDebug("UpdateWhiteLedStatus", "Daten: $data", 0);
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-
-    $response = curl_exec($ch);
-
-    if ($response === false) {
-        $error = curl_error($ch);
-        $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
-        curl_close($ch);
+    $response = $this->SendApiRequest($url, $data);
+    if ($response === null) {
+        $this->SendDebug("UpdateWhiteLedStatus", "Fehler bei der API-Abfrage.", 0);
         return;
     }
 
-    curl_close($ch);
-
-    $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
-    $responseData = json_decode($response, true);
-
-    if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
-        $this->SendDebug("UpdateWhiteLedStatus", "Fehlerhafte API-Antwort: " . json_encode($responseData), 0);
+    if (!isset($response[0]['value']['WhiteLed'])) {
+        $this->SendDebug("UpdateWhiteLedStatus", "Unerwartete API-Antwort: " . json_encode($response), 0);
         return;
     }
 
-    $whiteLedData = $responseData[0]['value']['WhiteLed'];
+    $whiteLedData = $response[0]['value']['WhiteLed'];
 
     // Variablen aktualisieren
     $this->SetValue("WhiteLed", $whiteLedData['state']);
