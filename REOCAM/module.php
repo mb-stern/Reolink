@@ -102,7 +102,6 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
             $this->CreateApiFunctions();
-            $this->GetToken();
 
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
@@ -688,12 +687,8 @@ private function RemoveArchives()
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    private function GetToken()
+    private function GetToken(string $cameraIP, string $username, string $password)
     {
-        $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
-
         // Prüfen, ob bereits ein Token existiert
         $currentToken = $this->ReadAttributeString("ApiToken");
     
