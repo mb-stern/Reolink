@@ -688,8 +688,12 @@ private function RemoveArchives()
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    private function GetToken(string $cameraIP, string $username, string $password): string
+    private function GetToken()
     {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+
         // Prüfen, ob bereits ein Token existiert
         $currentToken = $this->ReadAttributeString("ApiToken");
     
