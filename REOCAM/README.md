@@ -98,6 +98,9 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
+Version 2.2 (28.12.2024)
+- Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
+
 Version 2.1 (22.12.2024)
 - Anpassung Modulname
 - Anpassung Readme mit geänderter URL
