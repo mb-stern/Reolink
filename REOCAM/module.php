@@ -1048,10 +1048,16 @@ class Reolink extends IPSModule
 
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
 
-        // Variablen aktualisieren
-        $this->SetValue("WhiteLed", $whiteLedData['state']);
-        $this->SetValue("Mode", $whiteLedData['mode']);
-        $this->SetValue("Bright", $whiteLedData['bright']);
+        // Variablen aktualisieren, nur wenn der Wert unterschiedlich ist
+        if (!@$this->GetIDForIdent("WhiteLed") || GetValue($this->GetIDForIdent("WhiteLed")) !== $whiteLedData['state']) {
+            $this->SetValue("WhiteLed", $whiteLedData['state']);
+        }
+        if (!@$this->GetIDForIdent("Mode") || GetValue($this->GetIDForIdent("Mode")) !== $whiteLedData['mode']) {
+            $this->SetValue("Mode", $whiteLedData['mode']);
+        }
+        if (!@$this->GetIDForIdent("Bright") || GetValue($this->GetIDForIdent("Bright")) !== $whiteLedData['bright']) {
+            $this->SetValue("Bright", $whiteLedData['bright']);
+        }
 
         $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
     }
