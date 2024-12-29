@@ -738,7 +738,7 @@ class Reolink extends IPSModule
         }
     }    
     
-    private function SetWhiteLed(bool $state)
+    public function GetToken(): void SetWhiteLed(bool $state)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -762,7 +762,7 @@ class Reolink extends IPSModule
         $this->SendApiRequest($url, $data);
     }
 
-    private function SetMode(int $mode)
+    public function GetToken(): void SetMode(int $mode)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -785,7 +785,7 @@ class Reolink extends IPSModule
         $this->SendApiRequest($url, $data);
     }
 
-    private function SetBrightness(int $brightness)
+    public function GetToken(): void SetBrightness(int $brightness)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
