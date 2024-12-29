@@ -689,7 +689,7 @@ class Reolink extends IPSModule
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    public function GetToken(): void
+    public function GetToken()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -738,7 +738,7 @@ class Reolink extends IPSModule
         }
     }    
     
-    public function GetToken(): void SetWhiteLed(bool $state)
+    private function SetWhiteLed(bool $state)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -762,7 +762,7 @@ class Reolink extends IPSModule
         $this->SendApiRequest($url, $data);
     }
 
-    public function GetToken(): void SetMode(int $mode)
+    private function SetMode(int $mode)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -785,7 +785,7 @@ class Reolink extends IPSModule
         $this->SendApiRequest($url, $data);
     }
 
-    public function GetToken(): void SetBrightness(int $brightness)
+    private function SetBrightness(int $brightness)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
