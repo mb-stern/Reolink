@@ -189,7 +189,7 @@ class Reolink extends IPSModule
         return json_encode($form);
     }
 
-    private function ProcessHookData()
+    public function ProcessHookData()
     {
         $rawData = file_get_contents("php://input");
         $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
@@ -618,7 +618,7 @@ class Reolink extends IPSModule
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    private function GetStreamURL()
+    public function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -630,7 +630,7 @@ class Reolink extends IPSModule
                "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
-    private function GetSnapshotURL()
+    public function GetSnapshotURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -639,16 +639,11 @@ class Reolink extends IPSModule
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    public function GetToken()
+    public function GetToken(): void
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
-    
-        if (empty($cameraIP) || empty($username) || empty($password)) {
-            $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
-            return;
-        }
     
         $url = "https://$cameraIP/api.cgi?cmd=Login";
         $data = [
@@ -691,7 +686,7 @@ class Reolink extends IPSModule
         } else {
             throw new Exception("Fehler beim Abrufen des Tokens: " . json_encode($responseData));
         }
-    }
+    }    
     
     private function SetWhiteLed(bool $state)
     {
