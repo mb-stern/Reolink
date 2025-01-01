@@ -102,7 +102,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.3 (01.01.2025)
 - Fehlermeldung beim Erstellen des Moduls behoben.
-- Erstellung der Webhook-Variablen entfernt (war nur zu Testzwecken).
+- Erstellung der Webhook-Variablen entfernt (war nur zu Testzwecken). Im Fehlerfall ist das JSON aus dem Debug zu bewerten.
 - Code überarbeitet, einzelne Funktionen zusammengefasst und unnötige public Funktionen auf private gesetzt.
 
 Version 2.2 (28.12.2024)
