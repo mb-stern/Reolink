@@ -460,7 +460,7 @@ class Reolink extends IPSModule
         }
     }
     
-    private function CreateOrGetArchiveCategory($booleanIdent)
+    private function CreateOrGetArchiveCategory()
     {
 
         // Boolean-Identifikatoren für die Archive
