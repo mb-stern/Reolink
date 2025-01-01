@@ -128,7 +128,23 @@ class Reolink extends IPSModule
                 throw new Exception("Invalid Ident");
         }
     }
+        
+    public function GetConfigurationForm()
+    {
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
     
+        // Webhook-Pfad dynamisch in das Konfigurationsformular einfügen
+        $hookPath = $this->ReadAttributeString("CurrentHook");
+        $webhookElement = [
+            "type"    => "Label",
+            "caption" => "Webhook: " . $hookPath
+        ];
+    
+        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
+    
+        return json_encode($form);
+    }
+
     private function RegisterHook()
     {
 
@@ -168,22 +184,6 @@ class Reolink extends IPSModule
         IPS_ApplyChanges($hookInstanceID);
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
-    }
-        
-    public function GetConfigurationForm()
-    {
-        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
-    
-        // Webhook-Pfad dynamisch in das Konfigurationsformular einfügen
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        $webhookElement = [
-            "type"    => "Label",
-            "caption" => "Webhook: " . $hookPath
-        ];
-    
-        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
-    
-        return json_encode($form);
     }
 
     public function ProcessHookData()
