@@ -60,7 +60,7 @@
         },
         {
             "type": "CheckBox",
-            "name": "ShowBooleanVariables",
+            "name": "ShowMoveVariables",
             "caption": "Intelligente Bewegungserkennung"
         },
         {
