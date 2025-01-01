@@ -618,7 +618,7 @@ class Reolink extends IPSModule
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    private function GetStreamURL()
+    public function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
