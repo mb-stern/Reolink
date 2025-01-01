@@ -46,7 +46,7 @@
         {
             "type": "CheckBox",
             "name": "ShowTestElements",
-            "caption": "Test-Elemente anzeigen (nur für Tests und Diagnose)"
+            "caption": "Test-Funktion Bewegungserkennung (Im Webhook Reolink aktivierbar)"
         },
         {
             "type": "CheckBox",
