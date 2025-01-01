@@ -75,16 +75,13 @@ class Reolink extends IPSModule
         } else {
             $this->RemoveTestElements();
         }
+        
         if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
             $this->CreateVisitorElements();
         } else {
             $this->RemoveVisitorElements();
         }
-        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->CreateApiFunctions();
-        } else {
-            $this->RemoveApiFunctions();
-        }
+        
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = $this->ReadPropertyInteger("PollingInterval");
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
@@ -95,14 +92,14 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
             $this->SetTimerInterval("ApiRequestTimer", 60 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
-            $this->CreateApiFunctions();
+            $this->CreateApiVariables();
             $this->GetToken();
             $this->ExecuteApiRequests();
 
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $this->RemoveApiFunctions();
+            $this->RemoveApiVariables();
         }
             
         // Stream-URL aktualisieren
@@ -816,7 +813,7 @@ class Reolink extends IPSModule
         return $responseData;
     }
     
-    private function CreateApiFunctions()
+    private function CreateApiVariables()
     {
         // White LED-Variable
         if (!@$this->GetIDForIdent("WhiteLed")) {
@@ -835,7 +832,7 @@ class Reolink extends IPSModule
         }
 
         if (!@$this->GetIDForIdent("Mode")) {
-            $this->SendDebug("CreateApiFunctions", "Variablenprofil REOCAM.WLED erstellt", 0);
+            $this->SendDebug("CreateApiVariables", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
@@ -847,7 +844,7 @@ class Reolink extends IPSModule
         }
     }
     
-    private function RemoveApiFunctions()
+    private function RemoveApiVariables()
     {
         // White LED-Variable entfernen
         $varID = @$this->GetIDForIdent("WhiteLed");
