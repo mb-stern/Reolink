@@ -647,7 +647,7 @@ class Reolink extends IPSModule
     
         if (empty($cameraIP) || empty($username) || empty($password)) {
             $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
-            throw new Exception("Die Kamera-IP, der Benutzername oder das Passwort sind nicht konfiguriert.");
+            return;
         }
     
         $url = "https://$cameraIP/api.cgi?cmd=Login";
