@@ -189,7 +189,7 @@ class Reolink extends IPSModule
         return json_encode($form);
     }
 
-    Private function ProcessHookData()
+    public function ProcessHookData()
     {
         $rawData = file_get_contents("php://input");
         $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
