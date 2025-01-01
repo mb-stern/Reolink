@@ -24,12 +24,12 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
 
-        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Person");');
-        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Tier");');
-        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Fahrzeug");');
-        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Bewegung");');
-        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Test");');
-        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Besucher");');
+        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Person");');
+        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Tier");');
+        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Fahrzeug");');
+        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Test");');
+        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Besucher");');
         $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
@@ -291,12 +291,12 @@ class Reolink extends IPSModule
         }
     }
 
-    public function ReSetMoveVariables(string $ident)
+    public function ResetMoveVariables(string $ident)
     {
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ReSetMoveVariables', "Setze Variable '$ident' auf false.", 0);
+        $this->SendDebug('ResetMoveVariables', "Setze Variable '$ident' auf false.", 0);
 
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
@@ -456,6 +456,18 @@ class Reolink extends IPSModule
             $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
         }
     }
+
+    private function CreateOrUpdateArchives()
+    {
+        // Boolean-Identifikatoren für die Archive
+        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
+        
+        // Für jede Kategorie prüfen und aktualisieren
+        foreach ($categories as $category) {
+            // Archiv-Kategorie erstellen oder abrufen
+            $categoryID = $this->CreateOrGetArchiveCategory($category);
+        }
+    }
     
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
@@ -507,18 +519,6 @@ class Reolink extends IPSModule
         return $categoryID;
     }
     
-    private function CreateOrUpdateArchives()
-    {
-        // Boolean-Identifikatoren für die Archive
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
-        
-        // Für jede Kategorie prüfen und aktualisieren
-        foreach ($categories as $category) {
-            // Archiv-Kategorie erstellen oder abrufen
-            $categoryID = $this->CreateOrGetArchiveCategory($category);
-        }
-    }
-
     private function PruneArchive($categoryID, $booleanIdent)
     {
         $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
