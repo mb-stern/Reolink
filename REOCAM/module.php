@@ -243,13 +243,14 @@ class Reolink extends IPSModule
                 case "TEST":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Test", 46);  
+                    $this->ActivateBoolean("Test");  
                 }             
                     break;
             }
         }
     }
 
-    private function ActivateBoolean($ident, $position)
+    private function ActivateBoolean($ident)
     {
         // Wenn Test-Elemente deaktiviert sind, keine Aktionen für "Test" ausführen
         if (!$this->ReadPropertyBoolean("ShowTestElements") && $ident === "Test") {
@@ -261,14 +262,6 @@ class Reolink extends IPSModule
     
         $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
         $this->SetValue($ident, true);
-    
-        /*
-        
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateSnapshotAtPosition($ident, $position);
-        }
-
-        */
     
         $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
