@@ -24,12 +24,12 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
 
-        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Person");');
-        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Tier");');
-        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Fahrzeug");');
-        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Bewegung");');
-        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Test");');
-        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Besucher");');
+        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Person");');
+        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Tier");');
+        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Fahrzeug");');
+        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Test");');
+        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ReSetMoveVariables($_IPS[\'TARGET\'], "Besucher");');
         $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
@@ -55,9 +55,9 @@ class Reolink extends IPSModule
         // Verwalte Variablen und andere Einstellungen
     
         if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-            $this->CreateBooleanVariables();
+            $this->CreateMoveVariables();
         } else {
-            $this->RemoveBooleanVariables();
+            $this->RemoveMoveVariables();
         }
     
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
@@ -216,35 +216,35 @@ class Reolink extends IPSModule
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Person", 21);
                     }
-                    $this->SetMoveVariable("Person");
+                    $this->SetMoveVariables("Person");
                     break;
                 
                 case "ANIMAL":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Tier", 26);
                     }
-                    $this->SetMoveVariable("Tier");
+                    $this->SetMoveVariables("Tier");
                     break;
                 
                 case "VEHICLE":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Fahrzeug", 31);
                     }
-                    $this->SetMoveVariable("Fahrzeug");
+                    $this->SetMoveVariables("Fahrzeug");
                     break;
                 
                 case "MD":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Bewegung", 36);
                     }
-                    $this->SetMoveVariable("Bewegung");
+                    $this->SetMoveVariables("Bewegung");
                     break;
                 
                 case "VISITOR":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Besucher", 41);
                 }
-                    $this->SetMoveVariable("Besucher");
+                    $this->SetMoveVariables("Besucher");
                     break;    
                 
                 case "TEST":
@@ -252,25 +252,25 @@ class Reolink extends IPSModule
                     $this->CreateSnapshotAtPosition("Test", 46);   
                 }     
                     if ($this->ReadPropertyBoolean("ShowTestElements")) {
-                    $this->SetMoveVariable("Test");  
+                    $this->SetMoveVariables("Test");  
                     }      
                     break;
             }
         }
     }
 
-    private function SetMoveVariable($ident)
+    private function SetMoveVariables($ident)
     {
         $timerName = $ident . "_Reset";
     
-        $this->SendDebug('SetMoveVariable', "Setze Variable '$ident' auf true.", 0);
+        $this->SendDebug('SetMoveVariables', "Setze Variable '$ident' auf true.", 0);
         $this->SetValue($ident, true);
     
-        $this->SendDebug('SetMoveVariable', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
+        $this->SendDebug('SetMoveVariables', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
 
-    private function CreateBooleanVariables()
+    private function CreateMoveVariables()
     {
         $this->RegisterVariableBoolean("Person", "Person", "~Motion", 20);
         $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
@@ -280,7 +280,7 @@ class Reolink extends IPSModule
         $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
     }
 
-    private function RemoveBooleanVariables()
+    private function RemoveMoveVariables()
     {
         $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
         foreach ($booleans as $booleanIdent) {
@@ -291,12 +291,12 @@ class Reolink extends IPSModule
         }
     }
 
-    public function ResetMoveVariable(string $ident)
+    public function ReSetMoveVariables(string $ident)
     {
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ResetMoveVariable', "Setze Variable '$ident' auf false.", 0);
+        $this->SendDebug('ReSetMoveVariables', "Setze Variable '$ident' auf false.", 0);
 
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
