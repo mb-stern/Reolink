@@ -54,11 +54,13 @@ class Reolink extends IPSModule
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
     
         // Verwalte Variablen und andere Einstellungen
+        /*
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
             $this->RemoveWebhookVariables();
         }
+            */
     
         if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
             $this->CreateBooleanVariables();
