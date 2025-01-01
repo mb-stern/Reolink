@@ -294,7 +294,7 @@ class Reolink extends IPSModule
         }
     }
 
-    public function ResetMoveVariable(string $ident)
+    Private function ResetMoveVariable(string $ident)
     {
         $timerName = $ident . "_Reset";
 
@@ -618,7 +618,7 @@ class Reolink extends IPSModule
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    public function GetStreamURL()
+    private function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
