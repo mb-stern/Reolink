@@ -219,32 +219,42 @@ class Reolink extends IPSModule
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Person", 21);
                 }
+                $this->ActivateBoolean("Person");
                     break;
+                
                 case "ANIMAL":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Tier", 26);
                 }
+                $this->ActivateBoolean("Tier");
                     break;
+                
                 case "VEHICLE":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Fahrzeug", 31);
                 }
+                $this->ActivateBoolean("Fahrzeug");
                     break;
+                
                 case "MD":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Bewegung", 36);
                 }
+                $this->ActivateBoolean("Bewegung");
                     break;
+                
                 case "VISITOR":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Besucher", 41);
                 }
+                $this->ActivateBoolean("Besucher");
                     break;    
+                
                 case "TEST":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Test", 46);  
-                    $this->ActivateBoolean("Test"); 
-                }             
+                    $this->CreateSnapshotAtPosition("Test", 46);   
+                }     
+                $this->ActivateBoolean("Test");        
                     break;
             }
         }
