@@ -222,22 +222,22 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person");
+                    $this->ActivateBoolean("Person", 21);
                     break;
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier");
+                    $this->ActivateBoolean("Tier", 26);
                     break;
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug");
+                    $this->ActivateBoolean("Fahrzeug", 31);
                     break;
                 case "MD":
-                    $this->ActivateBoolean("Bewegung");
+                    $this->ActivateBoolean("Bewegung", 36);
                     break;
                 case "VISITOR":
-                    $this->ActivateBoolean("Besucher");
+                    $this->ActivateBoolean("Besucher", 41);
                     break;    
                 case "TEST":
-                    $this->ActivateBoolean("Test");               
+                    $this->ActivateBoolean("Test", 46);               
                     break;
             }
         }
