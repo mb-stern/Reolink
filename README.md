@@ -8,8 +8,6 @@ Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterst�
 Daher ist immer die aktuellste Firmware aufzuspielen. Die neuste Firmware muss im Reolink Download-Center gesucht werden, da die App meist keine Neue anzeigt.
 Der Webhook ist nur über das Webinterface der Kamera sichtbar, in der App für Windows ist diese Funktion ausgeblendet.
 Beherrscht die Kamera kein Webhook, kann sie aktiv gepollt werden. Dies bringt aber je nach Polling-Intervall eine kleine Verzögerung mit sich.
-Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
-Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
 
 Das Modul kann folgendes:
 
