@@ -216,25 +216,50 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person", 21);
+                    $this->CreateSnapshotAtPosition("Person", 21);
                     break;
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier", 26);
+                    $this->CreateSnapshotAtPosition("Tier", 26);
                     break;
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug", 31);
+                    $this->CreateSnapshotAtPosition("Fahrzeug", 31);
                     break;
                 case "MD":
-                    $this->ActivateBoolean("Bewegung", 36);
+                    $this->CreateSnapshotAtPosition("Bewegung", 36);
                     break;
                 case "VISITOR":
-                    $this->ActivateBoolean("Besucher", 41);
+                    $this->CreateSnapshotAtPosition("Besucher", 41);
                     break;    
                 case "TEST":
-                    $this->ActivateBoolean("Test", 46);               
+                    $this->CreateSnapshotAtPosition("Test", 46);               
                     break;
             }
         }
+    }
+
+    private function ActivateBoolean($ident, $position)
+    {
+        // Wenn Test-Elemente deaktiviert sind, keine Aktionen für "Test" ausführen
+        if (!$this->ReadPropertyBoolean("ShowTestElements") && $ident === "Test") {
+            $this->SendDebug('ActivateBoolean', "Aktion für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
+            return;
+        }
+    
+        $timerName = $ident . "_Reset";
+    
+        $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
+        $this->SetValue($ident, true);
+    
+        /*
+        
+        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+            $this->CreateSnapshotAtPosition($ident, $position);
+        }
+
+        */
+    
+        $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
+        $this->SetTimerInterval($timerName, 5000);
     }
 
     private function CreateBooleanVariables()
@@ -257,28 +282,6 @@ class Reolink extends IPSModule
             }
         }
     }
-
-    private function ActivateBoolean($ident, $position)
-    {
-        // Wenn Test-Elemente deaktiviert sind, keine Aktionen für "Test" ausführen
-        if (!$this->ReadPropertyBoolean("ShowTestElements") && $ident === "Test") {
-            $this->SendDebug('ActivateBoolean', "Aktion für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
-            return;
-        }
-    
-        $timerName = $ident . "_Reset";
-    
-        $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
-        $this->SetValue($ident, true);
-    
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateSnapshotAtPosition($ident, $position);
-        }
-    
-        $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
-        $this->SetTimerInterval($timerName, 5000);
-    }
-    
 
     public function ResetBoolean(string $ident)
     {
