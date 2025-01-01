@@ -868,10 +868,10 @@ class Reolink extends IPSModule
         }
     }
     
-    public function Polling() //Aufruf direkt vom Timer
+    public function Polling()
     {
         if (!$this->ReadPropertyBoolean("EnablePolling")) {
-            $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
+            $this->SetTimerInterval("PollingTimer", 0);
             return;
         }
 
