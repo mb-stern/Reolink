@@ -447,7 +447,7 @@ class Reolink extends IPSModule
     private function updateVariable($name, $value)
     {
         $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        $ident = substr($ident, 0, 32)
+        $ident = substr($ident, 0, 32);
 
         if (is_string($value)) {
             $this->RegisterVariableString($ident, $name);
