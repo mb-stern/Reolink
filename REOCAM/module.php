@@ -24,12 +24,12 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
 
-        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
-        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
-        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
-        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
-        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
-        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
+        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Person");');
+        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Tier");');
+        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Fahrzeug");');
+        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Test");');
+        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveVariable($_IPS[\'TARGET\'], "Besucher");');
         $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
@@ -294,12 +294,12 @@ class Reolink extends IPSModule
         }
     }
 
-    public function ResetBoolean(string $ident)
+    public function ResetMoveVariable(string $ident)
     {
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ResetBoolean', "Setze Variable '$ident' auf false.", 0);
+        $this->SendDebug('ResetMoveVariable', "Setze Variable '$ident' auf false.", 0);
 
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
