@@ -102,7 +102,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.3 (01.01.2025)
 - Erstellung der Webhook-Variablen entfernt (war nur zu Testzwecken)
-- Code überarbeitet und einzelne Funktionen zusammengefasst
+- Code überarbeitet, einzelne Funktionen zusammengefasst und unütige public Funktionen auf private gesetzt.
 
 Version 2.2 (28.12.2024)
 - Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
