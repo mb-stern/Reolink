@@ -509,6 +509,18 @@ class Reolink extends IPSModule
     
         return $categoryID;
     }
+    
+    private function CreateOrUpdateArchives()
+    {
+        // Boolean-Identifikatoren für die Archive
+        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
+        
+        // Für jede Kategorie prüfen und aktualisieren
+        foreach ($categories as $category) {
+            // Archiv-Kategorie erstellen oder abrufen
+            $categoryID = $this->CreateOrGetArchiveCategory($category);
+        }
+    }
 
     private function PruneArchive($categoryID, $booleanIdent)
     {
