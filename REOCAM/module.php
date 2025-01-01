@@ -294,7 +294,7 @@ class Reolink extends IPSModule
         }
     }
 
-    Private function ResetMoveVariable(string $ident)
+    public function ResetMoveVariable(string $ident)
     {
         $timerName = $ident . "_Reset";
 
