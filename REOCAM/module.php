@@ -219,35 +219,35 @@ class Reolink extends IPSModule
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Person", 21);
                     }
-                    $this->ActivateBoolean("Person");
+                    $this->SetMoveVariable("Person");
                     break;
                 
                 case "ANIMAL":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Tier", 26);
                     }
-                    $this->ActivateBoolean("Tier");
+                    $this->SetMoveVariable("Tier");
                     break;
                 
                 case "VEHICLE":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Fahrzeug", 31);
                     }
-                    $this->ActivateBoolean("Fahrzeug");
+                    $this->SetMoveVariable("Fahrzeug");
                     break;
                 
                 case "MD":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Bewegung", 36);
                     }
-                    $this->ActivateBoolean("Bewegung");
+                    $this->SetMoveVariable("Bewegung");
                     break;
                 
                 case "VISITOR":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Besucher", 41);
                 }
-                    $this->ActivateBoolean("Besucher");
+                    $this->SetMoveVariable("Besucher");
                     break;    
                 
                 case "TEST":
@@ -255,21 +255,21 @@ class Reolink extends IPSModule
                     $this->CreateSnapshotAtPosition("Test", 46);   
                 }     
                     if ($this->ReadPropertyBoolean("ShowTestElements")) {
-                    $this->ActivateBoolean("Test");  
+                    $this->SetMoveVariable("Test");  
                     }      
                     break;
             }
         }
     }
 
-    private function ActivateBoolean($ident)
+    private function SetMoveVariable($ident)
     {
         $timerName = $ident . "_Reset";
     
-        $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
+        $this->SendDebug('SetMoveVariable', "Setze Variable '$ident' auf true.", 0);
         $this->SetValue($ident, true);
     
-        $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
+        $this->SendDebug('SetMoveVariable', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
 
