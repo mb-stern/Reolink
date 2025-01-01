@@ -11,7 +11,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
+        $this->RegisterPropertyBoolean("ShowMoveVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
@@ -54,7 +54,7 @@ class Reolink extends IPSModule
     
         // Verwalte Variablen und andere Einstellungen
     
-        if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
+        if ($this->ReadPropertyBoolean("ShowMoveVariables")) {
             $this->CreateMoveVariables();
         } else {
             $this->RemoveMoveVariables();
