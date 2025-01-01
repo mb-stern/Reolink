@@ -618,7 +618,7 @@ class Reolink extends IPSModule
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    public function GetStreamURL()
+    private function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -630,7 +630,7 @@ class Reolink extends IPSModule
                "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
-    public function GetSnapshotURL()
+    private function GetSnapshotURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -639,7 +639,7 @@ class Reolink extends IPSModule
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    public function GetToken(): void
+    public function GetToken()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -868,7 +868,7 @@ class Reolink extends IPSModule
         }
     }
     
-    public function Polling() //Aufruf direkt vom Timer
+    private function Polling() //Aufruf direkt vom Timer
     {
         if (!$this->ReadPropertyBoolean("EnablePolling")) {
             $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
