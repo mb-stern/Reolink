@@ -173,7 +173,7 @@ class Reolink extends IPSModule
         return $hookPath;
     }
         
-    private function GetConfigurationForm()
+    public function GetConfigurationForm()
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
     
