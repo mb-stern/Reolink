@@ -216,22 +216,34 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Person", 21);
+                }
                     break;
                 case "ANIMAL":
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Tier", 26);
+                }
                     break;
                 case "VEHICLE":
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Fahrzeug", 31);
+                }
                     break;
                 case "MD":
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Bewegung", 36);
+                }
                     break;
                 case "VISITOR":
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Besucher", 41);
+                }
                     break;    
                 case "TEST":
-                    $this->CreateSnapshotAtPosition("Test", 46);               
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Test", 46);  
+                }             
                     break;
             }
         }
