@@ -50,10 +50,8 @@ class Reolink extends IPSModule
             $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
         }
     
-        // Webhook-Pfad in der Form anzeigen
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
     
-        // Verwalte Variablen und andere Einstellungen
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             $this->CreateWebhookVariables();
         } else {
@@ -81,16 +79,34 @@ class Reolink extends IPSModule
         } else {
             $this->RemoveTestElements();
         }
+        
         if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
             $this->CreateVisitorElements();
         } else {
             $this->RemoveVisitorElements();
         }
+       
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->CreateApiFunctions();
+            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
+            $this->EnableAction("WhiteLed");
+
+            IPS_CreateVariableProfile("REOCAM.WLED", 1); //1 für Integer
+            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
+            IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);      
+            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
+            $this->EnableAction("Mode");     
+
+            $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
+            $this->EnableAction("Bright");
         } else {
-            $this->RemoveApiFunctions();
+            $this->UnregisterVariable("WhiteLed");
+            $this->UnregisterVariable("Mode");
+            $this->UnregisterVariable("Bright");
         }
+        
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = $this->ReadPropertyInteger("PollingInterval");
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
@@ -810,7 +826,6 @@ class Reolink extends IPSModule
 
     private function SendApiRequest(string $url, array $data)
     {
-        // Anfrage-Daten debuggen
         $this->SendDebug("SendApiRequest", "URL: $url", 0);
         $this->SendDebug("SendApiRequest", "Daten: " . json_encode($data), 0);
     
@@ -824,7 +839,6 @@ class Reolink extends IPSModule
     
         $response = curl_exec($ch);
     
-        // Fehler beim Abruf debuggen
         if ($response === false) {
             $error = curl_error($ch);
             $this->SendDebug("SendApiRequest", "cURL-Fehler: $error", 0);
@@ -835,81 +849,25 @@ class Reolink extends IPSModule
     
         curl_close($ch);
     
-        // Antwort debuggen
         $this->SendDebug("SendApiRequest", "Antwort: $response", 0);
     
         $responseData = json_decode($response, true);
     
-        // Debug-Ausgabe für die decodierten Daten
         if ($responseData !== null) {
             $this->SendDebug("SendApiRequest", "Decoded Response: " . json_encode($responseData), 0);
         } else {
             $this->SendDebug("SendApiRequest", "Antwort konnte nicht decodiert werden.", 0);
         }
     
-        // Prüfung der API-Antwort
         if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
             $this->SendDebug("SendApiRequest", "API-Befehl fehlgeschlagen: " . json_encode($responseData), 0);
             $this->LogMessage("Reolink: API-Befehl fehlgeschlagen: " . json_encode($responseData), KL_ERROR);
             return null;
         }
-    
-        // Erfolgreiche Antwort debuggen
+  
         $this->SendDebug("SendApiRequest", "API-Befehl erfolgreich: " . json_encode($responseData), 0);
     
         return $responseData;
-    }
-    
-    private function CreateApiFunctions()
-    {
-        // White LED-Variable
-        if (!@$this->GetIDForIdent("WhiteLed")) {
-            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
-            $this->EnableAction("WhiteLed");
-        }
-    
-        // Mode-Variable
-        if (!IPS_VariableProfileExists("REOCAM.WLED")) {
-            IPS_CreateVariableProfile("REOCAM.WLED", 1); //1 für Integer
-            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
-            IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
-        }
-
-        if (!@$this->GetIDForIdent("Mode")) {
-            $this->SendDebug("CreateApiFunctions", "Variablenprofil REOCAM.WLED erstellt", 0);
-            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
-            $this->EnableAction("Mode");
-        }
-    
-        // Bright-Variable
-        if (!@$this->GetIDForIdent("Bright")) {
-            $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
-            $this->EnableAction("Bright");
-        }
-    }
-    
-    private function RemoveApiFunctions()
-    {
-        // White LED-Variable entfernen
-        $varID = @$this->GetIDForIdent("WhiteLed");
-        if ($varID) {
-            $this->UnregisterVariable("WhiteLed");
-        }
-    
-        // Mode-Variable entfernen
-        $varID = @$this->GetIDForIdent("Mode");
-        if ($varID) {
-            $this->UnregisterVariable("Mode");
-        }
-    
-        // Bright-Variable entfernen
-        $varID = @$this->GetIDForIdent("Bright");
-        if ($varID) {
-            $this->UnregisterVariable("Bright");
-        }
     }
     
     public function Polling() //Aufruf direkt vom Timer
