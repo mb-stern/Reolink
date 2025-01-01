@@ -220,6 +220,7 @@ class Reolink extends IPSModule
             $type = $data['alarm']['type'];
             $this->SetValue("type", $type);
 
+            /*
             switch ($type) {
                 case "PEOPLE":
                     $this->ActivateBoolean("Person", 21);
@@ -240,6 +241,7 @@ class Reolink extends IPSModule
                     $this->ActivateBoolean("Test", 46);               
                     break;
             }
+                    */
         }
 
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
