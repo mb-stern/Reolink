@@ -11,7 +11,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        $this->RegisterPropertyBoolean("ShowWebhookVariables", false);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
@@ -25,12 +24,12 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
 
-        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Person");');
-        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Tier");');
-        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Fahrzeug");');
-        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Bewegung");');
-        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Test");');
-        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetBoolean($_IPS[\'TARGET\'], "Besucher");');
+        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Person");');
+        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Tier");');
+        $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Fahrzeug");');
+        $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Bewegung");');
+        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Test");');
+        $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveVariables($_IPS[\'TARGET\'], "Besucher");');
         $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
@@ -54,16 +53,11 @@ class Reolink extends IPSModule
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
     
         // Verwalte Variablen und andere Einstellungen
-        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
-            $this->CreateWebhookVariables();
-        } else {
-            $this->RemoveWebhookVariables();
-        }
     
         if ($this->ReadPropertyBoolean("ShowBooleanVariables")) {
-            $this->CreateBooleanVariables();
+            $this->CreateMoveVariables();
         } else {
-            $this->RemoveBooleanVariables();
+            $this->RemoveMoveVariables();
         }
     
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
@@ -81,16 +75,13 @@ class Reolink extends IPSModule
         } else {
             $this->RemoveTestElements();
         }
+        
         if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
             $this->CreateVisitorElements();
         } else {
             $this->RemoveVisitorElements();
         }
-        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->CreateApiFunctions();
-        } else {
-            $this->RemoveApiFunctions();
-        }
+        
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = $this->ReadPropertyInteger("PollingInterval");
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
@@ -101,14 +92,14 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
             $this->SetTimerInterval("ApiRequestTimer", 60 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
-            $this->CreateApiFunctions();
+            $this->CreateApiVariables();
             $this->GetToken();
             $this->ExecuteApiRequests();
 
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $this->RemoveApiFunctions();
+            $this->RemoveApiVariables();
         }
             
         // Stream-URL aktualisieren
@@ -137,7 +128,23 @@ class Reolink extends IPSModule
                 throw new Exception("Invalid Ident");
         }
     }
+        
+    public function GetConfigurationForm()
+    {
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
     
+        // Webhook-Pfad dynamisch in das Konfigurationsformular einfügen
+        $hookPath = $this->ReadAttributeString("CurrentHook");
+        $webhookElement = [
+            "type"    => "Label",
+            "caption" => "Webhook: " . $hookPath
+        ];
+    
+        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
+    
+        return json_encode($form);
+    }
+
     private function RegisterHook()
     {
 
@@ -178,22 +185,6 @@ class Reolink extends IPSModule
         $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
         return $hookPath;
     }
-        
-    public function GetConfigurationForm()
-    {
-        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
-    
-        // Webhook-Pfad dynamisch in das Konfigurationsformular einfügen
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        $webhookElement = [
-            "type"    => "Label",
-            "caption" => "Webhook: " . $hookPath
-        ];
-    
-        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
-    
-        return json_encode($form);
-    }
 
     public function ProcessHookData()
     {
@@ -222,36 +213,64 @@ class Reolink extends IPSModule
 
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person", 21);
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Person", 21);
+                    }
+                    $this->SetMoveVariables("Person");
                     break;
+                
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier", 26);
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Tier", 26);
+                    }
+                    $this->SetMoveVariables("Tier");
                     break;
+                
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug", 31);
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Fahrzeug", 31);
+                    }
+                    $this->SetMoveVariables("Fahrzeug");
                     break;
+                
                 case "MD":
-                    $this->ActivateBoolean("Bewegung", 36);
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Bewegung", 36);
+                    }
+                    $this->SetMoveVariables("Bewegung");
                     break;
+                
                 case "VISITOR":
-                    $this->ActivateBoolean("Besucher", 41);
-                    break;    
-                case "TEST":
-                    $this->ActivateBoolean("Test", 46);               
-                    break;
-            }
-        }
-
-        if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
-            foreach ($data['alarm'] as $key => $value) {
-                if ($key !== 'type') {
-                    $this->updateVariable($key, $value);
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Besucher", 41);
                 }
+                    $this->SetMoveVariables("Besucher");
+                    break;    
+                
+                case "TEST":
+                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Test", 46);   
+                }     
+                    if ($this->ReadPropertyBoolean("ShowTestElements")) {
+                    $this->SetMoveVariables("Test");  
+                    }      
+                    break;
             }
         }
     }
 
-    private function CreateBooleanVariables()
+    private function SetMoveVariables($ident)
+    {
+        $timerName = $ident . "_Reset";
+    
+        $this->SendDebug('SetMoveVariables', "Setze Variable '$ident' auf true.", 0);
+        $this->SetValue($ident, true);
+    
+        $this->SendDebug('SetMoveVariables', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
+        $this->SetTimerInterval($timerName, 5000);
+    }
+
+    private function CreateMoveVariables()
     {
         $this->RegisterVariableBoolean("Person", "Person", "~Motion", 20);
         $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
@@ -261,7 +280,7 @@ class Reolink extends IPSModule
         $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
     }
 
-    private function RemoveBooleanVariables()
+    private function RemoveMoveVariables()
     {
         $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
         foreach ($booleans as $booleanIdent) {
@@ -272,69 +291,15 @@ class Reolink extends IPSModule
         }
     }
 
-    private function ActivateBoolean($ident, $position)
-    {
-        // Wenn Test-Elemente deaktiviert sind, keine Aktionen für "Test" ausführen
-        if (!$this->ReadPropertyBoolean("ShowTestElements") && $ident === "Test") {
-            $this->SendDebug('ActivateBoolean', "Aktion für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
-            return;
-        }
-    
-        $timerName = $ident . "_Reset";
-    
-        $this->SendDebug('ActivateBoolean', "Setze Variable '$ident' auf true.", 0);
-        $this->SetValue($ident, true);
-    
-        if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->CreateSnapshotAtPosition($ident, $position);
-        }
-    
-        $this->SendDebug('ActivateBoolean', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
-        $this->SetTimerInterval($timerName, 5000);
-    }
-    
-
-    public function ResetBoolean(string $ident)
+    public function ResetMoveVariables(string $ident)
     {
         $timerName = $ident . "_Reset";
 
         // Debugging hinzufügen
-        $this->SendDebug('ResetBoolean', "Setze Variable '$ident' auf false.", 0);
+        $this->SendDebug('ResetMoveVariables', "Setze Variable '$ident' auf false.", 0);
 
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
-    }
-
-    private function CreateWebhookVariables()
-    {
-        $webhookVariables = [
-            "type" => "Alarm Typ",
-            "message" => "Alarm Nachricht",
-            "title" => "Alarm Titel",
-            "device" => "Gerätename",
-            "channel" => "Kanal",
-            "alarmTime" => "Alarmzeit",
-            "channelName" => "Kanalname",
-            "deviceModel" =>  "Gerätemodell",
-            "name" => "Name"
-        ];
-
-        foreach ($webhookVariables as $ident => $name) {
-            if (!IPS_VariableExists(@$this->GetIDForIdent($ident))) {
-                $this->RegisterVariableString($ident, $name);
-            }
-        }
-    }
-
-    private function RemoveWebhookVariables()
-    {
-        $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
-        foreach ($webhookVariables as $ident) {
-            $varID = @$this->GetIDForIdent($ident);
-            if ($varID !== false) {
-                $this->UnregisterVariable($ident);
-            }
-        }
     }
 
     private function RemoveSnapshots()
@@ -443,33 +408,6 @@ class Reolink extends IPSModule
             IPS_DeleteCategory($categoryID);
         }
     }
-    private function updateVariable($name, $value)
-    {
-        $ident = $this->normalizeIdent($name);
-
-        if (is_string($value)) {
-            $this->RegisterVariableString($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_int($value)) {
-            $this->RegisterVariableInteger($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_float($value)) {
-            $this->RegisterVariableFloat($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_bool($value)) {
-            $this->RegisterVariableBoolean($ident, $name);
-            $this->SetValue($ident, $value);
-        } else {
-            $this->RegisterVariableString($ident, $name);
-            $this->SetValue($ident, json_encode($value));
-        }
-    }
-
-    private function normalizeIdent($name)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        return substr($ident, 0, 32); 
-    }
 
     private function CreateSnapshotAtPosition($booleanIdent, $position)
     {
@@ -518,48 +456,7 @@ class Reolink extends IPSModule
             $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
         }
     }
-    
-    private function CreateOrGetArchiveCategory($booleanIdent)
-    {
-        $archiveIdent = "Archive_" . $booleanIdent;
-        $categoryID = @$this->GetIDForIdent($archiveIdent);
-    
-        if ($categoryID === false) {
-            // Archivkategorie erstellen
-            $categoryID = IPS_CreateCategory();
-            IPS_SetParent($categoryID, $this->InstanceID);
-            IPS_SetIdent($categoryID, $archiveIdent);
-            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-    
-            // Position basierend auf dem Boolean-Ident setzen
-            switch ($booleanIdent) {
-                case "Person":
-                    IPS_SetPosition($categoryID, 22);
-                    break;
-                case "Tier":
-                    IPS_SetPosition($categoryID, 27);
-                    break;
-                case "Fahrzeug":
-                    IPS_SetPosition($categoryID, 32);
-                    break;
-                case "Bewegung":
-                    IPS_SetPosition($categoryID, 37);
-                    break;
-                case "Besucher":
-                    IPS_SetPosition($categoryID, 42);
-                    break;
-                case "Test":
-                    IPS_SetPosition($categoryID, 47);
-                    break;
-                default:
-                    IPS_SetPosition($categoryID, 99); // Standardposition
-                    break;
-            }
-        }
-    
-        return $categoryID;
-    }
-    
+
     private function CreateOrUpdateArchives()
     {
         // Boolean-Identifikatoren für die Archive
@@ -571,7 +468,57 @@ class Reolink extends IPSModule
             $categoryID = $this->CreateOrGetArchiveCategory($category);
         }
     }
+    
+    private function CreateOrGetArchiveCategory($booleanIdent)
+    {
 
+        // Boolean-Identifikatoren für die Archive
+        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
+        
+        // Für jede Kategorie prüfen und aktualisieren
+        foreach ($categories as $category) {
+            
+            // Archiv-Kategorie erstellen oder abrufen
+            $archiveIdent = "Archive_" . $booleanIdent;
+            $categoryID = @$this->GetIDForIdent($archiveIdent);
+        
+            if ($categoryID === false) {
+                // Archivkategorie erstellen
+                $categoryID = IPS_CreateCategory();
+                IPS_SetParent($categoryID, $this->InstanceID);
+                IPS_SetIdent($categoryID, $archiveIdent);
+                IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+        
+                // Position basierend auf dem Boolean-Ident setzen
+                switch ($booleanIdent) {
+                    case "Person":
+                        IPS_SetPosition($categoryID, 22);
+                        break;
+                    case "Tier":
+                        IPS_SetPosition($categoryID, 27);
+                        break;
+                    case "Fahrzeug":
+                        IPS_SetPosition($categoryID, 32);
+                        break;
+                    case "Bewegung":
+                        IPS_SetPosition($categoryID, 37);
+                        break;
+                    case "Besucher":
+                        IPS_SetPosition($categoryID, 42);
+                        break;
+                    case "Test":
+                        IPS_SetPosition($categoryID, 47);
+                        break;
+                    default:
+                        IPS_SetPosition($categoryID, 99); // Standardposition
+                        break;
+                }
+            }
+        }
+    
+        return $categoryID;
+    }
+    
     private function PruneArchive($categoryID, $booleanIdent)
     {
         $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
@@ -668,7 +615,7 @@ class Reolink extends IPSModule
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    public function GetStreamURL()
+    private function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -680,7 +627,7 @@ class Reolink extends IPSModule
                "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
-    public function GetSnapshotURL()
+    private function GetSnapshotURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
@@ -689,11 +636,17 @@ class Reolink extends IPSModule
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
-    public function GetToken(): void
+    public function GetToken()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
+
+        if (empty($cameraIP) || empty($username) || empty($password)) {
+            $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
+            return;
+        }
+        
     
         $url = "https://$cameraIP/api.cgi?cmd=Login";
         $data = [
@@ -860,7 +813,7 @@ class Reolink extends IPSModule
         return $responseData;
     }
     
-    private function CreateApiFunctions()
+    private function CreateApiVariables()
     {
         // White LED-Variable
         if (!@$this->GetIDForIdent("WhiteLed")) {
@@ -879,7 +832,7 @@ class Reolink extends IPSModule
         }
 
         if (!@$this->GetIDForIdent("Mode")) {
-            $this->SendDebug("CreateApiFunctions", "Variablenprofil REOCAM.WLED erstellt", 0);
+            $this->SendDebug("CreateApiVariables", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
@@ -891,7 +844,7 @@ class Reolink extends IPSModule
         }
     }
     
-    private function RemoveApiFunctions()
+    private function RemoveApiVariables()
     {
         // White LED-Variable entfernen
         $varID = @$this->GetIDForIdent("WhiteLed");
@@ -912,10 +865,10 @@ class Reolink extends IPSModule
         }
     }
     
-    public function Polling() //Aufruf direkt vom Timer
+    public function Polling()
     {
         if (!$this->ReadPropertyBoolean("EnablePolling")) {
-            $this->SetTimerInterval("PollingTimer", 0); // Timer deaktivieren
+            $this->SetTimerInterval("PollingTimer", 0);
             return;
         }
 
