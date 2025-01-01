@@ -11,7 +11,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
-        $this->RegisterPropertyBoolean("ShowWebhookVariables", false);
+        //$this->RegisterPropertyBoolean("ShowWebhookVariables", false);
         $this->RegisterPropertyBoolean("ShowBooleanVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
@@ -242,6 +242,7 @@ class Reolink extends IPSModule
             }
         }
 
+        /*
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             foreach ($data['alarm'] as $key => $value) {
                 if ($key !== 'type') {
@@ -267,6 +268,7 @@ class Reolink extends IPSModule
                 }
             }
         }
+            */
     }
 
     private function CreateBooleanVariables()
