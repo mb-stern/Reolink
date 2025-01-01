@@ -220,28 +220,26 @@ class Reolink extends IPSModule
             $type = $data['alarm']['type'];
             $this->SetValue("type", $type);
 
-            /*
             switch ($type) {
                 case "PEOPLE":
-                    $this->ActivateBoolean("Person", 21);
+                    $this->ActivateBoolean("Person");
                     break;
                 case "ANIMAL":
-                    $this->ActivateBoolean("Tier", 26);
+                    $this->ActivateBoolean("Tier");
                     break;
                 case "VEHICLE":
-                    $this->ActivateBoolean("Fahrzeug", 31);
+                    $this->ActivateBoolean("Fahrzeug");
                     break;
                 case "MD":
-                    $this->ActivateBoolean("Bewegung", 36);
+                    $this->ActivateBoolean("Bewegung");
                     break;
                 case "VISITOR":
-                    $this->ActivateBoolean("Besucher", 41);
+                    $this->ActivateBoolean("Besucher");
                     break;    
                 case "TEST":
-                    $this->ActivateBoolean("Test", 46);               
+                    $this->ActivateBoolean("Test");               
                     break;
             }
-                    */
         }
 
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
