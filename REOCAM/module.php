@@ -243,7 +243,7 @@ class Reolink extends IPSModule
                 case "TEST":
                     if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                     $this->CreateSnapshotAtPosition("Test", 46);  
-                    $this->ActivateBoolean("Test");  
+                    $this->ActivateBoolean("Test"); 
                 }             
                     break;
             }
