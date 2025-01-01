@@ -65,7 +65,7 @@ class Reolink extends IPSModule
         }
     
         if ($this->ReadPropertyBoolean("ShowArchives")) {
-            $this->CreateOrUpdateArchives();
+            $this->CreateOrGetArchiveCategory();
         } else {
             $this->RemoveArchives();
         }
@@ -305,38 +305,6 @@ class Reolink extends IPSModule
         $this->SetTimerInterval($timerName, 0);
     }
 
-    private function CreateWebhookVariables()
-    {
-        $webhookVariables = [
-            "type" => "Alarm Typ",
-            "message" => "Alarm Nachricht",
-            "title" => "Alarm Titel",
-            "device" => "Gerätename",
-            "channel" => "Kanal",
-            "alarmTime" => "Alarmzeit",
-            "channelName" => "Kanalname",
-            "deviceModel" =>  "Gerätemodell",
-            "name" => "Name"
-        ];
-
-        foreach ($webhookVariables as $ident => $name) {
-            if (!IPS_VariableExists(@$this->GetIDForIdent($ident))) {
-                $this->RegisterVariableString($ident, $name);
-            }
-        }
-    }
-
-    private function RemoveWebhookVariables()
-    {
-        $webhookVariables = ["type", "message", "title", "device", "channel", "alarmTime", "channelName", "deviceModel", "name"];
-        foreach ($webhookVariables as $ident) {
-            $varID = @$this->GetIDForIdent($ident);
-            if ($varID !== false) {
-                $this->UnregisterVariable($ident);
-            }
-        }
-    }
-
     private function RemoveSnapshots()
     {
         $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
@@ -494,55 +462,52 @@ class Reolink extends IPSModule
     
     private function CreateOrGetArchiveCategory($booleanIdent)
     {
-        $archiveIdent = "Archive_" . $booleanIdent;
-        $categoryID = @$this->GetIDForIdent($archiveIdent);
-    
-        if ($categoryID === false) {
-            // Archivkategorie erstellen
-            $categoryID = IPS_CreateCategory();
-            IPS_SetParent($categoryID, $this->InstanceID);
-            IPS_SetIdent($categoryID, $archiveIdent);
-            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-    
-            // Position basierend auf dem Boolean-Ident setzen
-            switch ($booleanIdent) {
-                case "Person":
-                    IPS_SetPosition($categoryID, 22);
-                    break;
-                case "Tier":
-                    IPS_SetPosition($categoryID, 27);
-                    break;
-                case "Fahrzeug":
-                    IPS_SetPosition($categoryID, 32);
-                    break;
-                case "Bewegung":
-                    IPS_SetPosition($categoryID, 37);
-                    break;
-                case "Besucher":
-                    IPS_SetPosition($categoryID, 42);
-                    break;
-                case "Test":
-                    IPS_SetPosition($categoryID, 47);
-                    break;
-                default:
-                    IPS_SetPosition($categoryID, 99); // Standardposition
-                    break;
-            }
-        }
-    
-        return $categoryID;
-    }
-    
-    private function CreateOrUpdateArchives()
-    {
+
         // Boolean-Identifikatoren für die Archive
         $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
         
         // Für jede Kategorie prüfen und aktualisieren
         foreach ($categories as $category) {
+            
             // Archiv-Kategorie erstellen oder abrufen
-            $categoryID = $this->CreateOrGetArchiveCategory($category);
+            $archiveIdent = "Archive_" . $booleanIdent;
+            $categoryID = @$this->GetIDForIdent($archiveIdent);
+        
+            if ($categoryID === false) {
+                // Archivkategorie erstellen
+                $categoryID = IPS_CreateCategory();
+                IPS_SetParent($categoryID, $this->InstanceID);
+                IPS_SetIdent($categoryID, $archiveIdent);
+                IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+        
+                // Position basierend auf dem Boolean-Ident setzen
+                switch ($booleanIdent) {
+                    case "Person":
+                        IPS_SetPosition($categoryID, 22);
+                        break;
+                    case "Tier":
+                        IPS_SetPosition($categoryID, 27);
+                        break;
+                    case "Fahrzeug":
+                        IPS_SetPosition($categoryID, 32);
+                        break;
+                    case "Bewegung":
+                        IPS_SetPosition($categoryID, 37);
+                        break;
+                    case "Besucher":
+                        IPS_SetPosition($categoryID, 42);
+                        break;
+                    case "Test":
+                        IPS_SetPosition($categoryID, 47);
+                        break;
+                    default:
+                        IPS_SetPosition($categoryID, 99); // Standardposition
+                        break;
+                }
+            }
         }
+    
+        return $categoryID;
     }
 
     private function PruneArchive($categoryID, $booleanIdent)
