@@ -89,13 +89,14 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
             $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
             $this->EnableAction("WhiteLed");
-
+            if (!IPS_VariableProfileExists("REOCAM.WLED")) {
             IPS_CreateVariableProfile("REOCAM.WLED", 1); //1 für Integer
             IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
             IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);      
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1); 
+            }     
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");     
 
