@@ -189,7 +189,7 @@ class Reolink extends IPSModule
         return json_encode($form);
     }
 
-    public function ProcessHookData()
+    Private function ProcessHookData()
     {
         $rawData = file_get_contents("php://input");
         $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
@@ -644,6 +644,12 @@ class Reolink extends IPSModule
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
+
+        if (empty($cameraIP) || empty($username) || empty($password)) {
+            $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
+            return;
+        }
+        
     
         $url = "https://$cameraIP/api.cgi?cmd=Login";
         $data = [
