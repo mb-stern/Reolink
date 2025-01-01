@@ -100,10 +100,12 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
+Version 2.3 (01.01.2025)
+- Erstellung der Webhook-Variablen entfernt (war nur für Test zwecke)
+
 Version 2.2 (28.12.2024)
 - Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
 - Die API-Istwerte werden nun alle 60 Sekunden abgefragt, um diese im Falle einer externen Änderung zu aktualisieren.
-- Anpassung Readme
 
 Version 2.1 (22.12.2024)
 - Anpassung Modulname
