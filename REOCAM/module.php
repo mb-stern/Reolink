@@ -65,7 +65,7 @@ class Reolink extends IPSModule
         }
     
         if ($this->ReadPropertyBoolean("ShowArchives")) {
-            $this->CreateOrGetArchiveCategory();
+            $this->CreateOrUpdateArchives();
         } else {
             $this->RemoveArchives();
         }
