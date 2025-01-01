@@ -245,7 +245,25 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("ShowWebhookVariables")) {
             foreach ($data['alarm'] as $key => $value) {
                 if ($key !== 'type') {
-                    $this->updateVariable($key, $value);
+                    $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+                    $ident = substr($ident, 0, 32);
+            
+                    if (is_string($value)) {
+                        $this->RegisterVariableString($ident, $name);
+                        $this->SetValue($ident, $value);
+                    } elseif (is_int($value)) {
+                        $this->RegisterVariableInteger($ident, $name);
+                        $this->SetValue($ident, $value);
+                    } elseif (is_float($value)) {
+                        $this->RegisterVariableFloat($ident, $name);
+                        $this->SetValue($ident, $value);
+                    } elseif (is_bool($value)) {
+                        $this->RegisterVariableBoolean($ident, $name);
+                        $this->SetValue($ident, $value);
+                    } else {
+                        $this->RegisterVariableString($ident, $name);
+                        $this->SetValue($ident, json_encode($value));
+                    }
                 }
             }
         }
@@ -441,29 +459,6 @@ class Reolink extends IPSModule
                 IPS_DeleteMedia($childID, true);
             }
             IPS_DeleteCategory($categoryID);
-        }
-    }
-
-    private function updateVariable($name, $value)
-    {
-        $ident = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
-        $ident = substr($ident, 0, 32);
-
-        if (is_string($value)) {
-            $this->RegisterVariableString($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_int($value)) {
-            $this->RegisterVariableInteger($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_float($value)) {
-            $this->RegisterVariableFloat($ident, $name);
-            $this->SetValue($ident, $value);
-        } elseif (is_bool($value)) {
-            $this->RegisterVariableBoolean($ident, $name);
-            $this->SetValue($ident, $value);
-        } else {
-            $this->RegisterVariableString($ident, $name);
-            $this->SetValue($ident, json_encode($value));
         }
     }
 
