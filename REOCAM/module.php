@@ -1001,24 +1001,17 @@ class Reolink extends IPSModule
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
     
         // Aktualisiere nur, wenn sich der Wert geändert hat
-        $this->UpdateVariableIfChanged("WhiteLed", $whiteLedData['state']);
-        $this->UpdateVariableIfChanged("Mode", $whiteLedData['mode']);
-        $this->UpdateVariableIfChanged("Bright", $whiteLedData['bright']);
+        foreach (['state' => 'WhiteLed', 'mode' => 'Mode', 'bright' => 'Bright'] as $key => $ident) {
+            $currentValue = @GetValue($this->GetIDForIdent($ident));
+            if ($currentValue !== $whiteLedData[$key]) {
+                $this->SetValue($ident, $whiteLedData[$key]);
+                $this->SendDebug("UpdateWhiteLedStatus", "Variable $ident aktualisiert: $currentValue -> {$whiteLedData[$key]}", 0);
+            } else {
+                $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung bei $ident: $currentValue", 0);
+            }
+        }
     
         $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
     }
     
-    private function UpdateVariableIfChanged(string $ident, $newValue)
-    {
-        $varID = $this->GetIDForIdent($ident);
-        $currentValue = GetValue($varID);
-    
-        if ($currentValue !== $newValue) {
-            $this->SendDebug("UpdateVariableIfChanged", "Änderung bei '$ident': $currentValue -> $newValue", 0);
-            $this->SetValue($ident, $newValue);
-        } else {
-            $this->SendDebug("UpdateVariableIfChanged", "Keine Änderung bei '$ident': $currentValue bleibt.", 0);
-        }
-    }
-      
 }
