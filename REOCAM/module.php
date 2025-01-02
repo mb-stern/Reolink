@@ -21,6 +21,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("PollingInterval", 2);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
+        $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
 
@@ -51,9 +52,11 @@ class Reolink extends IPSModule
     
         // Webhook-Pfad in der Form anzeigen
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
+
+        // Stream-URL aktualisieren
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     
         // Verwalte Variablen und andere Einstellungen
-    
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) {
             $this->CreateMoveVariables();
         } else {
@@ -90,8 +93,9 @@ class Reolink extends IPSModule
         }
         
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->SetTimerInterval("ApiRequestTimer", 60 * 1000); 
+            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+            $this->WriteAttributeBoolean("ApiInitialized", false);
             $this->CreateApiVariables();
             $this->GetToken();
             $this->ExecuteApiRequests();
@@ -101,9 +105,6 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->RemoveApiVariables();
         }
-            
-        // Stream-URL aktualisieren
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     }
 
     public function RequestAction($Ident, $Value)
@@ -955,10 +956,8 @@ class Reolink extends IPSModule
     private function UpdateWhiteLedStatus()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
         $token = $this->ReadAttributeString("ApiToken");
-
+    
         $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
         $data = json_encode([
             [
@@ -969,10 +968,10 @@ class Reolink extends IPSModule
                 ]
             ]
         ]);
-
-        $this->SendDebug("UpdateWhiteLedStatus", "URL: $url", 0);
-        $this->SendDebug("UpdateWhiteLedStatus", "Daten: $data", 0);
-
+    
+        $this->SendDebug("UpdateWhiteLedStatus", "Anfrage-URL: $url", 0);
+    
+        // cURL-Setup
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -980,33 +979,69 @@ class Reolink extends IPSModule
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-
+    
         $response = curl_exec($ch);
-
         if ($response === false) {
             $error = curl_error($ch);
-            $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
             curl_close($ch);
+            $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
             return;
         }
-
         curl_close($ch);
-
+    
         $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
+    
         $responseData = json_decode($response, true);
-
         if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
-            $this->SendDebug("UpdateWhiteLedStatus", "Fehlerhafte API-Antwort: " . json_encode($responseData), 0);
+            $this->SendDebug("UpdateWhiteLedStatus", "Ungültige Antwort oder fehlende 'WhiteLed'-Daten", 0);
             return;
         }
-
+    
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
-
-        // Variablen aktualisieren
-        $this->SetValue("WhiteLed", $whiteLedData['state']);
-        $this->SetValue("Mode", $whiteLedData['mode']);
-        $this->SetValue("Bright", $whiteLedData['bright']);
-
-        $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
+    
+        // Prüfen, ob Variablen initialisiert wurden
+        $initialized = $this->ReadAttributeBoolean("ApiInitialized");
+    
+        // Mapping JSON -> Variablen
+        $mapping = [
+            'state'  => 'WhiteLed',
+            'mode'   => 'Mode',
+            'bright' => 'Bright'
+        ];
+    
+        // Aktualisiere Variablen
+        foreach ($mapping as $jsonKey => $variableIdent) {
+            if (isset($whiteLedData[$jsonKey])) {
+                $newValue = $whiteLedData[$jsonKey];
+                $variableID = @$this->GetIDForIdent($variableIdent);
+    
+                if ($variableID !== false) {
+                    $currentValue = GetValue($variableID);
+    
+                    // Typkonvertierung für boolesche Werte
+                    if (is_bool($currentValue)) {
+                        $newValue = (bool)$newValue;
+                    }
+    
+                    // Initialisieren oder aktualisieren
+                    if (!$initialized || $currentValue !== $newValue) {
+                        $this->SetValue($variableIdent, $newValue);
+                        $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
+                    } else {
+                        $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$variableIdent' ($currentValue)", 0);
+                    }
+                } else {
+                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' existiert nicht", 0);
+                }
+            } else {
+                $this->SendDebug("UpdateWhiteLedStatus", "Key '$jsonKey' nicht in der Antwort vorhanden", 0);
+            }
+        }
+    
+        // Initialisierung abschließen
+        if (!$initialized) {
+            $this->WriteAttributeBoolean("ApiInitialized", true);
+            $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
+        }
     }
 }
