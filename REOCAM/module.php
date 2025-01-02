@@ -90,7 +90,7 @@ class Reolink extends IPSModule
         }
         
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->SetTimerInterval("ApiRequestTimer", 60 * 1000); 
+            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
             $this->CreateApiVariables();
             $this->GetToken();
@@ -955,8 +955,6 @@ class Reolink extends IPSModule
     private function UpdateWhiteLedStatus()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
         $token = $this->ReadAttributeString("ApiToken");
     
         $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
@@ -1002,22 +1000,25 @@ class Reolink extends IPSModule
     
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
     
-        // Prüfe und aktualisiere die Variablen nur, wenn sich der Zustand geändert hat
-        if (GetValue($this->GetIDForIdent("WhiteLed")) !== $whiteLedData['state']) {
-            $this->SetValue("WhiteLed", $whiteLedData['state']);
-            $this->SendDebug("UpdateWhiteLedStatus", "WhiteLed aktualisiert auf: " . $whiteLedData['state'], 0);
-        }
-    
-        if (GetValue($this->GetIDForIdent("Mode")) !== $whiteLedData['mode']) {
-            $this->SetValue("Mode", $whiteLedData['mode']);
-            $this->SendDebug("UpdateWhiteLedStatus", "Mode aktualisiert auf: " . $whiteLedData['mode'], 0);
-        }
-    
-        if (GetValue($this->GetIDForIdent("Bright")) !== $whiteLedData['bright']) {
-            $this->SetValue("Bright", $whiteLedData['bright']);
-            $this->SendDebug("UpdateWhiteLedStatus", "Bright aktualisiert auf: " . $whiteLedData['bright'], 0);
-        }
+        // Aktualisiere nur, wenn sich der Wert geändert hat
+        $this->UpdateVariableIfChanged("WhiteLed", $whiteLedData['state']);
+        $this->UpdateVariableIfChanged("Mode", $whiteLedData['mode']);
+        $this->UpdateVariableIfChanged("Bright", $whiteLedData['bright']);
     
         $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
-    }    
+    }
+    
+    private function UpdateVariableIfChanged(string $ident, $newValue)
+    {
+        $varID = $this->GetIDForIdent($ident);
+        $currentValue = GetValue($varID);
+    
+        if ($currentValue !== $newValue) {
+            $this->SendDebug("UpdateVariableIfChanged", "Änderung bei '$ident': $currentValue -> $newValue", 0);
+            $this->SetValue($ident, $newValue);
+        } else {
+            $this->SendDebug("UpdateVariableIfChanged", "Keine Änderung bei '$ident': $currentValue bleibt.", 0);
+        }
+    }
+      
 }
