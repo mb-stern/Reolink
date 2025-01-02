@@ -105,6 +105,9 @@ class Reolink extends IPSModule
             
         // Stream-URL aktualisieren
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+
+        // Attribut für erstmalige API-Abfrage zurücksetzen
+        $this->WriteAttributeBoolean("ApiInitialized", false);
     }
 
     public function RequestAction($Ident, $Value)
