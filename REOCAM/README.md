@@ -107,7 +107,7 @@ Version 2.3 (02.01.2025)
 
 Version 2.2 (28.12.2024)
 - Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
-- Die API-Istwerte werden nun alle 10 Sekunden abgefragt, um diese im Falle einer externen Änderung zu aktualisieren.
+- Die API-Istwerte werden nun alle 60 Sekunden abgefragt, um diese im Falle einer externen Änderung zu aktualisieren.
 
 Version 2.1 (22.12.2024)
 - Anpassung Modulname
