@@ -103,7 +103,7 @@ Version 2.3 (02.01.2025)
 - Fehlermeldung beim Erstellen des Moduls behoben.
 - Erstellung der Webhook-Variablen entfernt (war nur zu Testzwecken). Im Fehlerfall ist das JSON aus dem Debug zu bewerten.
 - Code überarbeitet, einzelne Funktionen zusammengefasst und unnötige public Funktionen auf private gesetzt.
-- API-Variabelen werden nur noch aktualisiert wenn sich deren Zustand geändert hat
+- API-Variabelen werden nur noch aktualisiert wenn sich deren Zustand geändert hat.
 
 Version 2.2 (28.12.2024)
 - Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
