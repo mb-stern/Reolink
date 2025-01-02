@@ -1000,27 +1000,34 @@ class Reolink extends IPSModule
     
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
     
-        // Aktualisiere nur, wenn sich der Wert geändert hat
-        foreach (['state' => 'WhiteLed', 'mode' => 'Mode', 'bright' => 'Bright'] as $key => $ident) {
-            $variableID = @$this->GetIDForIdent($ident);
+        // Mapping der Felder zu den Variablen-Idents
+        $mapping = [
+            'state' => 'WhiteLed',
+            'mode'  => 'Mode',
+            'bright' => 'Bright'
+        ];
     
-            // Wenn die Variable existiert, prüfe den aktuellen Wert
-            if ($variableID !== false) {
+        foreach ($mapping as $key => $ident) {
+            $variableID = @$this->GetIDForIdent($ident);
+            $newValue = $whiteLedData[$key] ?? null;
+    
+            if ($variableID !== false && $newValue !== null) {
                 $currentValue = GetValue($variableID);
-                if ($currentValue !== $whiteLedData[$key]) {
-                    $this->SetValue($ident, $whiteLedData[$key]);
-                    $this->SendDebug("UpdateWhiteLedStatus", "Variable $ident aktualisiert: $currentValue -> {$whiteLedData[$key]}", 0);
+    
+                // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
+                if ($currentValue !== $newValue) {
+                    $this->SetValue($ident, $newValue);
+                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$ident' aktualisiert: $currentValue -> $newValue", 0);
                 } else {
-                    $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung bei $ident: $currentValue", 0);
+                    $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$ident': $currentValue", 0);
                 }
-            } else {
-                // Wenn die Variable nicht existiert, initialisiere sie mit dem aktuellen Wert
-                $this->SetValue($ident, $whiteLedData[$key]);
-                $this->SendDebug("UpdateWhiteLedStatus", "Variable $ident erstellt und initialisiert: {$whiteLedData[$key]}", 0);
+            } elseif ($newValue !== null) {
+                // Falls die Variable fehlt, initialisiere sie mit dem aktuellen Wert
+                $this->RegisterVariable($ident, $newValue);
+                $this->SetValue($ident, $newValue);
+                $this->SendDebug("UpdateWhiteLedStatus", "Variable '$ident' erstellt und initialisiert: $newValue", 0);
             }
         }
-    
-        $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
     }
     
 }
