@@ -1017,6 +1017,7 @@ class Reolink extends IPSModule
     
                 if ($variableID !== false) {
                     $currentValue = GetValue($variableID);
+    
                     if ($currentValue !== $newValue) {
                         $this->SetValue($variableIdent, $newValue);
                         $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
