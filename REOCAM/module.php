@@ -957,7 +957,6 @@ class Reolink extends IPSModule
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $token = $this->ReadAttributeString("ApiToken");
     
-        // URL und Anfrage-Daten definieren
         $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
         $data = json_encode([
             [
@@ -980,7 +979,6 @@ class Reolink extends IPSModule
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     
-        // Antwort abrufen
         $response = curl_exec($ch);
         if ($response === false) {
             $error = curl_error($ch);
@@ -992,15 +990,16 @@ class Reolink extends IPSModule
     
         $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
     
-        // JSON-Daten parsen
         $responseData = json_decode($response, true);
         if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
             $this->SendDebug("UpdateWhiteLedStatus", "Ungültige Antwort oder fehlende 'WhiteLed'-Daten", 0);
             return;
         }
     
-        // Extrahiere relevante Werte
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
+    
+        // Prüfen, ob Variablen initialisiert wurden
+        $initialized = $this->ReadAttributeBoolean("ApiInitialized");
     
         // Mapping JSON -> Variablen
         $mapping = [
@@ -1018,13 +1017,13 @@ class Reolink extends IPSModule
                 if ($variableID !== false) {
                     $currentValue = GetValue($variableID);
     
-                    // Typkonvertierung für boolesche Werte (z. B. state: 0/1 -> true/false)
+                    // Typkonvertierung für boolesche Werte
                     if (is_bool($currentValue)) {
                         $newValue = (bool)$newValue;
                     }
     
                     // Initialisieren oder aktualisieren
-                    if ($currentValue === null || $currentValue !== $newValue) {
+                    if (!$initialized || $currentValue !== $newValue) {
                         $this->SetValue($variableIdent, $newValue);
                         $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
                     } else {
@@ -1036,6 +1035,12 @@ class Reolink extends IPSModule
             } else {
                 $this->SendDebug("UpdateWhiteLedStatus", "Key '$jsonKey' nicht in der Antwort vorhanden", 0);
             }
+        }
+    
+        // Initialisierung abschließen
+        if (!$initialized) {
+            $this->WriteAttributeBoolean("ApiInitialized", true);
+            $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
         }
     }
     
