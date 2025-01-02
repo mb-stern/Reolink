@@ -1009,17 +1009,22 @@ class Reolink extends IPSModule
             'bright' => 'Bright'
         ];
     
-        // Variablen aktualisieren
+        // Aktualisiere Variablen nur, wenn sich der Wert geändert hat
         foreach ($mapping as $jsonKey => $variableIdent) {
             if (isset($whiteLedData[$jsonKey])) {
                 $newValue = $whiteLedData[$jsonKey];
-                $currentValue = @GetValue($this->GetIDForIdent($variableIdent));
+                $variableID = @$this->GetIDForIdent($variableIdent);
     
-                if ($currentValue !== $newValue) {
-                    $this->SetValue($variableIdent, $newValue);
-                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
+                if ($variableID !== false) {
+                    $currentValue = GetValue($variableID);
+                    if ($currentValue !== $newValue) {
+                        $this->SetValue($variableIdent, $newValue);
+                        $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
+                    } else {
+                        $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$variableIdent' ($currentValue)", 0);
+                    }
                 } else {
-                    $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$variableIdent' ($currentValue)", 0);
+                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' existiert nicht", 0);
                 }
             } else {
                 $this->SendDebug("UpdateWhiteLedStatus", "Key '$jsonKey' nicht in der Antwort vorhanden", 0);
