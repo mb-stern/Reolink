@@ -1002,12 +1002,21 @@ class Reolink extends IPSModule
     
         // Aktualisiere nur, wenn sich der Wert geändert hat
         foreach (['state' => 'WhiteLed', 'mode' => 'Mode', 'bright' => 'Bright'] as $key => $ident) {
-            $currentValue = @GetValue($this->GetIDForIdent($ident));
-            if ($currentValue !== $whiteLedData[$key]) {
-                $this->SetValue($ident, $whiteLedData[$key]);
-                $this->SendDebug("UpdateWhiteLedStatus", "Variable $ident aktualisiert: $currentValue -> {$whiteLedData[$key]}", 0);
+            $variableID = @$this->GetIDForIdent($ident);
+    
+            // Wenn die Variable existiert, prüfe den aktuellen Wert
+            if ($variableID !== false) {
+                $currentValue = GetValue($variableID);
+                if ($currentValue !== $whiteLedData[$key]) {
+                    $this->SetValue($ident, $whiteLedData[$key]);
+                    $this->SendDebug("UpdateWhiteLedStatus", "Variable $ident aktualisiert: $currentValue -> {$whiteLedData[$key]}", 0);
+                } else {
+                    $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung bei $ident: $currentValue", 0);
+                }
             } else {
-                $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung bei $ident: $currentValue", 0);
+                // Wenn die Variable nicht existiert, initialisiere sie mit dem aktuellen Wert
+                $this->SetValue($ident, $whiteLedData[$key]);
+                $this->SendDebug("UpdateWhiteLedStatus", "Variable $ident erstellt und initialisiert: {$whiteLedData[$key]}", 0);
             }
         }
     
