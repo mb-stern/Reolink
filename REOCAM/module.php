@@ -957,6 +957,7 @@ class Reolink extends IPSModule
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $token = $this->ReadAttributeString("ApiToken");
     
+        // URL und Anfrage-Daten definieren
         $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
         $data = json_encode([
             [
@@ -968,9 +969,9 @@ class Reolink extends IPSModule
             ]
         ]);
     
-        $this->SendDebug("UpdateWhiteLedStatus", "URL: $url", 0);
-        $this->SendDebug("UpdateWhiteLedStatus", "Daten: $data", 0);
+        $this->SendDebug("UpdateWhiteLedStatus", "Anfrage-URL: $url", 0);
     
+        // cURL-Setup
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -979,53 +980,49 @@ class Reolink extends IPSModule
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
     
+        // Antwort abrufen
         $response = curl_exec($ch);
-    
         if ($response === false) {
             $error = curl_error($ch);
-            $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
             curl_close($ch);
+            $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
             return;
         }
-    
         curl_close($ch);
     
         $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
-        $responseData = json_decode($response, true);
     
+        // JSON-Daten parsen
+        $responseData = json_decode($response, true);
         if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
-            $this->SendDebug("UpdateWhiteLedStatus", "Fehlerhafte API-Antwort: " . json_encode($responseData), 0);
+            $this->SendDebug("UpdateWhiteLedStatus", "Ungültige Antwort oder fehlende 'WhiteLed'-Daten", 0);
             return;
         }
     
+        // Extrahiere relevante Werte
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
     
-        // Mapping der Felder zu den Variablen-Idents
+        // Mapping JSON -> Variablen
         $mapping = [
-            'state' => 'WhiteLed',
-            'mode'  => 'Mode',
+            'state'  => 'WhiteLed',
+            'mode'   => 'Mode',
             'bright' => 'Bright'
         ];
     
-        foreach ($mapping as $key => $ident) {
-            $variableID = @$this->GetIDForIdent($ident);
-            $newValue = $whiteLedData[$key] ?? null;
+        // Variablen aktualisieren
+        foreach ($mapping as $jsonKey => $variableIdent) {
+            if (isset($whiteLedData[$jsonKey])) {
+                $newValue = $whiteLedData[$jsonKey];
+                $currentValue = @GetValue($this->GetIDForIdent($variableIdent));
     
-            if ($variableID !== false && $newValue !== null) {
-                $currentValue = GetValue($variableID);
-    
-                // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
                 if ($currentValue !== $newValue) {
-                    $this->SetValue($ident, $newValue);
-                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$ident' aktualisiert: $currentValue -> $newValue", 0);
+                    $this->SetValue($variableIdent, $newValue);
+                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
                 } else {
-                    $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$ident': $currentValue", 0);
+                    $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$variableIdent' ($currentValue)", 0);
                 }
-            } elseif ($newValue !== null) {
-                // Falls die Variable fehlt, initialisiere sie mit dem aktuellen Wert
-                $this->RegisterVariable($ident, $newValue);
-                $this->SetValue($ident, $newValue);
-                $this->SendDebug("UpdateWhiteLedStatus", "Variable '$ident' erstellt und initialisiert: $newValue", 0);
+            } else {
+                $this->SendDebug("UpdateWhiteLedStatus", "Key '$jsonKey' nicht in der Antwort vorhanden", 0);
             }
         }
     }
