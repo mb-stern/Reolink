@@ -1009,7 +1009,7 @@ class Reolink extends IPSModule
             'bright' => 'Bright'
         ];
     
-        // Aktualisiere Variablen nur, wenn sich der Wert geändert hat
+        // Aktualisiere Variablen
         foreach ($mapping as $jsonKey => $variableIdent) {
             if (isset($whiteLedData[$jsonKey])) {
                 $newValue = $whiteLedData[$jsonKey];
@@ -1023,8 +1023,8 @@ class Reolink extends IPSModule
                         $newValue = (bool)$newValue;
                     }
     
-                    // Vergleich und mögliche Aktualisierung
-                    if ($currentValue !== $newValue) {
+                    // Initialisieren oder aktualisieren
+                    if ($currentValue === null || $currentValue !== $newValue) {
                         $this->SetValue($variableIdent, $newValue);
                         $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
                     } else {
