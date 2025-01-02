@@ -1018,6 +1018,12 @@ class Reolink extends IPSModule
                 if ($variableID !== false) {
                     $currentValue = GetValue($variableID);
     
+                    // Typkonvertierung für boolesche Werte (z. B. state: 0/1 -> true/false)
+                    if (is_bool($currentValue)) {
+                        $newValue = (bool)$newValue;
+                    }
+    
+                    // Vergleich und mögliche Aktualisierung
                     if ($currentValue !== $newValue) {
                         $this->SetValue($variableIdent, $newValue);
                         $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
