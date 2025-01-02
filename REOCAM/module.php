@@ -52,9 +52,11 @@ class Reolink extends IPSModule
     
         // Webhook-Pfad in der Form anzeigen
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
+
+        // Stream-URL aktualisieren
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
     
         // Verwalte Variablen und andere Einstellungen
-    
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) {
             $this->CreateMoveVariables();
         } else {
@@ -93,6 +95,7 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+            $this->WriteAttributeBoolean("ApiInitialized", false);
             $this->CreateApiVariables();
             $this->GetToken();
             $this->ExecuteApiRequests();
@@ -102,12 +105,6 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->RemoveApiVariables();
         }
-            
-        // Stream-URL aktualisieren
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-
-        // Attribut für erstmalige API-Abfrage zurücksetzen
-        $this->WriteAttributeBoolean("ApiInitialized", false);
     }
 
     public function RequestAction($Ident, $Value)
@@ -1047,5 +1044,4 @@ class Reolink extends IPSModule
             $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
         }
     }
-    
 }
