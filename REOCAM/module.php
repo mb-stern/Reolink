@@ -21,7 +21,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("PollingInterval", 2);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
-        $this->RegisterAttributeBoolean("ApiInitialized", "");
+        $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
 
