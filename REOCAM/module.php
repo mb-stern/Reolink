@@ -958,7 +958,7 @@ class Reolink extends IPSModule
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
         $token = $this->ReadAttributeString("ApiToken");
-
+    
         $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
         $data = json_encode([
             [
@@ -969,10 +969,10 @@ class Reolink extends IPSModule
                 ]
             ]
         ]);
-
+    
         $this->SendDebug("UpdateWhiteLedStatus", "URL: $url", 0);
         $this->SendDebug("UpdateWhiteLedStatus", "Daten: $data", 0);
-
+    
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -980,35 +980,44 @@ class Reolink extends IPSModule
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-
+    
         $response = curl_exec($ch);
-
+    
         if ($response === false) {
             $error = curl_error($ch);
             $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
             curl_close($ch);
             return;
         }
-
+    
         curl_close($ch);
-
+    
         $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
         $responseData = json_decode($response, true);
-
+    
         if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
             $this->SendDebug("UpdateWhiteLedStatus", "Fehlerhafte API-Antwort: " . json_encode($responseData), 0);
             return;
         }
-
+    
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
-
-        // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
-        if ($whiteLedData != ($responseData == 1)) {
-        $this->SetValue("WhiteLed", $whiteLedData['state']);
-        $this->SetValue("Mode", $whiteLedData['mode']);
-        $this->SetValue("Bright", $whiteLedData['bright']);
-    }
-
+    
+        // Prüfe und aktualisiere die Variablen nur, wenn sich der Zustand geändert hat
+        if (GetValue($this->GetIDForIdent("WhiteLed")) !== $whiteLedData['state']) {
+            $this->SetValue("WhiteLed", $whiteLedData['state']);
+            $this->SendDebug("UpdateWhiteLedStatus", "WhiteLed aktualisiert auf: " . $whiteLedData['state'], 0);
+        }
+    
+        if (GetValue($this->GetIDForIdent("Mode")) !== $whiteLedData['mode']) {
+            $this->SetValue("Mode", $whiteLedData['mode']);
+            $this->SendDebug("UpdateWhiteLedStatus", "Mode aktualisiert auf: " . $whiteLedData['mode'], 0);
+        }
+    
+        if (GetValue($this->GetIDForIdent("Bright")) !== $whiteLedData['bright']) {
+            $this->SetValue("Bright", $whiteLedData['bright']);
+            $this->SendDebug("UpdateWhiteLedStatus", "Bright aktualisiert auf: " . $whiteLedData['bright'], 0);
+        }
+    
         $this->SendDebug("UpdateWhiteLedStatus", "White-LED-Status erfolgreich aktualisiert: " . json_encode($whiteLedData), 0);
-    }
+    }    
 }
