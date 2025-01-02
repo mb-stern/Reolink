@@ -1002,7 +1002,8 @@ class Reolink extends IPSModule
 
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
 
-        // Variablen aktualisieren
+        // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
+        if ($whiteLedData != ($responseData == 1)) {
         $this->SetValue("WhiteLed", $whiteLedData['state']);
         $this->SetValue("Mode", $whiteLedData['mode']);
         $this->SetValue("Bright", $whiteLedData['bright']);
