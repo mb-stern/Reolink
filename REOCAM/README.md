@@ -14,27 +14,29 @@
 ### 1. Funktionsumfang
 
 Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. 
-Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen. Daher ist immer die aktuellste Firmware aufzuspielen. 
+Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktiort aber auch mit anderen Reolink-Kameras. 
+Daher ist immer die aktuellste Firmware aufzuspielen. Die neuste Firmware muss im Reolink Download-Center gesucht werden, da die App meist keine Neue anzeigt.
+Der Webhook ist nur über das Webinterface der Kamera sichtbar, in der App für Windows ist diese Funktion ausgeblendet.
 Beherrscht die Kamera kein Webhook, kann sie aktiv gepollt werden. Dies bringt aber je nach Polling-Intervall eine kleine Verzögerung mit sich.
 
 Das Modul kann folgendes:
 
-- Schnappschüsse bei Bewegungen aufnehmen (Allgemeine Bewegungen, Personen, Tiere und Fahrzeuge).
+- Schnappschüsse bei Bewegungen aufnehmen (Allgemeine Bewegungen, Personen, Tiere, Fahrzeuge und Besucher (Doorbell)).
 - Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
-- Auswählen, ob Main- oder Substream angezeigt werden soll.
+- Main- oder Substream angezeigen.
+- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers.
 
-Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren:
+Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
 - Reolink Duo 2
 - Reolink RLC-810A
-- Reolink Doorbell (nur D340P)
+- Reolink Doorbell (nicht Retail-Version obwohl dieselbe Hardware-Version)
+- Reolink E1 Outdoor (nicht alle Hardware-Versionen)
+- Reolink RLC-520A
+- Reolink E1 ZOOM
 
-Aktuell getestete Reolink-Kameras welche kein Webhook unterstützen und allenfalls über die Polling-Option abgefragt werden können:
-- Reolink E1 Outdoor (inkl. Pro)
-- Reolink Trackmix
-- Argus 3 Pro (und wahrscheinlich sämtliche akkubetriebenen Kameras)
-
+Akkubetriebenen Reolink-Kameras unterstützen nach meinem Wissenststand kein Webhook und könnten bestenfalls über ie Pollingfunkion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
@@ -63,10 +65,9 @@ Benutzername                        |   Benutzername zur Anmeldung im Interface 
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
 Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
-Webhook-Daten                       |	Aktiviert die Anzeige der Variablen aus dem JSON des Webhooks. Dies ist nur für allfällige Tests und Diagnose nötig
 Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
 Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
-API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst nur die Kamera-LED
+API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst ist die Ansteuerung der Kamera-LED integriert. Die Istwerte werden alle 60 Sekunden von der Kamera abgerufen.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu nicht angezeigt werden, wenn diese separat verlinkt werden.
@@ -97,6 +98,20 @@ Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
 Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
+
+Version 2.3 (02.01.2025)
+- Fehlermeldung beim Erstellen des Moduls behoben.
+- Erstellung der Webhook-Variablen entfernt (war nur zu Testzwecken). Im Fehlerfall ist das JSON aus dem Debug zu bewerten.
+- Code überarbeitet, einzelne Funktionen zusammengefasst und unnötige public Funktionen auf private gesetzt.
+- API-Variabelen werden nur noch aktualisiert wenn sich deren Zustand geändert hat
+
+Version 2.2 (28.12.2024)
+- Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
+- Die API-Istwerte werden nun alle 60 Sekunden abgefragt, um diese im Falle einer externen Änderung zu aktualisieren.
+
+Version 2.1 (22.12.2024)
+- Anpassung Modulname
+- Anpassung Readme mit geänderter URL
 
 Version 2.0 (7.12.2024)
 - Es geht Richtung Store-Kompatibilität, diverse interne Anpassungen.
