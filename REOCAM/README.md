@@ -48,7 +48,7 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 
 ### 3. Software-Installation
 
-* Über den Module Store kann das Modul, weil aktuell beta, nur unter dem genauen Namen 'Reolink' gefunden und installiert werden.
+* Über den Module Store kann das Modul installiert werden.
 
 ### 4. Einrichten der Instanzen in IP-Symcon
 
