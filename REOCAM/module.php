@@ -631,8 +631,8 @@ class Reolink extends IPSModule
     private function GetSnapshotURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
 
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
