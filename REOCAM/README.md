@@ -100,7 +100,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 ### 8. Versionen
 
 Version 2.4 (14.02.2025)
-- urlencode hinzugefügt, um auch Benutzernamen und Passwörter mit Snnderzeichen zu erlauben.
+- urlencode hinzugefügt, um auch Benutzernamen und Passwörter mit Sonderzeichen zu erlauben.
 
 Version 2.3 (02.01.2025)
 - Fehlermeldung beim Erstellen des Moduls behoben.
