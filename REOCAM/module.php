@@ -640,8 +640,8 @@ class Reolink extends IPSModule
     public function GetToken()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = urlencode($this->ReadPropertyString("Username"));
-        $password = urlencode($this->ReadPropertyString("Password"));
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
 
         if (empty($cameraIP) || empty($username) || empty($password)) {
             $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
@@ -695,8 +695,6 @@ class Reolink extends IPSModule
     private function SetWhiteLed(bool $state)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = urlencode($this->ReadPropertyString("Username"));
-        $password = urlencode($this->ReadPropertyString("Password"));
         $token = $this->ReadAttributeString("ApiToken");
 
         // LED-Einstellungen setzen
@@ -719,8 +717,6 @@ class Reolink extends IPSModule
     private function SetMode(int $mode)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = urlencode($this->ReadPropertyString("Username"));
-        $password = urlencode($this->ReadPropertyString("Password"));
         $token = $this->ReadAttributeString("ApiToken");
 
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
@@ -742,8 +738,6 @@ class Reolink extends IPSModule
     private function SetBrightness(int $brightness)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = urlencode($this->ReadPropertyString("Username"));
-        $password = urlencode($this->ReadPropertyString("Password"));
         $token = $this->ReadAttributeString("ApiToken");
 
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
