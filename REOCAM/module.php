@@ -695,8 +695,8 @@ class Reolink extends IPSModule
     private function SetWhiteLed(bool $state)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
         $token = $this->ReadAttributeString("ApiToken");
 
         // LED-Einstellungen setzen
@@ -719,8 +719,8 @@ class Reolink extends IPSModule
     private function SetMode(int $mode)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
         $token = $this->ReadAttributeString("ApiToken");
 
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
@@ -742,8 +742,8 @@ class Reolink extends IPSModule
     private function SetBrightness(int $brightness)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
         $token = $this->ReadAttributeString("ApiToken");
 
         $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
@@ -874,8 +874,8 @@ class Reolink extends IPSModule
         }
 
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
 
         $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
 
