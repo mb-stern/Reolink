@@ -619,8 +619,8 @@ class Reolink extends IPSModule
     private function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
         $streamType = $this->ReadPropertyString("StreamType");
 
         return $streamType === "main" ? 
@@ -640,8 +640,8 @@ class Reolink extends IPSModule
     public function GetToken()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
 
         if (empty($cameraIP) || empty($username) || empty($password)) {
             $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
