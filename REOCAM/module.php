@@ -692,68 +692,37 @@ class Reolink extends IPSModule
         }
     }    
     
-    private function SetWhiteLed(bool $state)
+    private function SendLedRequest(array $ledParams)
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $token = $this->ReadAttributeString("ApiToken");
+        $token    = $this->ReadAttributeString("ApiToken");
 
-        // LED-Einstellungen setzen
-        $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
+        $url  = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
         $data = [
             [
-                "cmd" => "SetWhiteLed",
+                "cmd"   => "SetWhiteLed",
                 "param" => [
-                    "WhiteLed" => [
-                        "state" => $state ? 1 : 0, // 1 = Ein, 0 = Aus
-                        "channel" => 0
-                    ]
+                    "WhiteLed" => array_merge($ledParams, ["channel" => 0])
                 ]
             ]
         ];
 
         $this->SendApiRequest($url, $data);
+    }
+
+    private function SetWhiteLed(bool $state)
+    {
+        $this->SendLedRequest(['state' => $state ? 1 : 0]);
     }
 
     private function SetMode(int $mode)
     {
-        $cameraIP = $this->ReadPropertyString("CameraIP");
-        $token = $this->ReadAttributeString("ApiToken");
-
-        $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
-        $data = [
-            [
-                "cmd" => "SetWhiteLed",
-                "param" => [
-                    "WhiteLed" => [
-                        "mode" => $mode,
-                        "channel" => 0
-                    ]
-                ]
-            ]
-        ];
-
-        $this->SendApiRequest($url, $data);
+        $this->SendLedRequest(['mode' => $mode]);
     }
 
     private function SetBrightness(int $brightness)
     {
-        $cameraIP = $this->ReadPropertyString("CameraIP");
-        $token = $this->ReadAttributeString("ApiToken");
-
-        $url = "https://$cameraIP/api.cgi?cmd=SetWhiteLed&token=$token";
-        $data = [
-            [
-                "cmd" => "SetWhiteLed",
-                "param" => [
-                    "WhiteLed" => [
-                        "bright" => $brightness,
-                        "channel" => 0
-                    ]
-                ]
-            ]
-        ];
-
-        $this->SendApiRequest($url, $data);
+        $this->SendLedRequest(['bright' => $brightness]);
     }
 
     private function SendApiRequest(string $url, array $data)
