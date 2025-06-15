@@ -14,7 +14,7 @@
 ### 1. Funktionsumfang
 
 Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. 
-Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktiort aber auch mit anderen Reolink-Kameras. 
+Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktioniert aber auch mit anderen Reolink-Kameras.
 Daher ist immer die aktuellste Firmware aufzuspielen. Die neuste Firmware muss im Reolink Download-Center gesucht werden, da die App meist keine Neue anzeigt.
 Der Webhook ist nur über das Webinterface der Kamera sichtbar, in der App für Windows ist diese Funktion ausgeblendet.
 Beherrscht die Kamera kein Webhook, kann sie aktiv gepollt werden. Dies bringt aber je nach Polling-Intervall eine kleine Verzögerung mit sich.
@@ -25,7 +25,7 @@ Das Modul kann folgendes:
 - Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
-- Main- oder Substream angezeigen.
+- Main- oder Substream angezeigt.
 - API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers.
 
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
@@ -36,7 +36,7 @@ Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit de
 - Reolink RLC-520A
 - Reolink E1 ZOOM
 
-Akkubetriebenen Reolink-Kameras unterstützen nach meinem Wissenststand kein Webhook und könnten bestenfalls über ie Pollingfunkion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
+Akkubetriebenen Reolink-Kameras unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
@@ -44,7 +44,7 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 ### 2. Voraussetzungen
 
 - IP-Symcon ab Version 7.0
-- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center. Falls die Kamera keinen Webhook unterstützt kann im Konfigurationsformuler die Pollingfunktion aktiviert werden.
+- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center. Falls die Kamera keinen Webhook unterstützt kann im Konfigurationsformular die Pollingfunktion aktiviert werden.
 
 ### 3. Software-Installation
 
@@ -69,9 +69,9 @@ Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie B
 Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
 API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst ist die Ansteuerung der Kamera-LED integriert. Die Istwerte werden alle 60 Sekunden von der Kamera abgerufen.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
-Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
+Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu nicht angezeigt werden, wenn diese separat verlinkt werden.
-Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
 
 ### 5. Statusvariablen und Profile
 
@@ -98,6 +98,10 @@ Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
 Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
+
+Version 2.5 (15.06.2025)
+- Codeoptimierung im Bereich der LED-Parameter.
+- Rechtschreibung korrigiert
 
 Version 2.4 (14.02.2025)
 - urlencode hinzugefügt, um auch Benutzernamen und Passwörter mit Sonderzeichen zu erlauben.
