@@ -62,7 +62,7 @@ Name     | Beschreibung
 Webhook                             |	Hier wird der verwendete Webhook angezeigt. Diesen in der Kamerakonfiguration eintragen
 IP-Adresse                          |	IP-Adresse der Kamera
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
-Passwort                            |   Passwort zur Anmeldung im Interface der Kamera. Es dürfen keine Sonderzeichen wie +@, :, /, ?, #, [, ] verwendet werden.
+Passwort                            |   Passwort zur Anmeldung im Interface der Kamera. Es dürfen keine Sonderzeichen wie +, @, :, /, ?, #, [, ] verwendet werden.
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
 Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
 Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
