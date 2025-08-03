@@ -628,23 +628,13 @@ class Reolink extends IPSModule
                "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
-    private function GetSnapshot()
+    private function GetSnapshotURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
 
-        $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&width=1024&height=768";
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_USERPWD, "$username:$password"); // Auth-Daten hier setzen
-        curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-
-        $result = curl_exec($ch);
-        curl_close($ch);
-
-        return $result; // $result enthält das JPG als Binärdaten
+        return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
     public function GetToken()
