@@ -70,7 +70,7 @@ Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie B
 API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst ist die Ansteuerung der Kamera-LED integriert. Die Istwerte werden alle 60 Sekunden von der Kamera abgerufen.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
-Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu nicht angezeigt werden, wenn diese separat verlinkt werden.
+Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
 
 ### 5. Statusvariablen und Profile
