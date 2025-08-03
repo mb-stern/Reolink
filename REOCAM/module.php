@@ -619,8 +619,8 @@ class Reolink extends IPSModule
     private function GetStreamURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = rawurlencode($this->ReadPropertyString("Username"));
-        $password = rawurlencode($this->ReadPropertyString("Password"));
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
         $streamType = $this->ReadPropertyString("StreamType");
 
         return $streamType === "main" ? 
@@ -631,8 +631,8 @@ class Reolink extends IPSModule
     private function GetSnapshotURL()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = rawurlencode($this->ReadPropertyString("Username"));
-        $password = rawurlencode($this->ReadPropertyString("Password"));
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
 
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
@@ -837,8 +837,8 @@ class Reolink extends IPSModule
         }
 
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = rawurlencode($this->ReadPropertyString("Username"));
-        $password = rawurlencode($this->ReadPropertyString("Password"));
+        $username = urlencode($this->ReadPropertyString("Username"));
+        $password = urlencode($this->ReadPropertyString("Password"));
 
         $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
 
