@@ -201,7 +201,7 @@ class Reolink extends IPSModule
                 $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
             }
         } else {
-            $this->LogMessage("Reolink: Keine Daten empfangen oder Datenstrom ist leer.", KL_MESSAGE);
+            $this->LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
     }
@@ -426,17 +426,18 @@ class Reolink extends IPSModule
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
-        // ---- NEU: nur Content, keine Datei mehr ----
         $snapshotUrl = $this->GetSnapshotURL();
+        $fileName = $booleanIdent . "_" . $mediaID . ".jpg";
+        $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
-
+    
         if ($imageData !== false) {
-            // Nur Content setzen (Base64), KEINE Datei mehr verknüpfen
-            IPS_SetMediaContent($mediaID, base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID);
-
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich gesetzt (nur Content, keine Datei).", 0);
-
+            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
+            IPS_SetMediaContent($mediaID,base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
+    
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
+    
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
@@ -536,16 +537,17 @@ class Reolink extends IPSModule
         IPS_SetName($mediaID, "" . $booleanIdent . " " . date("Y-m-d H:i:s"));
         IPS_SetMediaCached($mediaID, false); // Kein Caching
 
-        // ---- NEU: nur Content, keine Datei mehr ----
         $snapshotUrl = $this->GetSnapshotURL();
+        $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . $mediaID . ".jpg";
         $imageData = @file_get_contents($snapshotUrl);
 
         if ($imageData !== false) {
-            IPS_SetMediaContent($mediaID, base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID);
+            IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
+            IPS_SetMediaContent($mediaID,base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
 
-            $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt (nur Content).", 0);
-            $this->PruneArchive($categoryID, $booleanIdent); // Maximalanzahl prüfen
+            $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt.", 0);
+            $this->PruneArchive($categoryID, $booleanIdent); // Maximale Anzahl der Bilder überprüfen
         } else {
             $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für '$booleanIdent'.", 0);
         }
