@@ -155,6 +155,15 @@ class Reolink extends IPSModule
                 }
                 break;
 
+            case "EmailContent":
+                $ok = $this->SetEmailContent((int)$Value);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
+                } else {
+                    $this->UpdateEmailVars();
+                }
+                break;
+
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -801,7 +810,6 @@ class Reolink extends IPSModule
         }
 
         if (!@$this->GetIDForIdent("Mode")) {
-            $this->SendDebug("CreateApiVariables", "Variablenprofil REOCAM.WLED erstellt", 0);
             $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
@@ -831,12 +839,25 @@ class Reolink extends IPSModule
         $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 4);
         $this->EnableAction("EmailInterval");
         }
+
+        // Profil für E-Mail-Inhalt
+        if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
+            IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video", "", -1);
+        }
+        if (!@$this->GetIDForIdent("EmailContent")) {
+            $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 5);
+            $this->EnableAction("EmailContent");
+        }
     }
     
     private function RemoveApiVariables()
     {
         // Alle API-Variablen, die wir ggf. angelegt haben
-        $idents = ["WhiteLed", "Mode", "Bright", "EmailNotify", "EmailInterval"];
+        $idents = ["WhiteLed", "Mode", "Bright", "EmailNotify", "EmailInterval", "EmailContent"];
 
         foreach ($idents as $ident) {
             $id = @$this->GetIDForIdent($ident);
@@ -1140,7 +1161,8 @@ class Reolink extends IPSModule
         return $map[$s] ?? null;
     }
 
-    private function GetEmailInterval(): ?int {
+    private function GetEmailInterval(): ?int 
+    {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $token    = $this->ReadAttributeString("ApiToken");
         $apiVer   = $this->DetectEmailApiVersion();
@@ -1174,7 +1196,8 @@ class Reolink extends IPSModule
         return null;
     }
 
-    private function SetEmailInterval(int $sec): bool {
+    private function SetEmailInterval(int $sec): bool 
+    {
         $str = $this->IntervalSecondsToString($sec);
         if ($str === null) {
             $this->SendDebug("SetEmailInterval", "Ungültiger Sekundenwert: $sec", 0);
@@ -1201,7 +1224,7 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    // Bequemer gemeinsamer Updater für beide Variablen
+  
     private function UpdateEmailVars(): void {
         // Enable/Disable
         $idNotify = @$this->GetIDForIdent("EmailNotify");
@@ -1211,6 +1234,7 @@ class Reolink extends IPSModule
                 $this->SetValue("EmailNotify", $en);
             }
         }
+        
         // Intervall
         $idInt = @$this->GetIDForIdent("EmailInterval");
         if ($idInt !== false) {
@@ -1218,6 +1242,90 @@ class Reolink extends IPSModule
             if ($sec !== null) {
                 $this->SetValue("EmailInterval", $sec);
             }
+        }
+
+        // Content
+        $idContent = @$this->GetIDForIdent("EmailContent");
+        if ($idContent !== false) {
+            $mode = $this->GetEmailContent();
+            if ($mode !== null) {
+                $this->SetValue("EmailContent", $mode);
+            }
+        }
+    }
+
+    private function GetEmailContent(): ?int 
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+        $apiVer   = $this->DetectEmailApiVersion();
+
+        if ($apiVer === 'V20') {
+            $url  = "https://$cameraIP/api.cgi?cmd=GetEmailV20&token=$token";
+            $data = [[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]];
+            $res  = $this->SendApiRequest($url, $data);
+            if (is_array($res) && isset($res[0]['value']['Email'])) {
+                $e    = $res[0]['value']['Email'];
+                $text = isset($e['textType']) ? (int)$e['textType'] : 1;
+                $att  = isset($e['attachmentType']) ? (int)$e['attachmentType'] : 0;
+
+                if (!$text && $att === 1) return 1; // Bild (ohne Text)
+                if ( $text && $att === 0) return 0; // nur Text
+                if ( $text && $att === 1) return 2; // Text + Bild
+                if ( $text && $att === 2) return 3; // Text + Video
+                // Fallback: unbekannte Kombi -> nur Text
+                return 0;
+            }
+        } else {
+            $url  = "https://$cameraIP/api.cgi?cmd=GetEmail&token=$token";
+            $data = [[ "cmd" => "GetEmail", "param" => ["channel" => 0] ]];
+            $res  = $this->SendApiRequest($url, $data);
+            if (is_array($res) && isset($res[0]['value']['Email']['attachment'])) {
+                switch ($res[0]['value']['Email']['attachment']) {
+                    case 'onlyPicture': return 1;
+                    case 'picture':     return 2;
+                    case 'video':       return 3;
+                    default:            return 0; // kein Anhang => nur Text
+                }
+            }
+            return 0;
+        }
+        return null;
+    }
+
+    private function SetEmailContent(int $mode): bool 
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+        $apiVer   = $this->DetectEmailApiVersion();
+
+        if ($apiVer === 'V20') {
+            // Mapping UI -> (textType, attachmentType)
+            switch ($mode) {
+                case 0: $payload = ["textType"=>1, "attachmentType"=>0]; break; // Text
+                case 1: $payload = ["textType"=>0, "attachmentType"=>1]; break; // Bild ohne Text
+                case 2: $payload = ["textType"=>1, "attachmentType"=>1]; break; // Text + Bild
+                case 3: $payload = ["textType"=>1, "attachmentType"=>2]; break; // Text + Video
+                default: return false;
+            }
+
+            $url  = "https://$cameraIP/api.cgi?cmd=SetEmailV20&token=$token";
+            $data = [[ "cmd"=>"SetEmailV20", "param"=> [ "Email" => $payload ] ]];
+            $res  = $this->SendApiRequest($url, $data);
+            return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
+        } else {
+            // Legacy: String-Feld "attachment"
+            switch ($mode) {
+                case 0: $att = "0";            break; // nur Text (kein Anhang)
+                case 1: $att = "onlyPicture";  break; // nur Bild
+                case 2: $att = "picture";      break; // Text + Bild
+                case 3: $att = "video";        break; // Text + Video
+                default: return false;
+            }
+            $url  = "https://$cameraIP/api.cgi?cmd=SetEmail&token=$token";
+            $data = [[ "cmd"=>"SetEmail", "param"=> [ "Email" => [ "attachment" => $att ] ] ]];
+            $res  = $this->SendApiRequest($url, $data);
+            return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
         }
     }
 }
