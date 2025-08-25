@@ -101,6 +101,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.6 (25.07.2025)
 - Neue API-Funktion 'Mailversand'. Die Konfiguration ist im Kameraintrface vorzunehmen. Im Modul kann die Funktion de/aktiviert werden (zb bei Abwesenheit).
+- Einige Code Modifikationen
 
 Version 2.5 (15.06.2025)
 - Codeoptimierung im Bereich der LED-Parameter.
