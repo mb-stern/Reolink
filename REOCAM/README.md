@@ -31,7 +31,7 @@ Das Modul kann folgendes:
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
 - Reolink Duo 2
 - Reolink RLC-810A
-- Reolink Doorbell (nicht Retail-Version obwohl dieselbe Hardware-Version)
+- Reolink Doorbell
 - Reolink E1 Outdoor (nicht alle Hardware-Versionen)
 - Reolink RLC-520A
 - Reolink E1 ZOOM
