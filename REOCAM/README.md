@@ -85,7 +85,9 @@ Es werden Variablen/Typen je nach Wahl im Konfigurationsformular erstellt.
 
 Name     | Typ
 -------- | ------------------
-REOCAM.WLED   |	Integer
+REOCAM.WLED              |	Integer
+REOCAM.EmailInterval     |	Integer
+REOCAM.EmailContent      |	Integer
 
 ### 6. WebFront
 
