@@ -201,7 +201,7 @@ class Reolink extends IPSModule
                 $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
             }
         } else {
-            $this->LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->LogMessage("Reolink: Keine Daten empfangen oder Datenstrom ist leer.", KL_MESSAGE);
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
     }
@@ -426,18 +426,17 @@ class Reolink extends IPSModule
             $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
         }
     
+        // ---- NEU: nur Content, keine Datei mehr ----
         $snapshotUrl = $this->GetSnapshotURL();
-        $fileName = $booleanIdent . "_" . $mediaID . ".jpg";
-        $filePath = IPS_GetKernelDir() . "media/" . $fileName;
         $imageData = @file_get_contents($snapshotUrl);
-    
+
         if ($imageData !== false) {
-            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
-            IPS_SetMediaContent($mediaID,base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
-    
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
-    
+            // Nur Content setzen (Base64), KEINE Datei mehr verknüpfen
+            IPS_SetMediaContent($mediaID, base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID);
+
+            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich gesetzt (nur Content, keine Datei).", 0);
+
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
@@ -460,63 +459,35 @@ class Reolink extends IPSModule
 
     private function CreateOrUpdateArchives()
     {
-        // Boolean-Identifikatoren für die Archive
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
-        
-        // Für jede Kategorie prüfen und aktualisieren
-        foreach ($categories as $category) {
-            // Archiv-Kategorie erstellen oder abrufen
-            $categoryID = $this->CreateOrGetArchiveCategory($category);
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $cat) {
+            $this->CreateOrGetArchiveCategory($cat);
         }
     }
-    
-    private function CreateOrGetArchiveCategory($booleanIdent)
-    {
 
-        // Boolean-Identifikatoren für die Archive
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
-        
-        // Für jede Kategorie prüfen und aktualisieren
-        foreach ($categories as $category) {
-            
-            // Archiv-Kategorie erstellen oder abrufen
-            $archiveIdent = "Archive_" . $booleanIdent;
-            $categoryID = @$this->GetIDForIdent($archiveIdent);
-        
-            if ($categoryID === false) {
-                // Archivkategorie erstellen
-                $categoryID = IPS_CreateCategory();
-                IPS_SetParent($categoryID, $this->InstanceID);
-                IPS_SetIdent($categoryID, $archiveIdent);
-                IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-        
-                // Position basierend auf dem Boolean-Ident setzen
-                switch ($booleanIdent) {
-                    case "Person":
-                        IPS_SetPosition($categoryID, 22);
-                        break;
-                    case "Tier":
-                        IPS_SetPosition($categoryID, 27);
-                        break;
-                    case "Fahrzeug":
-                        IPS_SetPosition($categoryID, 32);
-                        break;
-                    case "Bewegung":
-                        IPS_SetPosition($categoryID, 37);
-                        break;
-                    case "Besucher":
-                        IPS_SetPosition($categoryID, 42);
-                        break;
-                    case "Test":
-                        IPS_SetPosition($categoryID, 47);
-                        break;
-                    default:
-                        IPS_SetPosition($categoryID, 99); // Standardposition
-                        break;
-                }
-            }
+    private function CreateOrGetArchiveCategory(string $booleanIdent)
+    {
+        $archiveIdent = "Archive_" . $booleanIdent;
+        $categoryID = @$this->GetIDForIdent($archiveIdent);
+
+        if ($categoryID === false) {
+            $categoryID = IPS_CreateCategory();
+            IPS_SetParent($categoryID, $this->InstanceID);
+            IPS_SetIdent($categoryID, $archiveIdent);
+            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+
+            // Positionen konsistent setzen
+            $pos = [
+                "Person"   => 22,
+                "Tier"     => 27,
+                "Fahrzeug" => 32,
+                "Bewegung" => 37,
+                "Besucher" => 42,
+                "Test"     => 47
+            ][$booleanIdent] ?? 99;
+
+            IPS_SetPosition($categoryID, $pos);
         }
-    
+
         return $categoryID;
     }
     
@@ -565,17 +536,16 @@ class Reolink extends IPSModule
         IPS_SetName($mediaID, "" . $booleanIdent . " " . date("Y-m-d H:i:s"));
         IPS_SetMediaCached($mediaID, false); // Kein Caching
 
+        // ---- NEU: nur Content, keine Datei mehr ----
         $snapshotUrl = $this->GetSnapshotURL();
-        $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . $mediaID . ".jpg";
         $imageData = @file_get_contents($snapshotUrl);
 
         if ($imageData !== false) {
-            IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
-            IPS_SetMediaContent($mediaID,base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
+            IPS_SetMediaContent($mediaID, base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID);
 
-            $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt.", 0);
-            $this->PruneArchive($categoryID, $booleanIdent); // Maximale Anzahl der Bilder überprüfen
+            $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt (nur Content).", 0);
+            $this->PruneArchive($categoryID, $booleanIdent); // Maximalanzahl prüfen
         } else {
             $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für '$booleanIdent'.", 0);
         }
