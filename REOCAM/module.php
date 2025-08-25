@@ -146,6 +146,15 @@ class Reolink extends IPSModule
                 }
                 break;
 
+            case "EmailInterval":
+                $ok = $this->SetEmailIntervalSeconds((int)$Value);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
+                } else {
+                    $this->UpdateEmailIntervalVar();
+                }
+                break;
+
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -791,18 +800,9 @@ class Reolink extends IPSModule
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
         }
 
-        if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
-            IPS_CreateVariableProfile("REOCAM.EmailInterval", 1); // Integer
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
-        } 
-
         if (!@$this->GetIDForIdent("Mode")) {
-            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", "REOCAM.EmailInterval", 1);
-            $this->SendDebug("CreateApiVariables", "Variablenprofil REOCAM.WLED REOCAM.EmailInterval erstellt", 0);
+            $this->SendDebug("CreateApiVariables", "Variablenprofil REOCAM.WLED erstellt", 0);
+            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
             $this->EnableAction("Mode");
         }
     
@@ -812,10 +812,24 @@ class Reolink extends IPSModule
             $this->EnableAction("Bright");
         }
 
-        // E-Mail Versand
+        // E-Mail Versand schalten
         if (!@$this->GetIDForIdent("EmailNotify")) {
             $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 3);
             $this->EnableAction("EmailNotify");
+        }
+
+        if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
+        IPS_CreateVariableProfile("REOCAM.EmailInterval", 1); // Integer
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
+        } 
+
+        if (!@$this->GetIDForIdent("EmailInterval")) {
+        $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 4);
+        $this->EnableAction("EmailInterval");
         }
     }
     
@@ -916,6 +930,7 @@ class Reolink extends IPSModule
         // API-Funktion: GetWhiteLed
         $this->UpdateWhiteLedStatus();
         $this->UpdateEmailStatusVar();
+        $this->UpdateEmailIntervalVar();
 
         // Weitere API-Funktionen können hier hinzugefügt werden
     }
