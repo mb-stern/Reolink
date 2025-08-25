@@ -26,7 +26,7 @@ Das Modul kann folgendes:
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
 - Main- oder Substream angezeigt.
-- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers.
+- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers und steuern von Mailfunktionen.
 
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
 - Reolink Duo 2
