@@ -812,7 +812,7 @@ class Reolink extends IPSModule
             $this->EnableAction("Bright");
         }
 
-        // E-Mail Versand schalten
+        // E-Mail Versand
         if (!@$this->GetIDForIdent("EmailNotify")) {
             $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 3);
             $this->EnableAction("EmailNotify");
