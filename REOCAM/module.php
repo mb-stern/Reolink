@@ -827,12 +827,12 @@ class Reolink extends IPSModule
         }
 
         if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
-        IPS_CreateVariableProfile("REOCAM.EmailInterval", 1); // Integer
-        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
-        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
-        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
-        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
-        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
+            IPS_CreateVariableProfile("REOCAM.EmailInterval", 1); // Integer
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
         } 
 
         if (!@$this->GetIDForIdent("EmailInterval")) {
@@ -1225,31 +1225,53 @@ class Reolink extends IPSModule
     }
 
   
-    private function UpdateEmailVars(): void {
-        // Enable/Disable
-        $idNotify = @$this->GetIDForIdent("EmailNotify");
-        if ($idNotify !== false) {
-            $en = $this->GetEmailEnabled();
-            if ($en !== null) {
-                $this->SetValue("EmailNotify", $en);
-            }
-        }
-        
-        // Intervall
-        $idInt = @$this->GetIDForIdent("EmailInterval");
-        if ($idInt !== false) {
-            $sec = $this->GetEmailInterval();
-            if ($sec !== null) {
-                $this->SetValue("EmailInterval", $sec);
+    private function UpdateEmailVars(): void
+    {
+        // EmailNotify (bool)
+        $id = @$this->GetIDForIdent("EmailNotify");
+        if ($id !== false) {
+            $new = $this->GetEmailEnabled();
+            if ($new !== null) {
+                $old = GetValue($id);
+                $new = (bool)$new;
+                if ($old !== $new) {
+                    $this->SetValue("EmailNotify", $new);
+                    $this->SendDebug("UpdateEmailVars", "EmailNotify: $old -> $new", 0);
+                } else {
+                    $this->SendDebug("UpdateEmailVars", "EmailNotify unverändert ($old)", 0);
+                }
             }
         }
 
-        // Content
-        $idContent = @$this->GetIDForIdent("EmailContent");
-        if ($idContent !== false) {
-            $mode = $this->GetEmailContent();
-            if ($mode !== null) {
-                $this->SetValue("EmailContent", $mode);
+        // EmailInterval (int, Sekunden)
+        $id = @$this->GetIDForIdent("EmailInterval");
+        if ($id !== false) {
+            $new = $this->GetEmailInterval();
+            if ($new !== null) {
+                $old = GetValue($id);
+                $new = (int)$new;
+                if ($old !== $new) {
+                    $this->SetValue("EmailInterval", $new);
+                    $this->SendDebug("UpdateEmailVars", "EmailInterval: $old -> $new", 0);
+                } else {
+                    $this->SendDebug("UpdateEmailVars", "EmailInterval unverändert ($old)", 0);
+                }
+            }
+        }
+
+        // EmailContent (int: 0=Text, 1=Bild, 2=Text+Bild, 3=Text+Video)
+        $id = @$this->GetIDForIdent("EmailContent");
+        if ($id !== false) {
+            $new = $this->GetEmailContent();
+            if ($new !== null) {
+                $old = GetValue($id);
+                $new = (int)$new;
+                if ($old !== $new) {
+                    $this->SetValue("EmailContent", $new);
+                    $this->SendDebug("UpdateEmailVars", "EmailContent: $old -> $new", 0);
+                } else {
+                    $this->SendDebug("UpdateEmailVars", "EmailContent unverändert ($old)", 0);
+                }
             }
         }
     }
