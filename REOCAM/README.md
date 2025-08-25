@@ -67,7 +67,7 @@ Stream-Typ                          |   Standard ist Substream. Hier kann zwisch
 Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
 Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
 Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
-API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst ist die Ansteuerung der Kamera-LED integriert. Die Istwerte werden alle 60 Sekunden von der Kamera abgerufen.
+API-Funktionen                      |   Aktiviert die API-Funktionen. Vorerst ist die Ansteuerung der Kamera-LED und die Mailfunktion integriert. Die Istwerte werden alle 10 Sekunden von der Kamera abgerufen.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
