@@ -808,34 +808,28 @@ class Reolink extends IPSModule
             $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 3);
             $this->EnableAction("EmailNotify");
         }
+
+        if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
+        IPS_CreateVariableProfile("REOCAM.EmailInterval", 1); // Integer
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
+        IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1); // <— NEU
+        } 
     }
     
     private function RemoveApiVariables()
     {
-        // White LED-Variable entfernen
-        $varID = @$this->GetIDForIdent("WhiteLed");
-        if ($varID) {
-            $this->UnregisterVariable("WhiteLed");
-        }
-    
-        // Mode-Variable entfernen
-        $varID = @$this->GetIDForIdent("Mode");
-        if ($varID) {
-            $this->UnregisterVariable("Mode");
-        }
-    
-        // Bright-Variable entfernen
-        $varID = @$this->GetIDForIdent("Bright");
-        if ($varID) {
-            $this->UnregisterVariable("Bright");
-        }
+        // Alle API-Variablen, die wir ggf. angelegt haben
+        $idents = ["WhiteLed", "Mode", "Bright", "EmailNotify", "EmailInterval"];
 
-        // E-Mail Versand entfernen
-        $varID = @$this->GetIDForIdent("EmailNotify");
-        if ($varID) {
-            $this->UnregisterVariable("EmailNotify");
+        foreach ($idents as $ident) {
+            $id = @$this->GetIDForIdent($ident);
+            if ($id !== false) {
+                $this->UnregisterVariable($ident);
+            }
         }
-
     }
     
     public function Polling()
@@ -1105,5 +1099,39 @@ class Reolink extends IPSModule
         if ($val !== null) {
             $this->SetValue("EmailNotify", $val);
         }
+    }
+
+    private function intervalStringToSeconds(string $label): ?int
+    {
+        $map = [
+            "30 Seconds" => 30,
+            "1 Minute"   => 60,
+            "5 Minutes"  => 300,
+            "10 Minutes" => 600,
+            "30 Minutes" => 1800,
+        ];
+
+        if (isset($map[$label])) return $map[$label];
+
+        // Robustheit: "30 Min", "30 mins", "30 minutes", "10 min." etc.
+        if (preg_match('/^\s*(\d+)\s*(sec(ond)?s?|min(ute)?s?)\s*$/i', $label, $m)) {
+            $n = (int)$m[1];
+            $unit = strtolower($m[2]);
+            if (strpos($unit, 'sec') === 0)  return $n;
+            if (strpos($unit, 'min') === 0)  return $n * 60;
+        }
+        return null;
+    }
+
+    private function intervalSecondsToString(int $sec): ?string
+    {
+        $map = [
+            30   => "30 Seconds",
+            60   => "1 Minute",
+            300  => "5 Minutes",
+            600  => "10 Minutes",
+            1800 => "30 Minutes",
+        ];
+        return $map[$sec] ?? null;
     }
 }
