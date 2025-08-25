@@ -36,7 +36,7 @@ Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit de
 - Reolink RLC-520A
 - Reolink E1 ZOOM
 
-Akkubetriebenen Reolink-Kameras unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
+Akkubetriebenen Reolink-Kameras (insbsondere Argus Modelle) unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
