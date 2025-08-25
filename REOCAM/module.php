@@ -94,7 +94,7 @@ class Reolink extends IPSModule
         
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
-            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+            $this->SetTimerInterval("TokenRenewalTimer", 3300 * 1000);
             $this->WriteAttributeBoolean("ApiInitialized", false);
             $this->CreateApiVariables();
             $this->GetToken();
@@ -111,20 +111,41 @@ class Reolink extends IPSModule
     {
         switch ($Ident) {
             case "WhiteLed":
-                $this->SetWhiteLed($Value);
-                SetValue($this->GetIDForIdent($Ident), $Value);
+                $ok = $this->SetWhiteLed((bool)$Value);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), (bool)$Value);
+                } else {
+                    $this->UpdateWhiteLedStatus(); // zurücklesen
+                }
                 break;
-    
+
             case "Mode":
-                $this->SetMode($Value);
-                SetValue($this->GetIDForIdent($Ident), $Value);
+                $ok = $this->SetMode((int)$Value);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
+                } else {
+                    $this->UpdateWhiteLedStatus();
+                }
                 break;
-    
+
             case "Bright":
-                $this->SetBrightness($Value);
-                SetValue($this->GetIDForIdent($Ident), $Value);
+                $ok = $this->SetBrightness((int)$Value);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
+                } else {
+                    $this->UpdateWhiteLedStatus();
+                }
                 break;
-    
+
+            case "EmailNotify":
+                $ok = $this->SetEmailEnabled((bool)$Value);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), (bool)$Value);
+                } else {
+                    $this->UpdateEmailStatusVar();
+                }
+                break;
+
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -201,7 +222,7 @@ class Reolink extends IPSModule
                 $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
             }
         } else {
-            $this->LogMessage("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.");
+            $this->LogMessage("Reolink: Keine Daten empfangen oder Datenstrom ist leer.", KL_MESSAGE);
             $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
         }
     }
@@ -664,7 +685,7 @@ class Reolink extends IPSModule
         }
     }    
     
-    private function SendLedRequest(array $ledParams)
+    private function SendLedRequest(array $ledParams): bool
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $token    = $this->ReadAttributeString("ApiToken");
@@ -679,22 +700,25 @@ class Reolink extends IPSModule
             ]
         ];
 
-        $this->SendApiRequest($url, $data);
+        $res = $this->SendApiRequest($url, $data);
+
+        // true zurückgeben, wenn API-Code 0 war
+        return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
     }
 
-    private function SetWhiteLed(bool $state)
+    private function SetWhiteLed(bool $state): bool
     {
-        $this->SendLedRequest(['state' => $state ? 1 : 0]);
+        return $this->SendLedRequest(['state' => $state ? 1 : 0]);
     }
 
-    private function SetMode(int $mode)
+    private function SetMode(int $mode): bool
     {
-        $this->SendLedRequest(['mode' => $mode]);
+        return $this->SendLedRequest(['mode' => $mode]);
     }
 
-    private function SetBrightness(int $brightness)
+    private function SetBrightness(int $brightness): bool
     {
-        $this->SendLedRequest(['bright' => $brightness]);
+        return $this->SendLedRequest(['bright' => $brightness]);
     }
 
     private function SendApiRequest(string $url, array $data)
@@ -778,6 +802,12 @@ class Reolink extends IPSModule
             $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
             $this->EnableAction("Bright");
         }
+
+        // E-Mail Versand schalten
+        if (!@$this->GetIDForIdent("EmailNotify")) {
+            $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 3);
+            $this->EnableAction("EmailNotify");
+        }
     }
     
     private function RemoveApiVariables()
@@ -799,6 +829,13 @@ class Reolink extends IPSModule
         if ($varID) {
             $this->UnregisterVariable("Bright");
         }
+
+        // E-Mail Versand entfernen
+        $varID = @$this->GetIDForIdent("EmailNotify");
+        if ($varID) {
+            $this->UnregisterVariable("EmailNotify");
+        }
+
     }
     
     public function Polling()
@@ -884,6 +921,7 @@ class Reolink extends IPSModule
 
         // API-Funktion: GetWhiteLed
         $this->UpdateWhiteLedStatus();
+        $this->UpdateEmailStatusVar();
 
         // Weitere API-Funktionen können hier hinzugefügt werden
     }
@@ -977,6 +1015,95 @@ class Reolink extends IPSModule
         if (!$initialized) {
             $this->WriteAttributeBoolean("ApiInitialized", true);
             $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
+        }
+    }
+
+    private function DetectEmailApiVersion(): string
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+
+        $url  = "https://$cameraIP/api.cgi?cmd=GetEmailV20&token=$token";
+        $data = [
+            [
+                "cmd"   => "GetEmailV20",
+                "param" => ["channel" => 0]
+            ]
+        ];
+
+        $res = $this->SendApiRequest($url, $data);
+        if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
+            return 'V20';
+        }
+        return 'LEGACY';
+    }
+
+    private function GetEmailEnabled(): ?bool
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+
+        $apiVer = $this->DetectEmailApiVersion();
+
+        if ($apiVer === 'V20') {
+            $url  = "https://$cameraIP/api.cgi?cmd=GetEmailV20&token=$token";
+            $data = [[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]];
+            $res  = $this->SendApiRequest($url, $data);
+            if (is_array($res) && isset($res[0]['value']['Email']['enable'])) {
+                return (bool)$res[0]['value']['Email']['enable'];
+            }
+        } else {
+            $url  = "https://$cameraIP/api.cgi?cmd=GetEmail&token=$token";
+            $data = [[ "cmd" => "GetEmail", "param" => ["channel" => 0] ]];
+            $res  = $this->SendApiRequest($url, $data);
+            if (is_array($res) && isset($res[0]['value']['Email']['schedule']['enable'])) {
+                return (bool)$res[0]['value']['Email']['schedule']['enable'];
+            }
+        }
+
+        $this->SendDebug("GetEmailEnabled", "Konnte Status nicht ermitteln.", 0);
+        return null;
+    }
+
+    private function SetEmailEnabled(bool $enable): bool
+    {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+
+        $apiVer = $this->DetectEmailApiVersion();
+
+        if ($apiVer === 'V20') {
+            $url  = "https://$cameraIP/api.cgi?cmd=SetEmailV20&token=$token";
+            $data = [[
+                "cmd"   => "SetEmailV20",
+                "param" => [ "Email" => [ "enable" => $enable ? 1 : 0 ] ]
+            ]];
+            $res = $this->SendApiRequest($url, $data);
+        } else {
+            $url  = "https://$cameraIP/api.cgi?cmd=SetEmail&token=$token";
+            $data = [[
+                "cmd"   => "SetEmail",
+                "param" => [ "Email" => [ "schedule" => [ "enable" => $enable ? 1 : 0 ] ] ]
+            ]];
+            $res = $this->SendApiRequest($url, $data);
+        }
+
+        $ok = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
+        if (!$ok) {
+            $this->SendDebug("SetEmailEnabled", "Fehlgeschlagen: " . json_encode($res), 0);
+        }
+        return $ok;
+    }
+
+    private function UpdateEmailStatusVar(): void
+    {
+        $id = @$this->GetIDForIdent("EmailNotify");
+        if ($id === false) {
+            return; // Variable existiert nicht (Feature deaktiviert?)
+        }
+        $val = $this->GetEmailEnabled();
+        if ($val !== null) {
+            $this->SetValue("EmailNotify", $val);
         }
     }
 }
