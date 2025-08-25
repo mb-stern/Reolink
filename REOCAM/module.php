@@ -147,11 +147,11 @@ class Reolink extends IPSModule
                 break;
 
             case "EmailInterval":
-                $ok = $this->SetEmailIntervalSeconds((int)$Value);
+                $ok = $this->SetEmailInterval((int)$Value);
                 if ($ok) {
                     SetValue($this->GetIDForIdent($Ident), (int)$Value);
                 } else {
-                    $this->UpdateEmailIntervalVar();
+                    $this->UpdateEmailVars(); // zurücklesen
                 }
                 break;
 
@@ -927,10 +927,11 @@ class Reolink extends IPSModule
     {
         $this->SendDebug("ExecuteApiRequests", "Starte API-Abfragen...", 0);
 
-        // API-Funktion: GetWhiteLed
+        // LED
         $this->UpdateWhiteLedStatus();
-        $this->UpdateEmailStatusVar();
-        $this->UpdateEmailIntervalVar();
+
+        // E-Mail: Status + Intervall in einem Rutsch
+        $this->UpdateEmailVars();
 
         // Weitere API-Funktionen können hier hinzugefügt werden
     }
@@ -1116,37 +1117,107 @@ class Reolink extends IPSModule
         }
     }
 
-    private function intervalStringToSeconds(string $label): ?int
-    {
+    private function IntervalSecondsToString(int $sec): ?string {
+        switch ($sec) {
+            case 30:   return "30 Seconds";
+            case 60:   return "1 Minute";
+            case 300:  return "5 Minutes";
+            case 600:  return "10 Minutes";
+            case 1800: return "30 Minutes";
+        }
+        return null;
+    }
+
+    private function IntervalStringToSeconds(string $s): ?int {
+        $s = trim($s);
         $map = [
             "30 Seconds" => 30,
             "1 Minute"   => 60,
             "5 Minutes"  => 300,
             "10 Minutes" => 600,
-            "30 Minutes" => 1800,
+            "30 Minutes" => 1800
         ];
+        return $map[$s] ?? null;
+    }
 
-        if (isset($map[$label])) return $map[$label];
+    private function GetEmailInterval(): ?int {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+        $apiVer   = $this->DetectEmailApiVersion();
 
-        // Robustheit: "30 Min", "30 mins", "30 minutes", "10 min." etc.
-        if (preg_match('/^\s*(\d+)\s*(sec(ond)?s?|min(ute)?s?)\s*$/i', $label, $m)) {
-            $n = (int)$m[1];
-            $unit = strtolower($m[2]);
-            if (strpos($unit, 'sec') === 0)  return $n;
-            if (strpos($unit, 'min') === 0)  return $n * 60;
+        if ($apiVer === 'V20') {
+            $url  = "https://$cameraIP/api.cgi?cmd=GetEmailV20&token=$token";
+            $data = [[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]];
+        } else {
+            $url  = "https://$cameraIP/api.cgi?cmd=GetEmail&token=$token";
+            $data = [[ "cmd" => "GetEmail", "param" => ["channel" => 0] ]]; // wichtig: param+channel
         }
+
+        $res = $this->SendApiRequest($url, $data);
+        if (is_array($res) && isset($res[0]['value']['Email'])) {
+            $email = $res[0]['value']['Email'];
+
+            // Manche Firmwares liefern Sekunden direkt:
+            if (isset($email['intervalSec']) && is_numeric($email['intervalSec'])) {
+                return (int)$email['intervalSec'];
+            }
+            // Andere liefern das Label:
+            if (isset($email['interval'])) {
+                $sec = $this->IntervalStringToSeconds((string)$email['interval']);
+                if ($sec !== null) {
+                    return $sec;
+                }
+            }
+        }
+
+        $this->SendDebug("GetEmailInterval", "Intervall unbekannt: ".json_encode($res), 0);
         return null;
     }
 
-    private function intervalSecondsToString(int $sec): ?string
-    {
-        $map = [
-            30   => "30 Seconds",
-            60   => "1 Minute",
-            300  => "5 Minutes",
-            600  => "10 Minutes",
-            1800 => "30 Minutes",
-        ];
-        return $map[$sec] ?? null;
+    private function SetEmailInterval(int $sec): bool {
+        $str = $this->IntervalSecondsToString($sec);
+        if ($str === null) {
+            $this->SendDebug("SetEmailInterval", "Ungültiger Sekundenwert: $sec", 0);
+            return false;
+        }
+
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $token    = $this->ReadAttributeString("ApiToken");
+        $apiVer   = $this->DetectEmailApiVersion();
+
+        if ($apiVer === 'V20') {
+            $url  = "https://$cameraIP/api.cgi?cmd=SetEmailV20&token=$token";
+            $data = [[ "cmd" => "SetEmailV20", "param" => [ "Email" => [ "interval" => $str ] ] ]];
+        } else {
+            $url  = "https://$cameraIP/api.cgi?cmd=SetEmail&token=$token";
+            $data = [[ "cmd" => "SetEmail", "param" => [ "Email" => [ "interval" => $str ] ] ]];
+        }
+
+        $res = $this->SendApiRequest($url, $data);
+        $ok  = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
+        if (!$ok) {
+            $this->SendDebug("SetEmailInterval", "Fehlgeschlagen für '$str': " . json_encode($res), 0);
+        }
+        return $ok;
+    }
+
+    // Bequemer gemeinsamer Updater für beide Variablen
+    private function UpdateEmailVars(): void {
+        // Enable/Disable
+        $idNotify = @$this->GetIDForIdent("EmailNotify");
+        if ($idNotify !== false) {
+            $en = $this->GetEmailEnabled();
+            if ($en !== null) {
+                $this->SetValue("EmailNotify", $en);
+            }
+        }
+        // Intervall
+        $idInt = @$this->GetIDForIdent("EmailInterval");
+        if ($idInt !== false) {
+            $sec = $this->GetEmailInterval();
+            if ($sec !== null) {
+                $this->SetValue("EmailInterval", $sec);
+            }
+        }
     }
 }
