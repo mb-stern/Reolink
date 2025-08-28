@@ -22,8 +22,12 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         $this->RegisterAttributeBoolean("ApiInitialized", false);
+        $this->RegisterAttributeBoolean("TokenRefreshing", false);
+        $this->RegisterAttributeInteger("ApiTokenExpiresAt", 0);
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
+        $this->RegisterAttributeString("EmailApiVersion", ""); // "V20" oder "LEGACY"
+
 
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Tier");');
@@ -94,7 +98,7 @@ class Reolink extends IPSModule
         
         if ($this->ReadPropertyBoolean("ApiFunktionen")) {
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
-            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+            $this->SetTimerInterval("TokenRenewalTimer", 3300 * 1000);
             $this->WriteAttributeBoolean("ApiInitialized", false);
             $this->CreateApiVariables();
             $this->GetToken();
@@ -658,50 +662,83 @@ class Reolink extends IPSModule
             $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
             return;
         }
-        
-    
-        $url = "https://$cameraIP/api.cgi?cmd=Login";
-        $data = [
-            [
-                "cmd" => "Login",
-                "param" => [
-                    "User" => [
-                        "Version" => "0",
-                        "userName" => $username,
-                        "password" => $password
-                    ]
-                ]
-            ]
-        ];
-    
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    
-        $response = curl_exec($ch);
-    
-        if ($response === false) {
-            $error = curl_error($ch);
+
+        $sem = "REOCAM_{$this->InstanceID}_GetToken";
+        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($sem, 5000) : true;
+        if (!$entered) {
+            $this->SendDebug("GetToken", "Anderer Login läuft – übersprungen.", 0);
+            return;
+        }
+        $this->WriteAttributeBoolean("TokenRefreshing", true);
+
+        try {
+            $url = "https://$cameraIP/api.cgi?cmd=Login";
+            $data = [[
+                "cmd"   => "Login",
+                "param" => ["User" => ["Version"=>"0","userName"=>$username,"password"=>$password]]
+            ]];
+
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            $response = curl_exec($ch);
+            if ($response === false) {
+                $err = curl_error($ch); curl_close($ch);
+                throw new Exception("cURL-Fehler: $err");
+            }
             curl_close($ch);
-            throw new Exception("cURL-Fehler: $error");
+
+            $this->SendDebug("GetToken", "Antwort: $response", 0);
+            $responseData = json_decode($response, true);
+
+            if (isset($responseData[0]['value']['Token']['name'])) {
+                $token = $responseData[0]['value']['Token']['name'];
+                $this->WriteAttributeString("ApiToken", $token);
+                $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5); // ~1h mit Puffer
+                // proaktives Erneuern: ~50min
+                $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+                $this->SendDebug("GetToken", "Token gespeichert & Ablauf gesetzt.", 0);
+            } else {
+                throw new Exception("Fehler beim Abrufen des Tokens: ".json_encode($responseData));
+            }
+        } finally {
+            $this->WriteAttributeBoolean("TokenRefreshing", false);
+            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
-    
-        curl_close($ch);
-        $this->SendDebug("GetToken", "Antwort: $response", 0);
-    
-        $responseData = json_decode($response, true);
-        if (isset($responseData[0]['value']['Token']['name'])) {
-            $token = $responseData[0]['value']['Token']['name'];
-            $this->WriteAttributeString("ApiToken", $token);
-            $this->SendDebug("GetToken", "Token erfolgreich gespeichert: $token", 0);
-        } else {
-            throw new Exception("Fehler beim Abrufen des Tokens: " . json_encode($responseData));
+    }
+
+    private function BuildUrlWithToken(string $url, string $token): string
+    {
+        $parts = parse_url($url);
+        $query = [];
+        if (isset($parts['query'])) parse_str($parts['query'], $query);
+        $query['token'] = $token;
+
+        $scheme = $parts['scheme'] ?? 'https';
+        $host   = $parts['host']   ?? '';
+        $port   = isset($parts['port']) ? ':' . $parts['port'] : '';
+        $path   = $parts['path']   ?? '';
+
+        return $scheme . '://' . $host . $port . $path . '?' . http_build_query($query);
+    }
+
+    private function EnsureToken(): bool
+    {
+        $token = $this->ReadAttributeString("ApiToken");
+        $exp   = (int)$this->ReadAttributeInteger("ApiTokenExpiresAt");
+        if ($token === "" || time() >= ($exp - 30)) {
+            try { $this->GetToken(); }
+            catch (\Throwable $e) {
+                $this->SendDebug('EnsureToken', 'Token erneuern fehlgeschlagen: '.$e->getMessage(), 0);
+                return false;
+            }
         }
-    }    
+        return $this->ReadAttributeString("ApiToken") !== "";
+    }
     
     private function SendLedRequest(array $ledParams): bool
     {
@@ -739,12 +776,11 @@ class Reolink extends IPSModule
         return $this->SendLedRequest(['bright' => $brightness]);
     }
 
-    private function SendApiRequest(string $url, array $data)
+    private function SendApiRequest(string $url, array $data, bool $retryOnAuth = true, bool $suppressErrorLog = false)
     {
-        // Anfrage-Daten debuggen
         $this->SendDebug("SendApiRequest", "URL: $url", 0);
         $this->SendDebug("SendApiRequest", "Daten: " . json_encode($data), 0);
-    
+
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -752,45 +788,54 @@ class Reolink extends IPSModule
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    
         $response = curl_exec($ch);
-    
-        // Fehler beim Abruf debuggen
+
         if ($response === false) {
             $error = curl_error($ch);
-            $this->SendDebug("SendApiRequest", "cURL-Fehler: $error", 0);
-            $this->LogMessage("Reolink: cURL-Fehler: $error", KL_ERROR);
             curl_close($ch);
+            if (!$suppressErrorLog) {
+                $this->SendDebug("SendApiRequest", "cURL-Fehler: $error", 0);
+                $this->LogMessage("Reolink: cURL-Fehler: $error", KL_ERROR);
+            }
             return null;
         }
-    
         curl_close($ch);
-    
-        // Antwort debuggen
+
         $this->SendDebug("SendApiRequest", "Antwort: $response", 0);
-    
         $responseData = json_decode($response, true);
-    
-        // Debug-Ausgabe für die decodierten Daten
-        if ($responseData !== null) {
-            $this->SendDebug("SendApiRequest", "Decoded Response: " . json_encode($responseData), 0);
-        } else {
-            $this->SendDebug("SendApiRequest", "Antwort konnte nicht decodiert werden.", 0);
+        if ($responseData === null) {
+            if (!$suppressErrorLog) $this->SendDebug("SendApiRequest", "Antwort konnte nicht decodiert werden.", 0);
+            return null;
         }
-    
-        // Prüfung der API-Antwort
-        if (!isset($responseData[0]['code']) || $responseData[0]['code'] !== 0) {
+
+        // Erfolg
+        if (isset($responseData[0]['code']) && (int)$responseData[0]['code'] === 0) {
+            return $responseData;
+        }
+
+        // Auth-Fehler -> Token erneuern + einmaliger Retry
+        $rspCode = $responseData[0]['error']['rspCode'] ?? null;
+        if ($retryOnAuth && (int)$rspCode === -6) {
+            $this->SendDebug("SendApiRequest", "Auth-Fehler (-6). Token-Refresh + Retry...", 0);
+            try {
+                $this->GetToken();
+                $newToken = $this->ReadAttributeString("ApiToken");
+                if ($newToken !== "") {
+                    $retryUrl = $this->BuildUrlWithToken($url, $newToken);
+                    return $this->SendApiRequest($retryUrl, $data, false, $suppressErrorLog);
+                }
+            } catch (\Throwable $e) {
+                if (!$suppressErrorLog) $this->SendDebug("SendApiRequest", "Token-Refresh fehlgeschlagen: ".$e->getMessage(), 0);
+            }
+        }
+
+        if (!$suppressErrorLog) {
             $this->SendDebug("SendApiRequest", "API-Befehl fehlgeschlagen: " . json_encode($responseData), 0);
             $this->LogMessage("Reolink: API-Befehl fehlgeschlagen: " . json_encode($responseData), KL_ERROR);
-            return null;
         }
-    
-        // Erfolgreiche Antwort debuggen
-        $this->SendDebug("SendApiRequest", "API-Befehl erfolgreich: " . json_encode($responseData), 0);
-    
-        return $responseData;
+        return null;
     }
-    
+
     private function CreateApiVariables()
     {
         // White LED-Variable
@@ -946,103 +991,49 @@ class Reolink extends IPSModule
 
     public function ExecuteApiRequests()
     {
+        if (!$this->EnsureToken()) {
+            $this->SendDebug("ExecuteApiRequests", "Kein gültiger Token – Abfragen übersprungen.", 0);
+            return;
+        }
         $this->SendDebug("ExecuteApiRequests", "Starte API-Abfragen...", 0);
 
-        // LED
         $this->UpdateWhiteLedStatus();
-
-        // E-Mail: Status + Intervall in einem Rutsch
         $this->UpdateEmailVars();
-
-        // Weitere API-Funktionen können hier hinzugefügt werden
     }
 
     private function UpdateWhiteLedStatus()
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
-        $token = $this->ReadAttributeString("ApiToken");
-    
-        $url = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
-        $data = json_encode([
-            [
-                "cmd" => "GetWhiteLed",
-                "action" => 0,
-                "param" => [
-                    "channel" => 0
-                ]
-            ]
-        ]);
-    
-        $this->SendDebug("UpdateWhiteLedStatus", "Anfrage-URL: $url", 0);
-    
-        // cURL-Setup
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-    
-        $response = curl_exec($ch);
-        if ($response === false) {
-            $error = curl_error($ch);
-            curl_close($ch);
-            $this->SendDebug("UpdateWhiteLedStatus", "cURL-Fehler: $error", 0);
+        $token    = $this->ReadAttributeString("ApiToken");
+
+        $url  = "https://$cameraIP/api.cgi?cmd=GetWhiteLed&token=$token";
+        $data = [[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]];
+
+        $responseData = $this->SendApiRequest($url, $data);
+        if (!$responseData || !isset($responseData[0]['value']['WhiteLed'])) {
+            $this->SendDebug("UpdateWhiteLedStatus", "Ungültige Antwort", 0);
             return;
         }
-        curl_close($ch);
-    
-        $this->SendDebug("UpdateWhiteLedStatus", "Antwort: $response", 0);
-    
-        $responseData = json_decode($response, true);
-        if ($responseData === null || !isset($responseData[0]['value']['WhiteLed'])) {
-            $this->SendDebug("UpdateWhiteLedStatus", "Ungültige Antwort oder fehlende 'WhiteLed'-Daten", 0);
-            return;
-        }
-    
+
         $whiteLedData = $responseData[0]['value']['WhiteLed'];
-    
-        // Prüfen, ob Variablen initialisiert wurden
-        $initialized = $this->ReadAttributeBoolean("ApiInitialized");
-    
-        // Mapping JSON -> Variablen
-        $mapping = [
-            'state'  => 'WhiteLed',
-            'mode'   => 'Mode',
-            'bright' => 'Bright'
-        ];
-    
-        // Aktualisiere Variablen
+        $initialized  = $this->ReadAttributeBoolean("ApiInitialized");
+
+        $mapping = ['state'=>'WhiteLed','mode'=>'Mode','bright'=>'Bright'];
         foreach ($mapping as $jsonKey => $variableIdent) {
-            if (isset($whiteLedData[$jsonKey])) {
-                $newValue = $whiteLedData[$jsonKey];
-                $variableID = @$this->GetIDForIdent($variableIdent);
-    
-                if ($variableID !== false) {
-                    $currentValue = GetValue($variableID);
-    
-                    // Typkonvertierung für boolesche Werte
-                    if (is_bool($currentValue)) {
-                        $newValue = (bool)$newValue;
-                    }
-    
-                    // Initialisieren oder aktualisieren
-                    if (!$initialized || $currentValue !== $newValue) {
-                        $this->SetValue($variableIdent, $newValue);
-                        $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert: $currentValue -> $newValue", 0);
-                    } else {
-                        $this->SendDebug("UpdateWhiteLedStatus", "Keine Änderung für '$variableIdent' ($currentValue)", 0);
-                    }
-                } else {
-                    $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' existiert nicht", 0);
-                }
-            } else {
-                $this->SendDebug("UpdateWhiteLedStatus", "Key '$jsonKey' nicht in der Antwort vorhanden", 0);
+            if (!array_key_exists($jsonKey, $whiteLedData)) continue;
+            $newValue = $whiteLedData[$jsonKey];
+            $variableID = @$this->GetIDForIdent($variableIdent);
+            if ($variableID === false) continue;
+
+            $currentValue = GetValue($variableID);
+            if (is_bool($currentValue)) $newValue = (bool)$newValue;
+
+            if (!$initialized || $currentValue !== $newValue) {
+                $this->SetValue($variableIdent, $newValue);
+                $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert.", 0);
             }
         }
-    
-        // Initialisierung abschließen
+
         if (!$initialized) {
             $this->WriteAttributeBoolean("ApiInitialized", true);
             $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
@@ -1051,22 +1042,26 @@ class Reolink extends IPSModule
 
     private function DetectEmailApiVersion(): string
     {
+        // Cache?
+        $cached = $this->ReadAttributeString("EmailApiVersion");
+        if ($cached === "V20" || $cached === "LEGACY") return $cached;
+
+        if (!$this->EnsureToken()) return "LEGACY"; // konservativ
+
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $token    = $this->ReadAttributeString("ApiToken");
 
-        $url  = "https://$cameraIP/api.cgi?cmd=GetEmailV20&token=$token";
-        $data = [
-            [
-                "cmd"   => "GetEmailV20",
-                "param" => ["channel" => 0]
-            ]
-        ];
-
-        $res = $this->SendApiRequest($url, $data);
-        if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
-            return 'V20';
+        // Erst V20 probieren – aber OHNE Fehler ins Log zu schreiben
+        $urlV20  = "https://$cameraIP/api.cgi?cmd=GetEmailV20&token=$token";
+        $dataV20 = [[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]];
+        $resV20  = $this->SendApiRequest($urlV20, $dataV20, true, /*suppressErrorLog*/ true);
+        if (is_array($resV20) && isset($resV20[0]['code']) && $resV20[0]['code'] === 0) {
+            $this->WriteAttributeString("EmailApiVersion", "V20");
+            return "V20";
         }
-        return 'LEGACY';
+
+        $this->WriteAttributeString("EmailApiVersion", "LEGACY");
+        return "LEGACY";
     }
 
     private function GetEmailEnabled(): ?bool
