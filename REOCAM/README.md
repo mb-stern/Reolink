@@ -35,6 +35,7 @@ Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit de
 - Reolink E1 Outdoor (nicht alle Hardware-Versionen)
 - Reolink RLC-520A
 - Reolink E1 ZOOM
+- Reolink E540
 
 Akkubetriebenen Reolink-Kameras (insbsondere Argus Modelle) unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
 
