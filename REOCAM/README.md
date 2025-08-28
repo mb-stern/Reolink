@@ -26,17 +26,17 @@ Das Modul kann folgendes:
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
 - Main- oder Substream angezeigt.
-- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers.
+- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers und steuern von Mailfunktionen.
 
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
 - Reolink Duo 2
 - Reolink RLC-810A
-- Reolink Doorbell (nicht Retail-Version obwohl dieselbe Hardware-Version)
+- Reolink Doorbell
 - Reolink E1 Outdoor (nicht alle Hardware-Versionen)
 - Reolink RLC-520A
 - Reolink E1 ZOOM
 
-Akkubetriebenen Reolink-Kameras unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
+Akkubetriebenen Reolink-Kameras (insbsondere Argus Modelle) unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
@@ -101,7 +101,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
-Version 2.6 (25.07.2025)
+Version 2.6 (25.08.2025)
 - Neue API-Funktion 'Mailversand'. Die SMTP-Konfiguration ist im Kameraintrface vorzunehmen. Im Modul kann der Mailversand de/aktiviert (zb bei Abwesenheit), das Versand-Intervall eingestellt und der Mailinhalt bestimmt werden.
 - Einige Code Modifikationen
 
