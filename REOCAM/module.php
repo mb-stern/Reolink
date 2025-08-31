@@ -1350,7 +1350,8 @@ private function SetEmailContent(int $mode): bool
             $presetRows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
-        $btn = 42; // Kantenlänge für die Richtungsbuttons
+        // kompaktes Styling wie vorher
+        $btn = 42; // Kantenlänge Buttons
         $gap = 6;  // Abstand
 
         $html = <<<HTML
@@ -1361,7 +1362,7 @@ private function SetEmailContent(int $mode): bool
     --gap: {$gap}px;
     --fs: 16px;
     --radius: 10px;
-    max-width: 560px;
+    max-width: 520px;
     margin: 0 auto;
     user-select: none;
     }
@@ -1395,35 +1396,40 @@ private function SetEmailContent(int $mode): bool
     #ptz-wrap .right { grid-column:3; grid-row:2; }
     #ptz-wrap .down  { grid-column:2; grid-row:3; }
 
-    #ptz-wrap .section-title{ font-weight:600; margin: 12px 0 6px 0; }
+    #ptz-wrap .section-title{ font-weight: 600; margin: 10px 0 6px 0; }
+
     #ptz-wrap .presets{ display:block; }
     #ptz-wrap .preset-row{ margin-bottom: var(--gap); }
     #ptz-wrap .preset{
     width: 100%;
+    height: auto;
     min-height: 36px;
     padding: 8px 12px;
     text-align: left;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
 
-    /* Preset-Verwaltung */
-    #ptz-wrap .manage{ margin-top: 12px; border:1px solid #e6e6e6; border-radius: var(--radius); padding:10px; background:#fafafa; }
-    #ptz-wrap .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    #ptz-wrap .row label{ font-size: 14px; opacity:.85; }
-    #ptz-wrap input[type="number"], #ptz-wrap input[type="text"]{
-    height: 32px; padding: 6px 8px; border-radius: 8px; border:1px solid #cfcfcf; background:#fff; box-sizing:border-box;
+    /* Kompakte Verwaltungszeile (wie Toolleiste, klein, einzeilig) */
+    #ptz-wrap .manage{
+    margin-top: 10px;
+    display:flex; gap:6px; align-items:center; flex-wrap:wrap;
     }
-    #ptz-wrap input[type="number"]{ width: 80px; }
-    #ptz-wrap input[type="text"]{ flex:1; min-width: 180px; }
-    #ptz-wrap .btnbar{ display:flex; gap:8px; margin-top: 8px; }
-    #ptz-wrap .btnbar button{ height: 36px; padding: 6px 10px; }
-
-    #ptz-wrap .status{ display:block; margin-top:8px; font-size:14px; opacity:.85; }
+    #ptz-wrap .manage input[type="number"]{
+    width: 72px; height: 30px; padding: 4px 6px; border:1px solid #cfcfcf; border-radius:8px;
+    }
+    #ptz-wrap .manage input[type="text"]{
+    flex:1; min-width: 160px; height: 30px; padding: 4px 6px; border:1px solid #cfcfcf; border-radius:8px;
+    }
+    #ptz-wrap .manage button{
+    height: 32px; padding: 4px 8px;
+    }
+    #ptz-wrap .status{ display:block; margin-top:6px; font-size:14px; opacity:.85; }
     #ptz-wrap .ok{ color:#2e7d32; }  /* grün */
     #ptz-wrap .err{ color:#c62828; } /* rot  */
-    #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
     </style>
 
+    <!-- 1) Pfeil-Grid (wie vorher) -->
     <div class="grid">
     <button data-dir="up"    class="dir up"    title="Hoch"   aria-label="Hoch">▲</button>
     <button data-dir="left"  class="dir left"  title="Links"  aria-label="Links">◀</button>
@@ -1431,24 +1437,19 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
+    <!-- 2) Presets (wie vorher direkt unter dem Grid) -->
     <div class="section-title">Presets</div>
     <div class="presets">
     {$presetRows}
     </div>
 
-    <div class="section-title">Preset verwalten</div>
+    <!-- 3) Kompakte Verwaltung (klein, einzeilig, unter der Liste) -->
     <div class="manage">
-    <div class="row">
-        <label for="ptz-id">ID</label>
-        <input type="number" id="ptz-id" min="0" step="1" value="0"/>
-        <label for="ptz-name">Name</label>
-        <input type="text" id="ptz-name" maxlength="32" placeholder="optional (max. 32 Zeichen)"/>
-    </div>
-    <div class="btnbar">
-        <button id="btn-save"   title="Aktuelle Position als Preset speichern">Speichern</button>
-        <button id="btn-rename" title="Preset umbenennen">Umbenennen</button>
-        <button id="btn-delete" title="Preset löschen">Löschen</button>
-    </div>
+    <input type="number" id="ptz-id"   min="0" step="1" value="0" title="Preset-ID"/>
+    <input type="text"   id="ptz-name" maxlength="32" placeholder="Name (optional)"/>
+    <button id="btn-save"   title="Aktuelle Position als Preset speichern">Speichern</button>
+    <button id="btn-rename" title="Preset umbenennen">Umbenennen</button>
+    <button id="btn-delete" title="Preset löschen">Löschen</button>
     </div>
 
     <div class="status" id="ptz-msg"></div>
@@ -1488,6 +1489,7 @@ private function SetEmailContent(int $mode): bool
         var btn = ev.target.closest("button");
         if (!btn) return;
 
+        // Pfeile / Presets
         if (btn.hasAttribute("data-dir")) {
         call(btn.getAttribute("data-dir"));
         return;
@@ -1496,7 +1498,8 @@ private function SetEmailContent(int $mode): bool
         call("preset:" + btn.getAttribute("data-preset"));
         return;
         }
-        // Verwaltung:
+
+        // Verwaltung
         var id = parseInt(idIn.value, 10);
         var name = (nameIn.value || "").trim();
 
@@ -1791,17 +1794,54 @@ private function SetEmailContent(int $mode): bool
     }
 
     /** Preset umbenennen (Firmware-Varianten nacheinander probieren) */
-    private function ptzRenamePreset(int $id, string $name): bool {
-        $body = ['channel'=>0,'id'=>$id,'name'=>$name];
+    private function ptzRenamePreset(int $id, string $name): bool
+    {
+        $name = trim($name);
+        if ($name === '') return false;
 
-        // a) Symmetrisch zu GetPtzPreset
-        if (is_array($this->postCmdDual('SetPtzPreset', $body, 'PtzPreset', /*suppress*/true))) return true;
+        // Normalisieren (max 32, nur harmlose Zeichen)
+        $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
+        $name = mb_substr($name, 0, 32, 'UTF-8');
 
-        // b) Über "PtzPreset" mit cmd=SetName
-        if (is_array($this->postCmdDual('PtzPreset', $body + ['cmd'=>'SetName'], 'PtzPreset', /*suppress*/true))) return true;
+        // A) Sehr häufig: SetPtzPreset mit table-Array (nested)
+        $payloadA = [[
+            'cmd'   => 'SetPtzPreset',
+            'param' => [ 'PtzPreset' => [ 'channel'=>0, 'table' => [ ['id'=>$id, 'name'=>$name] ] ] ]
+        ]];
+        $r = $this->apiCall($payloadA, /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
 
-        // c) Manche FW: PtzCtrl-Variante
-        if (is_array($this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/true))) return true;
+        // B) SetPtzPreset (flat)
+        $payloadB = [[
+            'cmd'   => 'SetPtzPreset',
+            'param' => [ 'channel'=>0, 'id'=>$id, 'name'=>$name ]
+        ]];
+        $r = $this->apiCall($payloadB, /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+
+        // C) PtzPreset mit cmd=SetName (nested)
+        $payloadC = [[
+            'cmd'   => 'PtzPreset',
+            'param' => [ 'PtzPreset' => [ 'cmd'=>'SetName', 'channel'=>0, 'id'=>$id, 'name'=>$name ] ]
+        ]];
+        $r = $this->apiCall($payloadC, /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+
+        // D) PtzPreset mit cmd=SetName (flat)
+        $payloadD = [[
+            'cmd'   => 'PtzPreset',
+            'param' => [ 'cmd'=>'SetName', 'channel'=>0, 'id'=>$id, 'name'=>$name ]
+        ]];
+        $r = $this->apiCall($payloadD, /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+
+        // E) Fallback: PtzCtrl SetPresetName
+        $payloadE = [[
+            'cmd'   => 'PtzCtrl',
+            'param' => [ 'PtzCtrl' => [ 'channel'=>0, 'op'=>'SetPresetName', 'id'=>$id, 'name'=>$name ] ]
+        ]];
+        $r = $this->apiCall($payloadE, /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
 
         $this->SendDebug('PTZ/Rename',"Fehlgeschlagen für id=$id, name=$name",0);
         return false;
