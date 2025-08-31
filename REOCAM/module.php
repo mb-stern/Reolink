@@ -29,6 +29,8 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("ApiToken", "");
         $this->RegisterAttributeString("EmailApiVersion", ""); // "V20" oder "LEGACY"
         $this->RegisterAttributeString("PtzStyle", ""); // "", "flat" oder "nested"
+        $this->RegisterAttributeString("GuardId", "");   // <— neu: Cache für Guard/Monitor-ID
+
 
 
 
@@ -1315,30 +1317,31 @@ private function SetEmailContent(int $mode): bool
 
     private function DetectPTZ(): bool
     {
-        // Fähigkeit abfragen (optional – nicht jede FW liefert das konsistent)
-        $res = $this->apiCall([[ "cmd"=>"GetAbility", "param"=>["channel"=>0] ]], true);
-        if (is_array($res) && isset($res[0]['value'])) {
-            $v = $res[0]['value'];
-            $ability = $v['Ability'] ?? $v['ability'] ?? $v['abilityChn'] ?? null;
-            if (is_array($ability) && isset($ability[0]) && is_array($ability[0])) $ability = $ability[0];
+        // 1) Harmloser Probe-Call: Stop (lernt nebenbei flat/nested)
+        $r = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+            return true;
+        }
 
-            if (is_array($ability)) {
-                $flag = $ability['ptz'] ?? $ability['PTZ'] ?? $ability['ptzType'] ?? $ability['ptzCtrl'] ?? $ability['ptzSupport'] ?? null;
-                if ((is_bool($flag) && $flag) || (is_numeric($flag) && (int)$flag > 0)) {
-                    // Stil per PtzCtrl-Stop kalibrieren (tut nicht weh)
-                    $probe = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"Stop"], "PtzCtrl", true);
-                    return true;
-                }
+        // 2) Presets abrufen (wenn geht, ist PTZ vorhanden)
+        $r2 = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
+        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) {
+            return true;
+        }
+
+        // 3) (Optional) Fähigkeit prüfen – nicht immer zuverlässig
+        $r3 = $this->apiCall([[ 'cmd'=>'GetAbility', 'param'=>['channel'=>0] ]], /*suppress*/ true);
+        if (is_array($r3) && isset($r3[0]['value'])) {
+            $v = $r3[0]['value'];
+            $ab = $v['Ability'] ?? $v['ability'] ?? $v['abilityChn'] ?? null;
+            if (is_array($ab) && isset($ab[0]) && is_array($ab[0])) $ab = $ab[0];
+            if (is_array($ab)) {
+                $flag = $ab['ptz'] ?? $ab['PTZ'] ?? $ab['ptzType'] ?? $ab['ptzCtrl'] ?? $ab['ptzSupport'] ?? null;
+                if ((is_bool($flag) && $flag) || (is_numeric($flag) && (int)$flag > 0)) return true;
             }
         }
 
-        // Robust: PtzCtrl Stop (auto flat/nested) ⇒ setzt nebenbei den Stil
-        $probe = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"Stop"], "PtzCtrl", true);
-        if (is_array($probe)) return true;
-
-        // Alternativ: Presets
-        $probe2 = $this->apiCallCmd("GetPtzPreset", ["channel"=>0], "GetPtzPreset", true);
-        return is_array($probe2);
+        return false;
     }
 
     private function CreateOrUpdatePTZHtml(): void
