@@ -16,19 +16,20 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
-        $this->RegisterPropertyBoolean("ApiFunktionen", true);
         $this->RegisterPropertyBoolean("EnablePolling", false);
+        $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);
+        $this->RegisterPropertyBoolean("EnableApiEmail", true);
+        $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyInteger("PollingInterval", 2);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
         
         $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeBoolean("TokenRefreshing", false);
-        $this->RegisterAttributeBoolean("HasPTZ", false);
         $this->RegisterAttributeInteger("ApiTokenExpiresAt", 0);
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
-        $this->RegisterAttributeString("EmailApiVersion", ""); // "V20" oder "LEGACY"
-        $this->RegisterAttributeString("PtzStyle", ""); // "", "flat" oder "nested"
+        $this->RegisterAttributeString("EmailApiVersion", "");
+        $this->RegisterAttributeString("PtzStyle", "");
 
 
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -45,34 +46,30 @@ class Reolink extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-    
-        // Sicherstellen, dass der Hook existiert
+
+        // --- Hook sicherstellen ---
         $hookPath = $this->ReadAttributeString("CurrentHook");
-        
-    
-        // Wenn der Hook-Pfad leer ist, initialisiere ihn
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
             $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
         }
-    
-        // Webhook-Pfad in der Form anzeigen
+        // Webhook-Pfad im Formular anzeigen
         $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
 
-        // Stream-URL aktualisieren
+        // --- Stream aktualisieren ---
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-    
-        // Verwalte Variablen und andere Einstellungen
+
+        // --- Bewegungs-/Snapshot-/Archiv-/Test-/Besucher-Elemente ---
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) {
             $this->CreateMoveVariables();
         } else {
             $this->RemoveMoveVariables();
         }
-    
+
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
             $this->RemoveSnapshots();
         }
-    
+
         if ($this->ReadPropertyBoolean("ShowArchives")) {
             $this->CreateOrUpdateArchives();
         } else {
@@ -84,35 +81,52 @@ class Reolink extends IPSModule
         } else {
             $this->RemoveTestElements();
         }
-        
+
         if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
             $this->CreateVisitorElements();
         } else {
             $this->RemoveVisitorElements();
         }
-        
+
+        // --- Polling ---
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = $this->ReadPropertyInteger("PollingInterval");
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
         } else {
             $this->SetTimerInterval("PollingTimer", 0);
         }
-        
-        if ($this->ReadPropertyBoolean("ApiFunktionen")) {
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); 
-            $this->SetTimerInterval("TokenRenewalTimer", 3300 * 1000);
-            $this->WriteAttributeBoolean("ApiInitialized", false);
-            $this->CreateApiVariables();
-            $this->GetToken();
-            $this->ExecuteApiRequests();
 
+        // --- Einzelschalter für API-Funktionen ---
+        $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
+
+        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ);
+
+        if ($anyFeatureOn) {
+            // Timer für periodische API-Abfragen / Token
+            $this->SetTimerInterval("ApiRequestTimer",   10 * 1000);
+            $this->SetTimerInterval("TokenRenewalTimer", 3300 * 1000);
+
+            // Initialzustand zurücksetzen, Variablen anlegen (feature-aware), Token holen, erste Abfragen
+            $this->WriteAttributeBoolean("ApiInitialized", false);
+            $this->CreateApiVariables();   // legt nur an, was per Schalter aktiv ist
+            $this->GetToken();
+            $this->ExecuteApiRequests();   // aktualisiert nur aktive Feature-Gruppen
         } else {
-            $this->SetTimerInterval("ApiRequestTimer", 0);
+            // Alles aus: Timer stoppen, Variablen entfernen, PTZ-UI ausblenden
+            $this->SetTimerInterval("ApiRequestTimer",   0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->RemoveApiVariables();
+            $this->RemovePTZUI();
         }
 
-        $this->CheckAndCreatePTZUI();
+        // --- PTZ-UI nur bei aktivem PTZ-Schalter ---
+        if ($enablePTZ) {
+            $this->CheckAndCreatePTZUI();
+        } else {
+            $this->RemovePTZUI();
+        }
     }
 
     public function RequestAction($Ident, $Value)
@@ -927,102 +941,105 @@ class Reolink extends IPSModule
 
     private function CreateApiVariables()
     {
-        // White LED-Variable
-        if (!@$this->GetIDForIdent("WhiteLed")) {
-            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
-            $this->EnableAction("WhiteLed");
-        }
-    
-        // Mode-Variable
-        if (!IPS_VariableProfileExists("REOCAM.WLED")) {
-            IPS_CreateVariableProfile("REOCAM.WLED", 1); //1 für Integer
-            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1); //Min, Max, Schritt
-            IPS_SetVariableProfileDigits("REOCAM.WLED", 0); //Nachkommastellen
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
-        }
+        $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
 
-        if (!@$this->GetIDForIdent("Mode")) {
-            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
-            $this->EnableAction("Mode");
-        }
-    
-        // Bright-Variable
-        if (!@$this->GetIDForIdent("Bright")) {
-            $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
-            $this->EnableAction("Bright");
-        }
-
-        // E-Mail Versand schalten
-        if (!@$this->GetIDForIdent("EmailNotify")) {
-            $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 3);
-            $this->EnableAction("EmailNotify");
-        }
-
-        if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
-            IPS_CreateVariableProfile("REOCAM.EmailInterval", 1); // Integer
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
-        } 
-
-        if (!@$this->GetIDForIdent("EmailInterval")) {
-        $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 4);
-        $this->EnableAction("EmailInterval");
-        }
-
-        // Profil für E-Mail-Inhalt
-        if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
-            IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video", "", -1);
-        }
-        if (!@$this->GetIDForIdent("EmailContent")) {
-            $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 5);
-            $this->EnableAction("EmailContent");
-        }
-    }
-
-    private function RemoveApiVariables()
-    {
-        // Standard-API-Variablen
-        $idents = ["WhiteLed", "Mode", "Bright", "EmailNotify", "EmailInterval", "EmailContent"];
-        foreach ($idents as $ident) {
-            $id = @$this->GetIDForIdent($ident);
-            if ($id !== false) {
-                $this->UnregisterVariable($ident);
+        /* --- WHITE LED --- */
+        if ($enableWhiteLed) {
+            if (!IPS_VariableProfileExists("REOCAM.WLED")) {
+                IPS_CreateVariableProfile("REOCAM.WLED", 1);
+                IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1);
+                IPS_SetVariableProfileDigits("REOCAM.WLED", 0);
+                IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
+            }
+            if (!@$this->GetIDForIdent("WhiteLed")) {
+                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
+                $this->EnableAction("WhiteLed");
+            }
+            if (!@$this->GetIDForIdent("Mode")) {
+                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
+                $this->EnableAction("Mode");
+            }
+            if (!@$this->GetIDForIdent("Bright")) {
+                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 2);
+                $this->EnableAction("Bright");
+            }
+        } else {
+            foreach (["WhiteLed","Mode","Bright"] as $ident) {
+                $id = @$this->GetIDForIdent($ident);
+                if ($id !== false) $this->UnregisterVariable($ident);
             }
         }
 
-        $this->RemovePTZUI();
-    }
+        /* --- EMAIL --- */
+        if ($enableEmail) {
+            if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
+                IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
+            }
+            if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
+                IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video", "", -1);
+            }
+            if (!@$this->GetIDForIdent("EmailNotify")) {
+                $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 3);
+                $this->EnableAction("EmailNotify");
+            }
+            if (!@$this->GetIDForIdent("EmailInterval")) {
+                $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 4);
+                $this->EnableAction("EmailInterval");
+            }
+            if (!@$this->GetIDForIdent("EmailContent")) {
+                $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 5);
+                $this->EnableAction("EmailContent");
+            }
+        } else {
+            foreach (["EmailNotify","EmailInterval","EmailContent"] as $ident) {
+                $id = @$this->GetIDForIdent($ident);
+                if ($id !== false) $this->UnregisterVariable($ident);
+            }
+        }
 
-    private function RemovePTZUI(): void
-    {
-        $id = @$this->GetIDForIdent("PTZ_HTML");
-        if ($id !== false) {
-            // komplett entfernen statt nur ausblenden/platzhalter setzen
-            $this->UnregisterVariable("PTZ_HTML");
-            $this->SendDebug('PTZ', 'PTZ_HTML entfernt (kein PTZ erkannt / deaktiviert).', 0);
+        /* --- PTZ (HTML-Box) --- */
+        if ($enablePTZ) {
+            // anlegen (falls fehlt)
+            if (!@$this->GetIDForIdent("PTZ_HTML")) {
+                $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
+            }
+            // UI jetzt erzeugen/aktualisieren (setzt nur bei Änderung)
+            $this->CreateOrUpdatePTZHtml();
+        } else {
+            // komplett entfernen (nicht nur verstecken)
+            $id = @$this->GetIDForIdent("PTZ_HTML");
+            if ($id !== false) {
+                $this->UnregisterVariable("PTZ_HTML");
+            }
         }
     }
 
     public function ExecuteApiRequests()
     {
-        if (!$this->apiEnsureToken()) {
-            $this->SendDebug("ExecuteApiRequests", "Kein gültiger Token – Abfragen übersprungen.", 0);
-            return;
-        }
-        $this->SendDebug("ExecuteApiRequests", "Starte API-Abfragen...", 0);
+        if (!$this->apiEnsureToken()) return;
 
-        $this->UpdateWhiteLedStatus();
-        $this->UpdateEmailVars();
-        $this->CheckAndCreatePTZUI();
+        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
+            $this->UpdateWhiteLedStatus();
+        }
+        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
+            $this->UpdateEmailVars();
+        }
+        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
+            $this->CheckAndCreatePTZUI();
+        }
     }
 
     private function UpdateWhiteLedStatus()
@@ -1296,20 +1313,12 @@ private function SetEmailContent(int $mode): bool
 
     private function CheckAndCreatePTZUI(): void
     {
-        if (!$this->ReadPropertyBoolean("ApiFunktionen") || !$this->apiEnsureToken()) {
-            // API aus / kein Token -> PTZ-UI weg
+        if (!$this->ReadPropertyBoolean("EnableApiPTZ") || !$this->apiEnsureToken()) {
             $this->RemovePTZUI();
             return;
         }
-
-        $has = $this->DetectPTZ();
-        $this->WriteAttributeBoolean("HasPTZ", $has);
-
-        if ($has) {
-            $this->CreateOrUpdatePTZHtml();   // legt PTZ_HTML an (falls nicht vorhanden)
-        } else {
-            $this->RemovePTZUI();             // löscht PTZ_HTML (falls vorhanden)
-        }
+        // optional: Detection komplett weglassen
+        $this->CreateOrUpdatePTZHtml();
     }
 
     private function DetectPTZ(): bool
