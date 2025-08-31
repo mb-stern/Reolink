@@ -237,49 +237,28 @@ class Reolink extends IPSModule
     {
         $this->SendDebug('Webhook', 'triggered', 0);
 
-        // 1) Versuch: JSON-Body
-        $ptz = null;
-        $raw = file_get_contents('php://input');
-        if ($raw !== false && $raw !== '') {
-            $data = json_decode($raw, true);
-            if (is_array($data) && isset($data['ptz'])) {
-                $ptz = (string)$data['ptz'];
-            }
-        }
-
-        // 2) Fallback: POST- oder GET-Parameter
-        if ($ptz === null) {
-            if (isset($_POST['ptz'])) {
-                $ptz = (string)$_POST['ptz'];
-            } elseif (isset($_GET['ptz'])) {
-                $ptz = (string)$_GET['ptz'];
-            }
-        }
-
-        // 3) PTZ-Steuerung?
-        if ($ptz !== null) {
-            $this->SendDebug('Webhook', 'PTZ='.$ptz, 0);
-            $this->HandlePtzCommand($ptz);
-            header('Content-Type: text/plain; charset=utf-8');
-            echo "OK";
+        // A) Query-Param ?ptz=left unterstützen (schneller Test im Browser)
+        if (isset($_GET['ptz'])) {
+            $this->HandlePtzCommand((string)$_GET['ptz']);
             return;
         }
 
-        // 4) Bestehende Alarm-Verarbeitung (nur wenn sinnvolles JSON vorlag)
-        if ($raw !== false && $raw !== '') {
+        // B) JSON-Body wie bisher
+        $raw = file_get_contents("php://input");
+        if ($raw) {
             $data = json_decode($raw, true);
             if (is_array($data)) {
+                if (isset($data['ptz'])) {
+                    $this->HandlePtzCommand((string)$data['ptz']);
+                    return;
+                }
                 $this->ProcessAllData($data);
-                header('Content-Type: text/plain; charset=utf-8');
-                echo "OK";
                 return;
             }
+            $this->SendDebug('Webhook', 'JSON decode failed', 0);
+        } else {
+            $this->SendDebug('Webhook', 'empty body', 0);
         }
-
-        $this->SendDebug('Webhook', 'No PTZ / no usable payload', 0);
-        header('HTTP/1.1 400 Bad Request');
-        header('Content-Type: text/plain; charset=utf-8');
-        echo "ERROR";
     }
 
     private function ProcessAllData($data)
