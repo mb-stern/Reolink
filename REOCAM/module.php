@@ -53,8 +53,6 @@ class Reolink extends IPSModule
             $hookPath = $this->RegisterHook();
             $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
         }
-        // Webhook-Pfad im Formular anzeigen
-        $this->UpdateFormField("WebhookPath", "caption", "Webhook: " . $hookPath);
 
         // --- Stream aktualisieren ---
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -105,27 +103,39 @@ class Reolink extends IPSModule
 
         if ($anyFeatureOn) {
             // Timer für periodische API-Abfragen / Token
-            $this->SetTimerInterval("ApiRequestTimer",   10 * 1000);
-            $this->SetTimerInterval("TokenRenewalTimer", 3300 * 1000);
+            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
+            // optional schöner: hier 0 lassen, GetToken setzt später ~50min
+            $this->SetTimerInterval("TokenRenewalTimer", 0);
 
-            // Initialzustand zurücksetzen, Variablen anlegen (feature-aware), Token holen, erste Abfragen
+            // Initialzustand zurücksetzen, Variablen anlegen, Token holen, erste Abfragen
             $this->WriteAttributeBoolean("ApiInitialized", false);
             $this->CreateApiVariables();   // legt nur an, was per Schalter aktiv ist
             $this->GetToken();
             $this->ExecuteApiRequests();   // aktualisiert nur aktive Feature-Gruppen
         } else {
-            // Alles aus: Timer stoppen, Variablen entfernen, PTZ-UI ausblenden
+            // Alles aus: Timer stoppen, Variablen entfernen (inkl. PTZ_HTML)
             $this->SetTimerInterval("ApiRequestTimer",   0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->RemoveApiVariables();
-            $this->RemovePTZUI();
         }
+    }
 
-        // --- PTZ-UI nur bei aktivem PTZ-Schalter ---
-        if ($enablePTZ) {
-            $this->CheckAndCreatePTZUI();
-        } else {
-            $this->RemovePTZUI();
+    private function RemoveApiVariables(): void
+    {
+        $idents = [
+            // White LED
+            "WhiteLed", "Mode", "Bright",
+            // Email
+            "EmailNotify", "EmailInterval", "EmailContent",
+            // PTZ
+            "PTZ_HTML"
+        ];
+
+        foreach ($idents as $ident) {
+            $id = @$this->GetIDForIdent($ident);
+            if ($id !== false) {
+                $this->UnregisterVariable($ident);
+            }
         }
     }
 
@@ -194,16 +204,16 @@ class Reolink extends IPSModule
     public function GetConfigurationForm()
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
-    
-        // Webhook-Pfad dynamisch in das Konfigurationsformular einfügen
+
         $hookPath = $this->ReadAttributeString("CurrentHook");
         $webhookElement = [
             "type"    => "Label",
+            "name"    => "WebhookPath",
             "caption" => "Webhook: " . $hookPath
         ];
-    
-        array_splice($form['elements'], 0, 0, [$webhookElement]); // Fügt es an Position 0 ein
-    
+
+        array_splice($form['elements'], 0, 0, [$webhookElement]);
+
         return json_encode($form);
     }
 
@@ -1038,7 +1048,7 @@ class Reolink extends IPSModule
             $this->UpdateEmailVars();
         }
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->CheckAndCreatePTZUI();
+            $this->CreateOrUpdatePTZHtml();
         }
     }
 
@@ -1309,48 +1319,6 @@ private function SetEmailContent(int $mode): bool
             $res  = $this->apiCall([[ "cmd"=>"SetEmail", "param"=> [ "Email" => [ "attachment" => $att ] ] ]]);
             return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
         }
-    }
-
-    private function CheckAndCreatePTZUI(): void
-    {
-        if (!$this->ReadPropertyBoolean("EnableApiPTZ") || !$this->apiEnsureToken()) {
-            $this->RemovePTZUI();
-            return;
-        }
-        // optional: Detection komplett weglassen
-        $this->CreateOrUpdatePTZHtml();
-    }
-
-    private function DetectPTZ(): bool
-    {
-        // A) Presets abrufen – wenn das klappt, ist PTZ sicher vorhanden
-        $rPreset = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
-        $presetOk = is_array($rPreset) && (($rPreset[0]['code'] ?? -1) === 0);
-        if ($presetOk) return true;
-
-        // B) Beweg-OP testen
-        $rCtrl = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
-        $ctrlOk = is_array($rCtrl) && (($rCtrl[0]['code'] ?? -1) === 0);
-
-        if ($ctrlOk) {
-            // C) Fähigkeit prüfen – nur als Verstärker für ctrlOk
-            $rAb = $this->apiCall([[ 'cmd'=>'GetAbility', 'param'=>['channel'=>0] ]], /*suppress*/ true);
-            if (is_array($rAb) && isset($rAb[0]['value'])) {
-                $v  = $rAb[0]['value'];
-                $ab = $v['Ability'] ?? $v['ability'] ?? $v['abilityChn'] ?? null;
-                if (is_array($ab) && isset($ab[0]) && is_array($ab[0])) $ab = $ab[0];
-
-                if (is_array($ab)) {
-                    $flag = $ab['ptz'] ?? $ab['PTZ'] ?? $ab['ptzType'] ?? $ab['ptzCtrl'] ?? $ab['ptzSupport'] ?? null;
-                    if ((is_bool($flag) && $flag) || (is_numeric($flag) && (int)$flag > 0)) {
-                        return true; // ctrlOk + Fähigkeit => PTZ vorhanden
-                    }
-                }
-            }
-        }
-
-        // sonst: kein PTZ
-        return false;
     }
 
     private function CreateOrUpdatePTZHtml(): void

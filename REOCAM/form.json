@@ -49,29 +49,6 @@
       "name": "ShowVisitorElements",
       "caption": "Besucher-Erkennung aktivieren (für Doorbell)"
     },
-
-    {
-      "type": "ExpansionPanel",
-      "caption": "API-Funktionen",
-      "items": [
-        {
-          "type": "CheckBox",
-          "name": "EnableApiWhiteLed",
-          "caption": "White-LED/Spotlight steuern"
-        },
-        {
-          "type": "CheckBox",
-          "name": "EnableApiEmail",
-          "caption": "E-Mail-Benachrichtigungen konfigurieren"
-        },
-        {
-          "type": "CheckBox",
-          "name": "EnableApiPTZ",
-          "caption": "PTZ-Steuerung (HTML-Box) anzeigen"
-        }
-      ]
-    },
-
     {
       "type": "CheckBox",
       "name": "ShowMoveVariables",
@@ -94,7 +71,27 @@
       "minimum": 1,
       "suffix": "Bilder"
     },
-
+    {
+      "type": "ExpansionPanel",
+      "caption": "API-Funktionen",
+      "items": [
+        {
+          "type": "CheckBox",
+          "name": "EnableApiWhiteLed",
+          "caption": "White-LED/Spotlight steuern"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableApiEmail",
+          "caption": "E-Mail-Benachrichtigungen konfigurieren"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableApiPTZ",
+          "caption": "PTZ-Steuerung (HTML-Box) anzeigen"
+        }
+      ]
+    },
     {
       "type": "Label",
       "caption": "Sag danke und unterstütze den Modulentwickler:"
