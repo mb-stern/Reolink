@@ -1380,25 +1380,41 @@ private function SetEmailContent(int $mode): bool
         if ($hook === "") $hook = $this->RegisterHook();
 
         $html = '
-    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:260px">
+    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
+        /* ---- kompakte Maße (einfach hier anpassen) ---- */
+        #ptz-wrap{
+        --btn: 48px;     /* Button-Kante */
+        --gap: 6px;      /* Abstand zwischen Buttons */
+        --fs: 18px;      /* Symbolgröße */
+        --radius: 10px;  /* Ecken */
+        max-width: calc(var(--btn)*3 + var(--gap)*2);
+        margin: 0 auto;  /* zentriert in der Kachel */
+        user-select: none;
+        }
         #ptz-wrap .grid{
         display:grid;
-        grid-template-columns:repeat(3,64px);
-        grid-template-rows:repeat(3,64px);
-        gap:10px;
+        grid-template-columns: repeat(3, var(--btn));
+        grid-template-rows:    repeat(3, var(--btn));
+        gap: var(--gap);
         justify-content:center;
         align-items:center;
-        user-select:none;
         }
         #ptz-wrap button{
-        width:64px;height:64px;
-        border:1px solid #cfcfcf;border-radius:12px;
-        background:#f8f8f8;font-size:20px;cursor:pointer;
-        box-shadow:0 1px 2px rgba(0,0,0,.06);
+        width: var(--btn);
+        height: var(--btn);
+        border: 1px solid #cfcfcf;
+        border-radius: var(--radius);
+        background: #f8f8f8;
+        font-size: var(--fs);
+        line-height: 1;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(0,0,0,.06);
+        box-sizing: border-box;        /* wichtig gegen Scrollbalken */
+        padding: 0;                     /* kein Innenabstand */
         }
-        #ptz-wrap button:hover{ filter:brightness(0.98); }
-        #ptz-wrap button:active{ transform:translateY(1px); }
+        #ptz-wrap button:hover { filter: brightness(.98); }
+        #ptz-wrap button:active{ transform: translateY(1px); }
 
         /* D-Pad-Positionen */
         #ptz-wrap .up    { grid-column:2; grid-row:1; }
@@ -1408,7 +1424,8 @@ private function SetEmailContent(int $mode): bool
         #ptz-wrap .right { grid-column:3; grid-row:2; }
         #ptz-wrap .down  { grid-column:2; grid-row:3; }
 
-        #ptz-wrap .status{ margin-top:8px; min-height:1em; font-size:12px; opacity:.75; text-align:center; }
+        /* Status ausblenden, spart Höhe */
+        #ptz-wrap .status{ display:none; }
     </style>
 
     <div class="grid">
@@ -1436,13 +1453,11 @@ private function SetEmailContent(int $mode): bool
         })
         .then(r => r.text())
         .then(t => {
-        if ((t||"").trim().toUpperCase() === "OK") {
-            msg.textContent = ""; // später gern Feedback anzeigen
-        } else {
-            msg.textContent = "Fehler: " + (t||"");
+        if ((t||"").trim().toUpperCase() !== "OK") {
+            if (msg) msg.textContent = "Fehler: " + (t||"");
         }
         })
-        .catch(() => { msg.textContent = "Netzwerkfehler"; });
+        .catch(() => { if (msg) msg.textContent = "Netzwerkfehler"; });
     }
 
     wrap.addEventListener("click", function(ev){
