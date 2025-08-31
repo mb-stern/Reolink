@@ -23,6 +23,7 @@ class Reolink extends IPSModule
         
         $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeBoolean("TokenRefreshing", false);
+        $this->RegisterAttributeBoolean("HasPTZ", false);
         $this->RegisterAttributeInteger("ApiTokenExpiresAt", 0);
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
@@ -109,6 +110,8 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->RemoveApiVariables();
         }
+
+        $this->CheckAndCreatePTZUI();
     }
 
     public function RequestAction($Ident, $Value)
@@ -232,23 +235,29 @@ class Reolink extends IPSModule
 
     public function ProcessHookData()
     {
-        $rawData = file_get_contents("php://input");
-        $this->SendDebug('Webhook Triggered', 'Reolink Webhook wurde ausgelöst', 0);
+        $raw = file_get_contents("php://input");
+        $this->SendDebug('Webhook', 'triggered', 0);
 
-        if (!empty($rawData)) {
-            $this->SendDebug('Raw Webhook Data', $rawData, 0); // Zeigt das empfangene JSON
-            $data = json_decode($rawData, true);
+        if ($raw) {
+            $data = json_decode($raw, true);
             if (is_array($data)) {
+
+                // PTZ-Steuerung?
+                if (isset($data['ptz'])) {
+                    $this->HandlePtzCommand((string)$data['ptz']);
+                    return;
+                }
+
+                // bestehende Alarm-Verarbeitung
                 $this->ProcessAllData($data);
-            } else {
-                $this->SendDebug('JSON Decoding Error', 'Die empfangenen Rohdaten konnten nicht als JSON decodiert werden.', 0);
+                return;
             }
+            $this->SendDebug('Webhook', 'JSON decode failed', 0);
         } else {
-            $this->LogMessage("Reolink: Keine Daten empfangen oder Datenstrom ist leer.", KL_MESSAGE);
-            $this->SendDebug("Reolink", "Keine Daten empfangen oder Datenstrom ist leer.", 0);
+            $this->SendDebug('Webhook', 'empty body', 0);
         }
     }
-    
+
     private function ProcessAllData($data)
     {
         if (isset($data['alarm']['type'])) {
@@ -1244,5 +1253,127 @@ private function SetEmailContent(int $mode): bool
             $res  = $this->apiCall([[ "cmd"=>"SetEmail", "param"=> [ "Email" => [ "attachment" => $att ] ] ]]);
             return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
         }
+    }
+
+    private function CheckAndCreatePTZUI(): void
+    {
+        if (!$this->apiEnsureToken()) return;
+
+        $has = $this->DetectPTZ();
+        $this->WriteAttributeBoolean("HasPTZ", $has);
+
+        if ($has) {
+            $this->CreateOrUpdatePTZHtml();
+            $this->SendDebug("PTZ", "PTZ erkannt: HTML-Steuerung angelegt.", 0);
+        } else {
+            // Falls vorhanden, UI entfernen
+            $id = @$this->GetIDForIdent("PTZ_HTML");
+            if ($id !== false) $this->UnregisterVariable("PTZ_HTML");
+            $this->SendDebug("PTZ", "Keine PTZ-Funktion erkannt.", 0);
+        }
+    }
+
+    private function DetectPTZ(): bool
+    {
+        // 1) Viele Reolink-Modelle verstehen GetPtzCtrl (harmlos, lesend)
+        $res = $this->apiCall([[
+            "cmd"   => "GetPtzCtrl",
+            "param" => ["channel" => 0]
+        ]], /*suppressError*/ true);
+
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            return true;
+        }
+
+        // 2) Alternativ liefert GetAbility auf manchen FW Stände PTZ-Fähigkeiten
+        $res2 = $this->apiCall([[
+            "cmd"   => "GetAbility",
+            "param" => ["channel" => 0]
+        ]], /*suppressError*/ true);
+
+        if (is_array($res2) && isset($res2[0]['value']['Ability'])) {
+            $ability = $res2[0]['value']['Ability'];
+            if (isset($ability['ptz']) || isset($ability['PTZ'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function CreateOrUpdatePTZHtml(): void
+    {
+        if (!@$this->GetIDForIdent("PTZ_HTML")) {
+            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
+        }
+
+        $hook = $this->ReadAttributeString("CurrentHook");
+        $html = '
+    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:220px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;place-items:center">
+        <button onclick="ptz(\'up\')">▲</button>
+        <button onclick="ptz(\'stop\')">■</button>
+        <button onclick="ptz(\'home\')">⌂</button>
+        <button onclick="ptz(\'left\')">◀</button>
+        <button onclick="ptz(\'down\')">▼</button>
+        <button onclick="ptz(\'right\')">▶</button>
+    </div>
+    </div>
+    <script>
+    function ptz(dir){
+    fetch("'.$hook.'", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ptz: dir})
+    });
+    }
+    </script>';
+        $this->SetValue("PTZ_HTML", $html);
+    }
+
+    private function HandlePtzCommand(string $dir): void
+    {
+        $map = [
+            'left'  => 'Left',
+            'right' => 'Right',
+            'up'    => 'Up',
+            'down'  => 'Down',
+            'stop'  => 'Stop',
+            'home'  => 'Home' // falls unterstützt
+        ];
+        if (!isset($map[$dir])) {
+            $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
+            return;
+        }
+        $op = $map[$dir];
+
+        // Sofort-Stop/Home ohne „Impuls“
+        if ($op === 'Stop' || $op === 'Home') {
+            $this->PtzOp($op);
+            return;
+        }
+
+        // kurzer Impuls (z. B. 250 ms) + Stop
+        $this->PtzOp($op, 5); // speed 1..X (modellabhängig)
+        IPS_Sleep(250);
+        $this->PtzOp('Stop');
+    }
+
+    private function PtzOp(string $op, int $speed = 5): bool
+    {
+        $payload = [[
+            "cmd"   => "PtzCtrl",
+            "param" => [
+                "PtzCtrl" => [
+                    "op"      => $op,
+                    "speed"   => $speed,
+                    "channel" => 0
+                ]
+            ]
+        ]];
+
+        $res = $this->apiCall($payload, /*suppressError*/ false);
+        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=$op: ".json_encode($res), 0);
+        return $ok;
     }
 }
