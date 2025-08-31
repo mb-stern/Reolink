@@ -1376,13 +1376,10 @@ private function SetEmailContent(int $mode): bool
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
 
-        // Hook sicherstellen
-        $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") {
-            $hook = $this->RegisterHook();
-        }
+        $hook = $this->ReadAttributeString("CurrentHook"); // z.B. "/hook/reolink_12345"
+        if ($hook === "") $hook = $this->RegisterHook();
 
-        $uid  = $this->InstanceID; // für eindeutige DOM-IDs
+        $uid  = $this->InstanceID;
         $html = '
     <div id="ptz-'.$uid.'" class="ptz-wrap">
     <div class="grid">
@@ -1400,7 +1397,26 @@ private function SetEmailContent(int $mode): bool
     (function(){
     const ROOT   = document.getElementById("ptz-'.$uid.'");
     const STATUS = ROOT.querySelector(".status");
-    const URL_HOOK = new URL("'.$hook.'", location.origin).toString();
+
+    function resolveHookUrl(path){
+        // Bevorzugt Origin des WebFront-Elternfensters
+        try {
+        if (window.parent && parent.location && parent.location.origin && parent.location.origin !== "null") {
+            return parent.location.origin + path;
+        }
+        } catch(e){ /* Cross-origin? fallback unten */ }
+        // Fallback: eigener Origin
+        if (location && location.origin && location.origin !== "null") {
+        return location.origin + path;
+        }
+        if (location && location.protocol && location.host) {
+        return location.protocol + "//" + location.host + path;
+        }
+        // Letzter Fallback: roher Pfad (funktioniert, wenn iFrame same-origin gerendert wird)
+        return path;
+    }
+
+    const HOOK = resolveHookUrl("'.$hook.'");
 
     ROOT.addEventListener("click", (ev) => {
         const btn = ev.target.closest("button[data-cmd]");
@@ -1408,17 +1424,18 @@ private function SetEmailContent(int $mode): bool
         const cmd = btn.dataset.cmd;
 
         btn.disabled = true;
-        fetch(URL_HOOK, {
+        fetch(HOOK, {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
-        credentials: "same-origin",      // wichtig für WebFront-Auth
+        headers: {"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"},
+        credentials: "include",
         cache: "no-store",
         body: JSON.stringify({ ptz: cmd })
         }).then(r => {
         if (!r.ok) throw new Error("HTTP " + r.status);
+        STATUS.textContent = "";
         }).catch(err => {
         STATUS.textContent = "Netzwerkfehler: " + err.message;
-        setTimeout(() => STATUS.textContent = "", 2000);
+        setTimeout(() => STATUS.textContent = "", 2500);
         }).finally(() => {
         btn.disabled = false;
         });
@@ -1429,25 +1446,26 @@ private function SetEmailContent(int $mode): bool
     <style>
     #ptz-'.$uid.' .grid{
     display:grid;
-    grid-template-columns:repeat(3,48px);
-    grid-template-rows:repeat(3,48px);
+    grid-template-columns:repeat(3,52px);
+    grid-template-rows:repeat(3,52px);
     gap:8px;
     justify-content:center;
     align-items:center;
     user-select:none;
     }
     #ptz-'.$uid.' .btn{
-    width:48px; height:48px;
-    border:1px solid #c9c9c9;
-    border-radius:10px;
-    font-size:18px; line-height:48px;
+    width:52px; height:52px;
+    border:1px solid #cfcfcf;
+    border-radius:12px;
+    font-size:20px;
     cursor:pointer;
-    background:#f7f7f7;
+    background:#f8f8f8;
     box-shadow:0 1px 2px rgba(0,0,0,.08);
     }
+    #ptz-'.$uid.' .btn:hover{ filter:brightness(0.98); }
     #ptz-'.$uid.' .btn:active{ transform: translateY(1px); }
 
-    /* Positionen im 3x3-Raster */
+    /* D-Pad-Positionen */
     #ptz-'.$uid.' .up    { grid-column:2; grid-row:1; }
     #ptz-'.$uid.' .left  { grid-column:1; grid-row:2; }
     #ptz-'.$uid.' .home  { grid-column:2; grid-row:2; }
@@ -1457,7 +1475,7 @@ private function SetEmailContent(int $mode): bool
 
     #ptz-'.$uid.' .status{
     margin-top:6px; min-height:1em;
-    font-size:12px; opacity:.8; text-align:center;
+    font-size:12px; opacity:.75; text-align:center;
     }
     </style>';
 
