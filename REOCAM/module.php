@@ -1473,12 +1473,12 @@ private function SetEmailContent(int $mode): bool
         $op = $map[$dir];
 
         if ($op === 'HOME_SPECIAL') {
-            // robustes Home, inkl. Guard/Preset-Fallbacks
+            // *** hier: direkt die robuste Funktion verwenden ***
             $this->ptzHome();
             return;
         }
 
-        // Ein einziger, sicherer Entry-Point für Pfeile/Stop
+        // Pfeile/Stop impulsartig
         $this->ptzCtrl($op);
     }
 
@@ -1592,68 +1592,36 @@ private function SetEmailContent(int $mode): bool
         return $id;
     }
 
-    /** HOME/Monitor-Point robust anfahren. */
+    /** HOME/Monitor-Point robust anfahren (ohne nerviges Logging auf den Zwischenversuchen). */
     private function ptzHome(): bool
     {
-        $id = $this->getGuardIdCached();
+        // 0) Direkt über SetPtzGuard → toPos (meist korrekt)
+        if ($this->tryGuardToPos()) return true;
 
-        // Variantenliste (verschiedene Firmwares)
+        // 1) Guard-ID holen & via PtzCtrl probieren
+        $id = $this->getGuardIdCached();
         $tries = [];
 
         if ($id !== null) {
             $tries[] = ['op'=>'ToPos',    'extra'=>['id'=>$id]];
             $tries[] = ['op'=>'ToPreset', 'extra'=>['id'=>$id]];
         }
-        $tries[] = ['op'=>'Home',  'extra'=>[]];     // einige Modelle unterstützen das direkt
+        // weitere Kandidaten
+        $tries[] = ['op'=>'Home',  'extra'=>[]];
         $tries[] = ['op'=>'ToPos', 'extra'=>['id'=>0]];
         $tries[] = ['op'=>'ToPos', 'extra'=>['id'=>1]];
 
         foreach ($tries as $t) {
-            if ($this->ptzCtrl($t['op'], $t['extra'], /*pulse*/ 0)) return true;
+            $param = ['channel'=>0, 'op'=>$t['op']] + $t['extra'];
+            // suppress=true, damit "postCmdDual FAIL..." im Debug NICHT spamt
+            $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ true));
+            if ($ok) return true;
         }
 
-        // Spezialbefehl (ältere Firmwares): SetPtzGuard → toPos
-        $r = $this->postCmdDual('SetPtzGuard', ['channel'=>0, 'cmd'=>'toPos'],  'PtzGuard', /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        $r2 = $this->postCmdDual('SetPtzGuard', ['channel'=>0, 'cmdStr'=>'toPos'], 'PtzGuard', /*suppress*/ true);
-        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
-
-        $this->SendDebug('PTZ/HOME', 'Alle Varianten fehlgeschlagen.', 0);
-        return false;
-    }
-
-    /** Fährt die Monitor-/Guard-Position an (Home). */
-    private function PtzGoHome(): bool
-    {
-        // 1) Korrekt verschachtelt: param => { "PtzGuard": {...} }
-        $res = $this->postCmdDual(
-            "SetPtzGuard",
-            ["channel" => 0, "cmdStr" => "toPos"],
-            "PtzGuard",
-            /*suppress*/ true
-        );
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
-
-        // 2) Fallbacks (geräte-/fw-abhängig)
-        //    a) direktes "Home"
-        $res2 = $this->postCmdDual(
-            "PtzCtrl",
-            ["channel"=>0, "op"=>"Home"],
-            "PtzCtrl",
-            /*suppress*/ true
-        );
-        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
-
-        //    b) Guard existiert nicht? einmal setzen + erneut hinfahren
-        $info = $this->postCmdDual("GetPtzGuard", ["channel"=>0], "PtzGuard", true);
+        // 2) Kein Guard gesetzt? aktuellen Blick als Guard speichern und erneut versuchen
+        $info   = $this->postCmdDual("GetPtzGuard", ["channel"=>0], "PtzGuard", true);
         $exists = is_array($info) ? ($info[0]['value']['PtzGuard']['bexistPos'] ?? null) : null;
         if ((int)$exists === 0) {
-            // aktuellen Blick als Guard speichern
             $set = $this->postCmdDual(
                 "SetPtzGuard",
                 ["channel"=>0, "cmdStr"=>"setPos", "bSaveCurrentPos"=>1],
@@ -1661,20 +1629,13 @@ private function SetEmailContent(int $mode): bool
                 /*suppress*/ true
             );
             if (is_array($set) && (($set[0]['code'] ?? -1) === 0)) {
-                // und jetzt nochmal hinfahren
-                $res3 = $this->postCmdDual(
-                    "SetPtzGuard",
-                    ["channel"=>0, "cmdStr"=>"toPos"],
-                    "PtzGuard",
-                    /*suppress*/ false
-                );
-                if (is_array($res3) && (($res3[0]['code'] ?? -1) === 0)) {
-                    return true;
-                }
+                // Cache leeren und gleich nochmal Guard anfahren
+                $this->WriteAttributeString('GuardId', '');
+                if ($this->tryGuardToPos()) return true;
             }
         }
 
-        $this->SendDebug("PTZ", "HOME fehlgeschlagen", 0);
+        $this->SendDebug('PTZ/HOME', 'Alle Varianten fehlgeschlagen.', 0);
         return false;
     }
 
@@ -1692,5 +1653,33 @@ private function SetEmailContent(int $mode): bool
             $this->SendDebug("PTZ", "SetPtzGuard setPos failed: ".json_encode($res), 0);
         }
         return $ok;
+    }
+
+    /** Versucht den Monitor/Guard-Punkt über SetPtzGuard anzufahren (versch. Schreibweisen). */
+    private function tryGuardToPos(): bool
+    {
+        $variants = [
+            // übliche Container + Schreibweisen
+            ["key"=>"PtzGuard", "cmdStr"=>"toPos"],
+            ["key"=>"PtzGuard", "cmdStr"=>"topos"],
+            ["key"=>"PtzGuard", "cmdStr"=>"toGuard"],
+            // manche FW nutzt 'cmd' statt 'cmdStr'
+            ["key"=>"PtzGuard", "cmd"=>"toPos"],
+            ["key"=>"PtzGuard", "cmd"=>"topos"],
+            ["key"=>"PtzGuard", "cmd"=>"toGuard"],
+            // selten: Container heißt 'Guard'
+            ["key"=>"Guard",    "cmdStr"=>"toPos"],
+            ["key"=>"Guard",    "cmd"=>"toPos"],
+        ];
+
+        foreach ($variants as $v) {
+            $body = ["channel"=>0];
+            if (isset($v["cmdStr"])) $body["cmdStr"] = $v["cmdStr"];
+            if (isset($v["cmd"]))    $body["cmd"]    = $v["cmd"];
+
+            $res = $this->postCmdDual("SetPtzGuard", $body, $v["key"], /*suppress*/ true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
+        }
+        return false;
     }
 }
