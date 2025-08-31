@@ -264,23 +264,20 @@ class Reolink extends IPSModule
     public function ProcessHookData()
     {
         while (ob_get_level() > 0) { @ob_end_clean(); }
-        
         $this->SendDebug('Webhook', 'triggered', 0);
 
-        // 1) Versuch: JSON-Body
         $ptz = null;
         $raw = file_get_contents('php://input');
         if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data) && isset($data['ptz'])) {
                 $ptz = (string)$data['ptz'];
+                // <<< Parameter aus JSON verfügbar machen
                 if (isset($data['id']))   $_REQUEST['id']   = $data['id'];
                 if (isset($data['name'])) $_REQUEST['name'] = $data['name'];
-
             }
         }
 
-        // 2) Fallback: POST- oder GET-Parameter
         if ($ptz === null) {
             if (isset($_POST['ptz'])) {
                 $ptz = (string)$_POST['ptz'];
@@ -289,16 +286,15 @@ class Reolink extends IPSModule
             }
         }
 
-        // 3) PTZ-Steuerung?
         if ($ptz !== null) {
-            $this->SendDebug('Webhook', 'PTZ='.$ptz, 0);
-            $this->HandlePtzCommand($ptz);
+            $this->SendDebug('Webhook', 'PTZ='.$ptz.'; id='.($_REQUEST['id']??'').'; name='.($_REQUEST['name']??''), 0);
+            $ok = $this->HandlePtzCommand($ptz);
             header('Content-Type: text/plain; charset=utf-8');
-            echo "OK";
+            echo $ok ? "OK" : "ERROR";
             return;
         }
 
-        // 4) Bestehende Alarm-Verarbeitung (nur wenn sinnvolles JSON vorlag)
+        // ... (der Rest deiner Alarm-Verarbeitung bleibt unverändert)
         if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data)) {
@@ -1327,7 +1323,6 @@ private function SetEmailContent(int $mode): bool
         }
     }
 
-    /** Erzeugt/aktualisiert die PTZ-HTML-Box inkl. Preset-Verwaltung */
     private function CreateOrUpdatePTZHtml(): void
     {
         // Variable anlegen (falls nicht vorhanden) und sichtbar schalten
@@ -1343,72 +1338,53 @@ private function SetEmailContent(int $mode): bool
             $hook = $this->RegisterHook();
         }
 
-        // Presets holen und Buttons bauen (eine Zeile pro Preset mit Fahr-, Umbenenn- und Lösch-Button)
+        // Presets holen und Buttons bauen (eine Zeile pro Preset)
         $presets = $this->getPresetList();
         $presetRows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
-                $pid   = (int)$p['id'];
                 $title = htmlspecialchars($p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $presetRows .= '
-                <div class="preset-row">
-                    <button class="preset" data-preset="'.$pid.'" title="'.$title.'">['.$pid.'] '.$title.'</button>
-                    <button class="preset-rename" data-id="'.$pid.'" title="Umbenennen">✎</button>
-                    <button class="preset-delete" data-id="'.$pid.'" title="Löschen">🗑</button>
-                </div>';
+                $presetRows .= '<div class="preset-row"><button class="preset" data-preset="'.$p['id'].'" title="'.$title.'">'.$title.'</button></div>';
             }
         } else {
             $presetRows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
-        // Verwaltungsbereich zum Speichern/Überschreiben (ID + optional Name)
-        $manage = <<<H
-    <div class="section-title">Preset verwalten</div>
-    <div class="manage">
-    <div class="row">
-        <input id="ptz-save-id"   type="number" min="0" placeholder="ID" style="width:80px; margin-right:6px;">
-        <input id="ptz-save-name" type="text"   placeholder="Name (optional)" style="flex:1; margin-right:6px;">
-        <button id="ptz-btn-save"   title="Aktuelle Position als Preset speichern/überschreiben">Speichern</button>
-    </div>
-    </div>
-    H;
-
-        // kompakte Styles
-        $btn = 42; // Kantenlänge für die Richtungsbuttons (px)
-        $gap = 6;  // Abstand (px)
+        $btn = 42; // Kantenlänge für die Richtungsbuttons
+        $gap = 6;  // Abstand
 
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
     #ptz-wrap{
-        --btn: {$btn}px;
-        --gap: {$gap}px;
-        --fs: 16px;
-        --radius: 10px;
-        max-width: 560px;
-        margin: 0 auto;
-        user-select: none;
+    --btn: {$btn}px;
+    --gap: {$gap}px;
+    --fs: 16px;
+    --radius: 10px;
+    max-width: 560px;
+    margin: 0 auto;
+    user-select: none;
     }
     #ptz-wrap .grid{
-        display:grid;
-        grid-template-columns: repeat(3, var(--btn));
-        grid-template-rows:    repeat(3, var(--btn));
-        gap: var(--gap);
-        justify-content:center;
-        align-items:center;
-        margin-bottom: 10px;
+    display:grid;
+    grid-template-columns: repeat(3, var(--btn));
+    grid-template-rows:    repeat(3, var(--btn));
+    gap: var(--gap);
+    justify-content:center;
+    align-items:center;
+    margin-bottom: 10px;
     }
     #ptz-wrap button{
-        height: var(--btn);
-        border: 1px solid #cfcfcf;
-        border-radius: var(--radius);
-        background: #f8f8f8;
-        font-size: var(--fs);
-        line-height: 1;
-        cursor: pointer;
-        box-shadow: 0 1px 2px rgba(0,0,0,.06);
-        box-sizing: border-box;
-        padding: 6px 10px;
+    height: var(--btn);
+    border: 1px solid #cfcfcf;
+    border-radius: var(--radius);
+    background: #f8f8f8;
+    font-size: var(--fs);
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    box-sizing: border-box;
+    padding: 6px 10px;
     }
     #ptz-wrap .dir { width: var(--btn); padding: 0; }
     #ptz-wrap button:hover { filter: brightness(.98); }
@@ -1419,43 +1395,32 @@ private function SetEmailContent(int $mode): bool
     #ptz-wrap .right { grid-column:3; grid-row:2; }
     #ptz-wrap .down  { grid-column:2; grid-row:3; }
 
-    #ptz-wrap .section-title{
-        font-weight: 600;
-        margin: 10px 0 6px 0;
-    }
-
-    #ptz-wrap .presets{
-        display: block; /* eine Zeile pro Preset */
-    }
-    #ptz-wrap .preset-row{
-        display:flex;
-        gap: var(--gap);
-        align-items:center;
-        margin-bottom: var(--gap);
-    }
+    #ptz-wrap .section-title{ font-weight:600; margin: 12px 0 6px 0; }
+    #ptz-wrap .presets{ display:block; }
+    #ptz-wrap .preset-row{ margin-bottom: var(--gap); }
     #ptz-wrap .preset{
-        flex: 1;
-        height: auto;
-        min-height: 36px;
-        padding: 8px 12px;
-        text-align: left; /* Namen linksbündig, falls lang */
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    #ptz-wrap .preset-rename, #ptz-wrap .preset-delete{
-        min-width: 36px;
-        height: 36px;
-        padding: 6px 8px;
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px;
+    text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    #ptz-wrap .manage .row{
-        display:flex;
-        gap: var(--gap);
-        align-items:center;
+    /* Preset-Verwaltung */
+    #ptz-wrap .manage{ margin-top: 12px; border:1px solid #e6e6e6; border-radius: var(--radius); padding:10px; background:#fafafa; }
+    #ptz-wrap .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    #ptz-wrap .row label{ font-size: 14px; opacity:.85; }
+    #ptz-wrap input[type="number"], #ptz-wrap input[type="text"]{
+    height: 32px; padding: 6px 8px; border-radius: 8px; border:1px solid #cfcfcf; background:#fff; box-sizing:border-box;
     }
+    #ptz-wrap input[type="number"]{ width: 80px; }
+    #ptz-wrap input[type="text"]{ flex:1; min-width: 180px; }
+    #ptz-wrap .btnbar{ display:flex; gap:8px; margin-top: 8px; }
+    #ptz-wrap .btnbar button{ height: 36px; padding: 6px 10px; }
 
-    #ptz-wrap .status{ display:none; }
+    #ptz-wrap .status{ display:block; margin-top:8px; font-size:14px; opacity:.85; }
+    #ptz-wrap .ok{ color:#2e7d32; }  /* grün */
+    #ptz-wrap .err{ color:#c62828; } /* rot  */
     #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
     </style>
 
@@ -1471,26 +1436,79 @@ private function SetEmailContent(int $mode): bool
     {$presetRows}
     </div>
 
-    {$manage}
+    <div class="section-title">Preset verwalten</div>
+    <div class="manage">
+    <div class="row">
+        <label for="ptz-id">ID</label>
+        <input type="number" id="ptz-id" min="0" step="1" value="0"/>
+        <label for="ptz-name">Name</label>
+        <input type="text" id="ptz-name" maxlength="32" placeholder="optional (max. 32 Zeichen)"/>
+    </div>
+    <div class="btnbar">
+        <button id="btn-save"   title="Aktuelle Position als Preset speichern">Speichern</button>
+        <button id="btn-rename" title="Preset umbenennen">Umbenennen</button>
+        <button id="btn-delete" title="Preset löschen">Löschen</button>
+    </div>
+    </div>
 
     <div class="status" id="ptz-msg"></div>
     </div>
 
     <script>
     (function(){
-    var base = "{$hook}";
-    var msg  = document.getElementById("ptz-msg");
-    var wrap = document.getElementById("ptz-wrap");
+    var base  = "{$hook}";
+    var wrap  = document.getElementById("ptz-wrap");
+    var idIn  = document.getElementById("ptz-id");
+    var nameIn= document.getElementById("ptz-name");
+    var msg   = document.getElementById("ptz-msg");
 
-    function callQS(qs){
-        fetch(base + "?" + qs, { method:"GET", credentials:"same-origin", cache:"no-store" })
+    function show(text, ok){
+        if (!msg) return;
+        msg.className = "status " + (ok ? "ok" : "err");
+        msg.textContent = text;
+    }
+
+    function call(op, extra){
+        var qs = new URLSearchParams(extra || {});
+        qs.set("ptz", op);
+        fetch(base + "?" + qs.toString(), {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store"
+        })
         .then(function(r){ return r.text(); })
         .then(function(t){
-            if ((t||"").trim().toUpperCase() !== "OK") {
-            if (msg) msg.textContent = "Fehler: " + (t||"");
-            }
+        var ok = (t||"").trim().toUpperCase() === "OK";
+        show(ok ? "OK" : ("Fehler: " + (t||"")), ok);
         })
-        .catch(function(){ if (msg) msg.textContent = "Netzwerkfehler"; });
+        .catch(function(){ show("Netzwerkfehler", false); });
+    }
+
+    wrap.addEventListener("click", function(ev){
+        var btn = ev.target.closest("button");
+        if (!btn) return;
+
+        if (btn.hasAttribute("data-dir")) {
+        call(btn.getAttribute("data-dir"));
+        return;
+        }
+        if (btn.classList.contains("preset")) {
+        call("preset:" + btn.getAttribute("data-preset"));
+        return;
+        }
+        // Verwaltung:
+        var id = parseInt(idIn.value, 10);
+        var name = (nameIn.value || "").trim();
+
+        if (btn.id === "btn-save")   { call("save",   { id: isNaN(id)?0:id, name: name }); return; }
+        if (btn.id === "btn-rename") { call("rename", { id: isNaN(id)?0:id, name: name }); return; }
+        if (btn.id === "btn-delete") { call("delete", { id: isNaN(id)?0:id });            return; }
+    });
+    })();
+    </script>
+    HTML;
+
+        $this->setHtmlIfChanged("PTZ_HTML", $html);
     }
 
   function callParam(param){ callQS("ptz=" + encodeURIComponent(param)); }
@@ -1554,9 +1572,9 @@ HTML;
         }
     }
 
-    private function HandlePtzCommand(string $cmd): void
+    private function HandlePtzCommand(string $cmd): bool
     {
-        // optional weitere Parameter aus Query oder Post
+        // optionale Parameter (aus GET/POST/JSON übernommen)
         $idParam   = $_REQUEST['id']   ?? null;
         $nameParam = $_REQUEST['name'] ?? null;
 
@@ -1567,26 +1585,23 @@ HTML;
         if (strpos($cmd, 'preset:') === 0) {
             $pid = (int)substr($cmd, 7);
             if ($pid >= 0) {
-                $this->ptzGotoPreset($pid);
-            } else {
-                $this->SendDebug("PTZ", "Ungueltige Preset-ID: $cmd", 0);
+                return $this->ptzGotoPreset($pid);
             }
-            return;
+            $this->SendDebug("PTZ", "Ungueltige Preset-ID: $cmd", 0);
+            return false;
         }
 
-        // neue Kommandos: save / rename / delete
+        // neue Kommandos
         switch (strtolower($cmd)) {
             case 'save':
                 if ($id === null || $id < 0) {
                     $this->SendDebug("PTZ/SAVE", "id fehlt/ungueltig", 0);
-                    return;
+                    return false;
                 }
-                // Name ggf. säubern & kürzen
                 if (is_string($name)) {
                     $name = trim($name);
                     if ($name === '') $name = null;
                     if ($name !== null) {
-                        // Sonderzeichen filtern, auf ~32 Zeichen begrenzen
                         $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
                         $name = mb_substr($name, 0, 32, 'UTF-8');
                     }
@@ -1595,42 +1610,36 @@ HTML;
                 }
                 $ok = $this->PTZ_SavePreset($id, $name);
                 $this->SendDebug("PTZ/SAVE", "id={$id}, name=" . ($name ?? '<none>') . " -> ".($ok?'OK':'FAIL'), 0);
-                return;
+                return $ok;
 
             case 'rename':
                 if ($id === null || $id < 0 || !is_string($name) || trim($name) === '') {
                     $this->SendDebug("PTZ/RENAME", "id/name fehlen/ungueltig", 0);
-                    return;
+                    return false;
                 }
                 $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', trim($name));
                 $name = mb_substr($name, 0, 32, 'UTF-8');
                 $ok = $this->PTZ_RenamePreset($id, $name);
                 $this->SendDebug("PTZ/RENAME", "id={$id}, name={$name} -> ".($ok?'OK':'FAIL'), 0);
-                return;
+                return $ok;
 
             case 'delete':
                 if ($id === null || $id < 0) {
                     $this->SendDebug("PTZ/DELETE", "id fehlt/ungueltig", 0);
-                    return;
+                    return false;
                 }
                 $ok = $this->PTZ_DeletePreset($id);
                 $this->SendDebug("PTZ/DELETE", "id={$id} -> ".($ok?'OK':'FAIL'), 0);
-                return;
+                return $ok;
         }
 
-        // Pfeile/Stop (bestehend)
-        $map = [
-            'left'  => 'Left',
-            'right' => 'Right',
-            'up'    => 'Up',
-            'down'  => 'Down',
-            'stop'  => 'Stop'
-        ];
+        // Pfeile/Stop
+        $map = ['left'=>'Left','right'=>'Right','up'=>'Up','down'=>'Down','stop'=>'Stop'];
         if (!isset($map[$cmd])) {
             $this->SendDebug("PTZ", "Unbekanntes Kommando: {$cmd}", 0);
-            return;
+            return false;
         }
-        $this->ptzCtrl($map[$cmd]);
+        return $this->ptzCtrl($map[$cmd]);
     }
 
     private function getPtzStyle(): string {
