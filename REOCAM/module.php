@@ -1489,7 +1489,7 @@ private function SetEmailContent(int $mode): bool
     {
         // PRESET: "preset:<id>"
         if (strpos($dir, 'preset:') === 0) {
-            $id = (int)substr($dir, 7+1); // "preset:" = 7 Zeichen
+            $id = (int)substr($dir, 7); // "preset:" = 7 Zeichen
             if ($id >= 0) {
                 $this->ptzGotoPreset($id);
             } else {
@@ -1597,27 +1597,75 @@ private function SetEmailContent(int $mode): bool
         return false;
     }
 
-    /** Liest Presets (id, name) robust aus GetPtzPreset. */
+    /** Rekursiv nach Preset-Arrays suchen (Einträge mit 'id' + optional 'name'). */
+    private function collectPresetsRecursive($node, array &$out, array &$seen): void
+    {
+        if (!is_array($node) || empty($node)) return;
+
+        // Fall: Liste von Preset-Objekten
+        $first = reset($node);
+        if (is_array($first) && (isset($first['id']) || isset($first['Id']))) {
+            foreach ($node as $p) {
+                if (!is_array($p)) continue;
+                $rawId = $p['id'] ?? $p['Id'] ?? null;
+                if (!is_numeric($rawId)) continue;
+
+                $id = (int)$rawId;
+                if (isset($seen[$id])) continue; // Dedupe
+
+                $name = $p['name'] ?? $p['Name'] ?? $p['sName'] ?? $p['label'] ?? $p['presetName'] ?? '';
+                $name = (string)$name;
+                if ($name === '') $name = "Preset ".$id;
+
+                $out[] = ['id'=>$id, 'name'=>$name];
+                $seen[$id] = true;
+            }
+            // hier nicht return, falls tiefer noch andere Strukturen liegen
+        }
+
+        // Durch alle Kinder laufen (tiefe Verschachtelungen abdecken)
+        foreach ($node as $v) {
+            if (is_array($v)) {
+                $this->collectPresetsRecursive($v, $out, $seen);
+            }
+        }
+    }
+
+    /** Liest Presets robust aus GetPtzPreset (versch. FW-Varianten). */
     private function getPresetList(): array
     {
         $res = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
         $list = [];
+        $seen = [];
+
         if (is_array($res)) {
+            // 1) Standard-Pfade
             $v  = $res[0]['value'] ?? [];
-            $ps = $v['PtzPreset']['preset'] ?? $v['preset'] ?? [];
+            $ps = $v['PtzPreset']['preset'] ?? $v['PtzPreset']['table'] ?? $v['preset'] ?? $v['table'] ?? null;
+
             if (is_array($ps)) {
-                foreach ($ps as $p) {
-                    $id   = $p['id']   ?? null;
-                    $name = $p['name'] ?? ($p['Name'] ?? null);
-                    if (is_numeric($id)) {
-                        $list[] = [
-                            'id'   => (int)$id,
-                            'name' => (string)($name !== null ? $name : ("Preset ".$id))
-                        ];
-                    }
-                }
+                $this->collectPresetsRecursive($ps, $list, $seen);
+            } else {
+                // 2) Fallback: komplett rekursiv durchsuchen (beliebige Container-Namen)
+                $this->collectPresetsRecursive($v, $list, $seen);
             }
+
+            // 3) Wenn weiterhin leer: komplettes Response durchsuchen
+            if (empty($list)) {
+                $this->collectPresetsRecursive($res, $list, $seen);
+            }
+
+            // 4) Debug-Hinweis, falls nix gefunden wurde
+            if (empty($list)) {
+                $keys = is_array($v) ? implode(',', array_keys($v)) : '';
+                $this->SendDebug('GetPtzPreset', 'Keine Presets erkannt. value-Keys='.$keys.' RAW='.json_encode($res), 0);
+            }
+        } else {
+            $this->SendDebug('GetPtzPreset', 'Kein gueltiges Array-Response', 0);
         }
+
+        // nach ID sortieren (optional)
+        usort($list, fn($a,$b) => $a['id'] <=> $b['id']);
         return $list;
     }
 }
