@@ -1456,16 +1456,37 @@ private function SetEmailContent(int $mode): bool
 
     private function HandlePtzCommand(string $dir): void
     {
-        switch ($dir) {
-            case 'left':  $this->ptzCtrl('Left');  break;
-            case 'right': $this->ptzCtrl('Right'); break;
-            case 'up':    $this->ptzCtrl('Up');    break;
-            case 'down':  $this->ptzCtrl('Down');  break;
-            case 'home':  $this->ptzHome();        break;
-            case 'stop':  $this->ptzCtrl('Stop');  break; // falls du ihn später doch brauchst
-            default:
-                $this->SendDebug('PTZ', 'Unbekannte Richtung: '.$dir, 0);
+        $map = [
+            'left'  => ['op'=>'Left'],
+            'right' => ['op'=>'Right'],
+            'up'    => ['op'=>'Up'],
+            'down'  => ['op'=>'Down'],
+            // 'stop' bleibt optional intern unterstützt, aber kein Button im UI:
+            'stop'  => ['op'=>'Stop'],
+            // Home fährt über Guard/Monitor-Point:
+            'home'  => ['op'=>'HOME_SPECIAL']
+        ];
+        if (!isset($map[$dir])) {
+            $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
+            return;
         }
+
+        if ($map[$dir]['op'] === 'HOME_SPECIAL') {
+            $this->PtzGoHome();
+            return;
+        }
+
+        $op = $map[$dir]['op'];
+
+        if ($op === 'Stop') {
+            $this->ptzCtrlSend(["channel"=>0, "op"=>"Stop"]);
+            return;
+        }
+
+        // Impulsfahrt (z.B. 250 ms) + Stop
+        $this->ptzCtrlSend(["channel"=>0, "op"=>$op, "speed"=>5]);
+        IPS_Sleep(250);
+        $this->ptzCtrlSend(["channel"=>0, "op"=>"Stop"]);
     }
 
     private function getPtzStyle(): string {
@@ -1482,27 +1503,6 @@ private function SetEmailContent(int $mode): bool
 
     private function ptzOk(?array $res): bool {
     return is_array($res) && (($res[0]['code'] ?? -1) === 0);
-    }
-
-    private function getGuardId(): ?int
-    {
-        $resp = $this->apiCallCompatPTZ("GetPtzGuard", ["channel"=>0], /*suppress*/ true);
-        if (!is_array($resp)) return null;
-
-        $val   = $resp[0]['value'] ?? null;
-        if (!is_array($val)) return null;
-
-        // mögliche Rückgabeformen robust abdecken
-        $guard = $val['Guard'] ?? $val['PtzGuard'] ?? $val['guard'] ?? null;
-        if (is_array($guard)) {
-            if (isset($guard['id']) && is_numeric($guard['id'])) return (int)$guard['id'];
-            // manchmal liegt es unter 'point' o.ä.
-            if (isset($guard['point']['id']) && is_numeric($guard['point']['id'])) return (int)$guard['point']['id'];
-        }
-        // ganz flach (selten)
-        if (isset($val['id']) && is_numeric($val['id'])) return (int)$val['id'];
-
-        return null;
     }
 
     /* ========== PTZ: kompaktes Kern-Set ========== */
@@ -1628,5 +1628,76 @@ private function SetEmailContent(int $mode): bool
 
         $this->SendDebug('PTZ/HOME', 'Alle Varianten fehlgeschlagen.', 0);
         return false;
+    }
+
+    /** Fährt die Monitor-/Guard-Position an (Home). */
+    private function PtzGoHome(): bool
+    {
+        // 1) Korrekt verschachtelt: param => { "PtzGuard": {...} }
+        $res = $this->apiCallCmd(
+            "SetPtzGuard",
+            ["channel" => 0, "cmdStr" => "toPos"],
+            "PtzGuard",
+            /*suppressError*/ true
+        );
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            return true;
+        }
+
+        // 2) Fallbacks (geräte-/fw-abhängig, schaden nicht)
+        //    a) direktes "Home" (manche Firmwares unterstützen das)
+        $res2 = $this->apiCallCmd(
+            "PtzCtrl",
+            ["channel"=>0, "op"=>"Home"],
+            "PtzCtrl",
+            /*suppressError*/ true
+        );
+        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
+            return true;
+        }
+
+        //    b) Wenn kein Guard gesetzt ist, einmal setzen und erneut versuchen
+        $info = $this->apiCallCmd("GetPtzGuard", ["channel"=>0], "PtzGuard", true);
+        $exists = is_array($info) ? ($info[0]['value']['PtzGuard']['bexistPos'] ?? null) : null;
+        if ((int)$exists === 0) {
+            // aktuellen Blick als Guard speichern
+            $set = $this->apiCallCmd(
+                "SetPtzGuard",
+                ["channel"=>0, "cmdStr"=>"setPos", "bSaveCurrentPos"=>1],
+                "PtzGuard",
+                /*suppressError*/ true
+            );
+            if (is_array($set) && (($set[0]['code'] ?? -1) === 0)) {
+                // und jetzt nochmal hinfahren
+                $res3 = $this->apiCallCmd(
+                    "SetPtzGuard",
+                    ["channel"=>0, "cmdStr"=>"toPos"],
+                    "PtzGuard",
+                    /*suppressError*/ false
+                );
+                if (is_array($res3) && (($res3[0]['code'] ?? -1) === 0)) {
+                    return true;
+                }
+            }
+        }
+
+        $this->SendDebug("PTZ", "HOME fehlgeschlagen", 0);
+        return false;
+    }
+
+    /** Optional öffentlich: aktuellen Blick als Guard/Home sichern (falls du einen Button dafür willst). */
+    public function PtzSaveHome(): bool
+    {
+        $res = $this->apiCallCmd(
+            "SetPtzGuard",
+            ["channel" => 0, "cmdStr" => "setPos", "bSaveCurrentPos" => 1],
+            "PtzGuard",
+            /*suppressError*/ false
+        );
+        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if (!$ok) {
+            $this->SendDebug("PTZ", "SetPtzGuard setPos failed: ".json_encode($res), 0);
+        }
+        return $ok;
     }
 }
