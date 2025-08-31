@@ -1453,51 +1453,16 @@ private function SetEmailContent(int $mode): bool
 
     private function HandlePtzCommand(string $dir): void
     {
-        $map = [
-            'left'  => ['op'=>'Left'],
-            'right' => ['op'=>'Right'],
-            'up'    => ['op'=>'Up'],
-            'down'  => ['op'=>'Down'],
-            // 'stop' lassen wir intern unterstützt (falls du’s mal brauchst),
-            // aber im UI ist er ja nicht mehr sichtbar:
-            'stop'  => ['op'=>'Stop'],
-            // 'home' fährt jetzt über ToPos zur Guard-ID:
-            'home'  => ['op'=>'HOME_SPECIAL']
-        ];
-        if (!isset($map[$dir])) {
-            $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
-            return;
+        switch ($dir) {
+            case 'left':  $this->ptzCtrl('Left');  break;
+            case 'right': $this->ptzCtrl('Right'); break;
+            case 'up':    $this->ptzCtrl('Up');    break;
+            case 'down':  $this->ptzCtrl('Down');  break;
+            case 'home':  $this->ptzHome();        break;
+            case 'stop':  $this->ptzCtrl('Stop');  break; // falls du ihn später doch brauchst
+            default:
+                $this->SendDebug('PTZ', 'Unbekannte Richtung: '.$dir, 0);
         }
-
-        if ($map[$dir]['op'] === 'HOME_SPECIAL') {
-            $this->PtzGoHome();
-            return;
-        }
-
-        $op = $map[$dir]['op'];
-
-        // kurze Impulsfahrt für Pfeile; Stop/Home ohne Speed
-        if ($op === 'Stop') {
-            $this->ptzCtrlSend(["channel"=>0, "op"=>"Stop"]);
-            return;
-        }
-
-        // Impuls + Stop
-        $this->ptzCtrlSend(["channel"=>0, "op"=>$op, "speed"=>5]);
-        IPS_Sleep(250);
-        $this->ptzCtrlSend(["channel"=>0, "op"=>"Stop"]);
-    }
-
-    private function PtzOp(string $op, int $speed = 5): bool
-    {
-        $param = ["channel"=>0, "op"=>$op];
-        if ($op !== 'Stop' && $op !== 'Home') {
-            $param["speed"] = $speed;
-        }
-        $res = $this->apiCallCompat("PtzCtrl", $param, /*suppress*/ false);
-        $ok  = $this->ptzOk($res);
-        if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=$op: ".json_encode($res), 0);
-        return $ok;
     }
 
     private function getPtzStyle(): string {
@@ -1512,104 +1477,9 @@ private function SetEmailContent(int $mode): bool
         }
     }
 
-    /**
-     * Führt einen Reolink-API-Call aus und probiert automatisch
-     * "flat" (param = body) und "nested" (param = {nestedKey: body}).
-     * - Merkt sich die erfolgreiche Variante in PtzStyle, damit
-     *   alle späteren Calls sofort die richtige Form nutzen.
-     */
-    private function apiCallCmd(string $cmd, array $body, string $nestedKey, bool $suppressError=false): ?array {
-        // Falls schon bekannt, erst diese Variante probieren
-        $known = $this->getPtzStyle();
-        $variants = ($known === "nested") ? ["nested","flat"] : (($known === "flat") ? ["flat","nested"] : ["flat","nested"]);
-
-        foreach ($variants as $mode) {
-            $payload = [[
-                "cmd"   => $cmd,
-                "param" => ($mode === "flat") ? $body : [$nestedKey => $body]
-            ]];
-
-            $resp = $this->apiCall($payload, /*suppress*/ true);
-            if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
-                // Erfolg ⇒ Stil merken (falls neu erkannt)
-                if ($known !== $mode) $this->setPtzStyle($mode);
-                return $resp;
-            }
-            // bei Auth- oder Param-Fehler nächste Variante probieren
-        }
-
-        // Wenn beide fehlgeschlagen sind, optional Fehlereintrag
-        if (!$suppressError) {
-            $this->SendDebug("apiCallCmd", "Beide Varianten fehlgeschlagen: cmd=".$cmd." body=".json_encode($body), 0);
-            $this->LogMessage("Reolink: apiCallCmd FAIL for {$cmd}", KL_ERROR);
-        }
-        return null;
-    }
-
-    private function PtzHome(): bool
-    {
-        // 1) SetPtzGuard (Monitor Point) – diverse Schreibweisen
-        $tries = [
-            ["cmd"=>"SetPtzGuard", "key"=>"PtzGuard", "body"=>["channel"=>0, "cmdStr"=>"topos"]],
-            ["cmd"=>"SetPtzGuard", "key"=>"PtzGuard", "body"=>["channel"=>0, "cmd"=>"topos"]],
-            // Manche FW will "cmd":"toPos" klein etc. – optional:
-            ["cmd"=>"SetPtzGuard", "key"=>"PtzGuard", "body"=>["channel"=>0, "cmdStr"=>"toPos"]],
-        ];
-        foreach ($tries as $t) {
-            $res = $this->apiCallCmd($t["cmd"], $t["body"], $t["key"], true);
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
-        }
-
-        // 2) PtzCtrl → ToPos id=0 (oft ist Guard = Preset 0)
-        $res = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"ToPos", "id"=>0], "PtzCtrl", true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
-
-        // 3) (falls unterstützt) direktes "Home"
-        $res = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"Home"], "PtzCtrl", true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
-
-        $this->SendDebug("PTZ","HOME: alle Varianten fehlgeschlagen",0);
-        return false;
-    }
-
     private function ptzOk(?array $res): bool {
     return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
-
-    private function apiCallCompat(string $cmd, array $paramFlat, bool $suppressError=false): ?array {
-        // 1) flaches Format
-        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>$paramFlat ]], $suppressError);
-        if ($this->ptzOk($res)) return $res;
-
-        // 2) verschachtelt: gleicher Containername wie cmd
-        $res2 = $this->apiCall([[ "cmd"=>$cmd, "param"=>[ $cmd => $paramFlat ] ]], $suppressError);
-        if ($this->ptzOk($res2)) return $res2;
-
-        // Rückgabe letztes Ergebnis (für Debug/Fehlercode)
-        return $res2 ?: $res;
-    }
-
-    private function apiCallCompatPTZ(string $cmd, array $param, bool $suppressError=false): ?array
-    {
-        // Versuch A: flaches Param-Format
-        $resp = $this->apiCall([[ "cmd"=>$cmd, "param"=>$param ]], /*suppress*/ true);
-        if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) return $resp;
-
-        // Versuch B: verschachtelt (param => { <cmd>: { ... } })
-        $resp2 = $this->apiCall([[ "cmd"=>$cmd, "param"=>[ $cmd => $param ] ]], /*suppress*/ $suppressError);
-        if (is_array($resp2) && (($resp2[0]['code'] ?? -1) === 0)) return $resp2;
-
-        if (!$suppressError) {
-            $this->SendDebug("apiCallCompatPTZ/$cmd", "FAIL A=".json_encode($resp)." B=".json_encode($resp2), 0);
-        }
-        return null;
-    }
-
-    private function ptzCtrlSend(array $flatParam, bool $suppressError=false): ?array
-{
-    // probiert automatisch flach & verschachtelt
-    return $this->apiCallCompatPTZ("PtzCtrl", $flatParam, $suppressError);
-}
 
     private function getGuardId(): ?int
     {
@@ -1632,21 +1502,128 @@ private function SetEmailContent(int $mode): bool
         return null;
     }
 
-    /** Fährt den konfigurierten Monitor/Guard-Punkt an. */
-    private function PtzGoHome(): bool
+    /* ========== PTZ: kompaktes Kern-Set ========== */
+
+    /** Ein Call, der automatisch flat/nested probiert und den Stil cached. */
+    private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
     {
-        $id = $this->getGuardId();
-        if ($id === null) {
-            $this->SendDebug("PTZ", "Kein Guard/Monitor-Punkt konfiguriert (GetPtzGuard lieferte keine ID).", 0);
-            return false;
+        $nestedKey = $nestedKey ?: $cmd;
+
+        $known = $this->getPtzStyle();                 // "flat", "nested" oder ""
+        $order = $known ? [$known, ($known === 'flat' ? 'nested' : 'flat')] : ['flat','nested'];
+
+        foreach ($order as $mode) {
+            $payload = [[
+                'cmd'   => $cmd,
+                'param' => ($mode === 'flat') ? $body : [$nestedKey => $body]
+            ]];
+
+            $resp = $this->apiCall($payload, /*suppress*/ true);
+            if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
+                if ($known !== $mode) $this->setPtzStyle($mode);
+                return $resp;
+            }
         }
 
-        // Home = zu Preset/Monitor-Point fahren: PtzCtrl op=ToPos, id=<guardId>
-        $resp = $this->ptzCtrlSend(["channel"=>0, "op"=>"ToPos", "id"=>$id], /*suppress*/ false);
-        $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
-        if (!$ok) {
-            $this->SendDebug("PTZ", "ToPos auf Guard-ID $id fehlgeschlagen: ".json_encode($resp), 0);
+        if (!$suppress) {
+            $this->SendDebug("postCmdDual/$cmd", "FAIL body=".json_encode($body), 0);
+            $this->LogMessage("Reolink: postCmdDual FAIL for {$cmd}", KL_ERROR);
         }
-        return $ok;
+        return null;
+    }
+
+    /** Pfeil/Einzel-PTZ (impulsartig). */
+    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
+    {
+        $param = ['channel'=>0, 'op'=>$op] + $extra;
+
+        // Speed nur bei Beweg-OPs geben
+        if (in_array($op, ['Left','Right','Up','Down'], true)) {
+            if (!isset($param['speed'])) $param['speed'] = 5;
+        }
+
+        $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
+        if (!$ok) return false;
+
+        // Impuls (nur bei Pfeilen), danach Stop
+        if (in_array($op, ['Left','Right','Up','Down'], true)) {
+            IPS_Sleep($pulseMs);
+            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+        }
+        return true;
+    }
+
+    /** Guard/Monitor-ID ermitteln (und cachen). */
+    private function probeGuardId(): ?int
+    {
+        // A) GetPtzGuard
+        $r = $this->postCmdDual('GetPtzGuard', ['channel'=>0], 'PtzGuard', /*suppress*/ true);
+        if (is_array($r)) {
+            $val   = $r[0]['value'] ?? null;
+            $guard = is_array($val) ? ($val['Guard'] ?? $val['PtzGuard'] ?? $val['guard'] ?? null) : null;
+            if (is_array($guard)) {
+                if (isset($guard['id']) && is_numeric($guard['id'])) return (int)$guard['id'];
+                if (isset($guard['point']['id']) && is_numeric($guard['point']['id'])) return (int)$guard['point']['id'];
+            }
+            if (isset($val['id']) && is_numeric($val['id'])) return (int)$val['id'];
+        }
+
+        // B) Fallback: Presets durchsuchen (Name enthält Guard/Home)
+        $r2 = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
+        if (is_array($r2)) {
+            $v  = $r2[0]['value'] ?? [];
+            $ps = $v['PtzPreset']['preset'] ?? $v['preset'] ?? [];
+            if (is_array($ps)) {
+                foreach ($ps as $p) {
+                    $name = (string)($p['name'] ?? $p['Name'] ?? '');
+                    if ($name !== '' && (stripos($name, 'guard') !== false || stripos($name, 'home') !== false)) {
+                        if (isset($p['id']) && is_numeric($p['id'])) return (int)$p['id'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function getGuardIdCached(): ?int
+    {
+        $raw = $this->ReadAttributeString('GuardId');
+        if ($raw !== '' && ctype_digit($raw)) return (int)$raw;
+
+        $id = $this->probeGuardId();
+        if ($id !== null) $this->WriteAttributeString('GuardId', (string)$id);
+        return $id;
+    }
+
+    /** HOME/Monitor-Point robust anfahren. */
+    private function ptzHome(): bool
+    {
+        $id = $this->getGuardIdCached();
+
+        // Variantenliste (verschiedene Firmwares)
+        $tries = [];
+
+        if ($id !== null) {
+            $tries[] = ['op'=>'ToPos',    'extra'=>['id'=>$id]];
+            $tries[] = ['op'=>'ToPreset', 'extra'=>['id'=>$id]];
+        }
+        $tries[] = ['op'=>'Home',  'extra'=>[]];     // einige Modelle unterstützen das direkt
+        $tries[] = ['op'=>'ToPos', 'extra'=>['id'=>0]];
+        $tries[] = ['op'=>'ToPos', 'extra'=>['id'=>1]];
+
+        foreach ($tries as $t) {
+            if ($this->ptzCtrl($t['op'], $t['extra'], /*pulse*/ 0)) return true;
+        }
+
+        // Spezialbefehl (ältere Firmwares): SetPtzGuard → toPos
+        $r = $this->postCmdDual('SetPtzGuard', ['channel'=>0, 'cmd'=>'toPos'],  'PtzGuard', /*suppress*/ true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+
+        $r2 = $this->postCmdDual('SetPtzGuard', ['channel'=>0, 'cmdStr'=>'toPos'], 'PtzGuard', /*suppress*/ true);
+        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
+
+        $this->SendDebug('PTZ/HOME', 'Alle Varianten fehlgeschlagen.', 0);
+        return false;
     }
 }
