@@ -1425,7 +1425,6 @@ private function SetEmailContent(int $mode): bool
     <div class="new">
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
     <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
-    <span class="hint" id="ptz-nextid-hint"></span>
     </div>
 
     <script>
