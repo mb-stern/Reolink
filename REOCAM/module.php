@@ -235,27 +235,51 @@ class Reolink extends IPSModule
 
     public function ProcessHookData()
     {
-        $raw = file_get_contents("php://input");
         $this->SendDebug('Webhook', 'triggered', 0);
 
-        if ($raw) {
+        // 1) Versuch: JSON-Body
+        $ptz = null;
+        $raw = file_get_contents('php://input');
+        if ($raw !== false && $raw !== '') {
+            $data = json_decode($raw, true);
+            if (is_array($data) && isset($data['ptz'])) {
+                $ptz = (string)$data['ptz'];
+            }
+        }
+
+        // 2) Fallback: POST- oder GET-Parameter
+        if ($ptz === null) {
+            if (isset($_POST['ptz'])) {
+                $ptz = (string)$_POST['ptz'];
+            } elseif (isset($_GET['ptz'])) {
+                $ptz = (string)$_GET['ptz'];
+            }
+        }
+
+        // 3) PTZ-Steuerung?
+        if ($ptz !== null) {
+            $this->SendDebug('Webhook', 'PTZ='.$ptz, 0);
+            $this->HandlePtzCommand($ptz);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo "OK";
+            return;
+        }
+
+        // 4) Bestehende Alarm-Verarbeitung (nur wenn sinnvolles JSON vorlag)
+        if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data)) {
-
-                // PTZ-Steuerung?
-                if (isset($data['ptz'])) {
-                    $this->HandlePtzCommand((string)$data['ptz']);
-                    return;
-                }
-
-                // bestehende Alarm-Verarbeitung
                 $this->ProcessAllData($data);
+                header('Content-Type: text/plain; charset=utf-8');
+                echo "OK";
                 return;
             }
-            $this->SendDebug('Webhook', 'JSON decode failed', 0);
-        } else {
-            $this->SendDebug('Webhook', 'empty body', 0);
         }
+
+        $this->SendDebug('Webhook', 'No PTZ / no usable payload', 0);
+        header('HTTP/1.1 400 Bad Request');
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "ERROR";
     }
 
     private function ProcessAllData($data)
@@ -1360,32 +1384,74 @@ private function SetEmailContent(int $mode): bool
 
     private function CreateOrUpdatePTZHtml(): void
     {
-        $id = @$this->GetIDForIdent("PTZ_HTML");
-        if ($id === false) {
+        if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
 
         $hook = $this->ReadAttributeString("CurrentHook");
 
         $html = <<<HTML
-    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:220px">
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;place-items:center">
-        <button onclick="ptz('up')">▲</button>
-        <button onclick="ptz('stop')">■</button>
-        <button onclick="ptz('home')">⌂</button>
-        <button onclick="ptz('left')">◀</button>
-        <button onclick="ptz('down')">▼</button>
-        <button onclick="ptz('right')">▶</button>
+    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:240px">
+    <style>
+        #ptz-wrap button {
+        padding:8px 10px; border:1px solid #bbb; border-radius:8px; cursor:pointer;
+        background:#f7f7f7; font-size:16px; line-height:1;
+        }
+        #ptz-wrap button:active { transform:scale(0.98); }
+        #ptz-wrap .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; place-items:center; }
+        #ptz-msg { font-size:12px; color:#666; margin-top:6px; min-height:14px; }
+        #ptz-wrap .ok { background:#e8ffe8; transition:background .3s; }
+        #ptz-wrap .err{ background:#ffe8e8; transition:background .3s; }
+    </style>
+
+    <div class="grid">
+        <button data-dir="up">▲</button>
+        <button data-dir="stop">■</button>
+        <button data-dir="home">⌂</button>
+        <button data-dir="left">◀</button>
+        <button data-dir="down">▼</button>
+        <button data-dir="right">▶</button>
     </div>
+    <div id="ptz-msg"></div>
     </div>
     <script>
-    function ptz(dir){
-        fetch('$hook', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ ptz: dir })
+    (function(){
+    var base = '$hook';
+    var msg  = document.getElementById('ptz-msg');
+    var wrap = document.getElementById('ptz-wrap');
+
+    function flash(cls){
+        wrap.classList.add(cls);
+        setTimeout(function(){ wrap.classList.remove(cls); }, 250);
+    }
+
+    function send(dir){
+        // GET: /hook/... ?ptz=DIR
+        var url = base + '?ptz=' + encodeURIComponent(dir);
+        fetch(url, { method: 'GET', credentials: 'same-origin' })
+        .then(function(r){ return r.text(); })
+        .then(function(t){
+            if ((t||'').trim().toUpperCase()==='OK') {
+            msg.textContent = 'PTZ: ' + dir;
+            flash('ok');
+            } else {
+            msg.textContent = 'Fehler: ' + (t||'');
+            flash('err');
+            }
+        })
+        .catch(function(e){
+            msg.textContent = 'Netzwerkfehler';
+            flash('err');
         });
     }
+
+    Array.prototype.forEach.call(wrap.querySelectorAll('button[data-dir]'), function(btn){
+        btn.addEventListener('click', function(){
+        var dir = this.getAttribute('data-dir');
+        send(dir);
+        });
+    });
+    })();
     </script>
     HTML;
 
