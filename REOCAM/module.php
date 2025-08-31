@@ -1478,27 +1478,26 @@ private function SetEmailContent(int $mode): bool
             'right' => 'Right',
             'up'    => 'Up',
             'down'  => 'Down',
-            'stop'  => 'Stop'
-            // 'home' mappen wir separat auf Guard
+            'stop'  => 'Stop',
+            'home'  => 'HOME' // Platzhalter, wir behandeln das separat
         ];
-
-        if ($dir === 'home') {
-            $this->PtzGotoGuard(); // statt PtzCtrl("Home")
-            return;
-        }
-
         if (!isset($map[$dir])) {
             $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
             return;
         }
-        $op = $map[$dir];
 
+        if ($dir === 'home') {
+            // „Monitor Point“ anfahren
+            $this->PtzGuardTopos();
+            return;
+        }
+
+        // normale Richtungs-Impulse über PtzCtrl (flaches Format!)
+        $op = $map[$dir];
         if ($op === 'Stop') {
             $this->PtzOp('Stop');
             return;
         }
-
-        // kurzer Impuls + Stop
         $this->PtzOp($op, 5);
         IPS_Sleep(250);
         $this->PtzOp('Stop');
@@ -1551,5 +1550,29 @@ private function SetEmailContent(int $mode): bool
 
         $res = $this->apiCall($payload, true);
         return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+    }
+
+    private function PtzGuardTopos(): bool
+    {
+        // Erst Variante 'toPos' (CamelCase) probieren, dann 'topos' als Fallback
+        foreach (['toPos', 'topos'] as $variant) {
+            $payload = [[
+                "cmd"   => "SetPtzGuard",
+                "action"=> 0,
+                "param" => [
+                    "PtzGuard" => [
+                        "channel" => 0,
+                        "cmdStr"  => $variant
+                        // Optional möglich, aber nicht nötig für 'topos':
+                        // "benable" => 1, "timeout" => 60
+                    ]
+                ]
+            ]];
+            $res = $this->apiCall($payload, /*suppressError*/ false);
+            $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+            if ($ok) return true;
+            $this->SendDebug("PTZ", "SetPtzGuard cmdStr=$variant FAIL: ".json_encode($res), 0);
+        }
+        return false;
     }
 }
