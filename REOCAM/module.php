@@ -1006,10 +1006,9 @@ class Reolink extends IPSModule
     {
         $id = @$this->GetIDForIdent("PTZ_HTML");
         if ($id !== false) {
-            // nicht Unregistern -> nur ausblenden
-            @IPS_SetHidden($id, true);
-            // optional: Hinweis anzeigen
-            $this->SetValue("PTZ_HTML", '<div style="font-family:system-ui;opacity:.7;padding:6px">PTZ nicht verfügbar.</div>');
+            // komplett entfernen statt nur ausblenden/platzhalter setzen
+            $this->UnregisterVariable("PTZ_HTML");
+            $this->SendDebug('PTZ', 'PTZ_HTML entfernt (kein PTZ erkannt / deaktiviert).', 0);
         }
     }
 
@@ -1298,6 +1297,7 @@ private function SetEmailContent(int $mode): bool
     private function CheckAndCreatePTZUI(): void
     {
         if (!$this->ReadPropertyBoolean("ApiFunktionen") || !$this->apiEnsureToken()) {
+            // API aus / kein Token -> PTZ-UI weg
             $this->RemovePTZUI();
             return;
         }
@@ -1306,38 +1306,41 @@ private function SetEmailContent(int $mode): bool
         $this->WriteAttributeBoolean("HasPTZ", $has);
 
         if ($has) {
-            $this->CreateOrUpdatePTZHtml();
+            $this->CreateOrUpdatePTZHtml();   // legt PTZ_HTML an (falls nicht vorhanden)
         } else {
-            $this->RemovePTZUI();
+            $this->RemovePTZUI();             // löscht PTZ_HTML (falls vorhanden)
         }
     }
 
     private function DetectPTZ(): bool
     {
-        // 1) Harmloser Probe-Call: Stop (lernt nebenbei flat/nested)
-        $r = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
+        // A) Presets abrufen – wenn das klappt, ist PTZ sicher vorhanden
+        $rPreset = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
+        $presetOk = is_array($rPreset) && (($rPreset[0]['code'] ?? -1) === 0);
+        if ($presetOk) return true;
 
-        // 2) Presets abrufen (wenn geht, ist PTZ vorhanden)
-        $r2 = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
-        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
+        // B) Beweg-OP testen
+        $rCtrl = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+        $ctrlOk = is_array($rCtrl) && (($rCtrl[0]['code'] ?? -1) === 0);
 
-        // 3) (Optional) Fähigkeit prüfen – nicht immer zuverlässig
-        $r3 = $this->apiCall([[ 'cmd'=>'GetAbility', 'param'=>['channel'=>0] ]], /*suppress*/ true);
-        if (is_array($r3) && isset($r3[0]['value'])) {
-            $v = $r3[0]['value'];
-            $ab = $v['Ability'] ?? $v['ability'] ?? $v['abilityChn'] ?? null;
-            if (is_array($ab) && isset($ab[0]) && is_array($ab[0])) $ab = $ab[0];
-            if (is_array($ab)) {
-                $flag = $ab['ptz'] ?? $ab['PTZ'] ?? $ab['ptzType'] ?? $ab['ptzCtrl'] ?? $ab['ptzSupport'] ?? null;
-                if ((is_bool($flag) && $flag) || (is_numeric($flag) && (int)$flag > 0)) return true;
+        if ($ctrlOk) {
+            // C) Fähigkeit prüfen – nur als Verstärker für ctrlOk
+            $rAb = $this->apiCall([[ 'cmd'=>'GetAbility', 'param'=>['channel'=>0] ]], /*suppress*/ true);
+            if (is_array($rAb) && isset($rAb[0]['value'])) {
+                $v  = $rAb[0]['value'];
+                $ab = $v['Ability'] ?? $v['ability'] ?? $v['abilityChn'] ?? null;
+                if (is_array($ab) && isset($ab[0]) && is_array($ab[0])) $ab = $ab[0];
+
+                if (is_array($ab)) {
+                    $flag = $ab['ptz'] ?? $ab['PTZ'] ?? $ab['ptzType'] ?? $ab['ptzCtrl'] ?? $ab['ptzSupport'] ?? null;
+                    if ((is_bool($flag) && $flag) || (is_numeric($flag) && (int)$flag > 0)) {
+                        return true; // ctrlOk + Fähigkeit => PTZ vorhanden
+                    }
+                }
             }
         }
 
+        // sonst: kein PTZ
         return false;
     }
 
