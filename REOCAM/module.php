@@ -29,9 +29,6 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("ApiToken", "");
         $this->RegisterAttributeString("EmailApiVersion", ""); // "V20" oder "LEGACY"
         $this->RegisterAttributeString("PtzStyle", ""); // "", "flat" oder "nested"
-        $this->RegisterAttributeString("GuardId", "");   // <— neu: Cache für Guard/Monitor-ID
-
-
 
 
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -1359,7 +1356,19 @@ private function SetEmailContent(int $mode): bool
             $hook = $this->RegisterHook();
         }
 
-        // Größe für 4er-Kachel kompakt halten
+        // Presets holen und Buttons bauen
+        $presets = $this->getPresetList();
+        $presetButtons = '';
+        if (!empty($presets)) {
+            foreach ($presets as $p) {
+                $title = htmlspecialchars($p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $presetButtons .= '<button class="preset" data-preset="'.$p['id'].'" title="'.$title.'">'.$title.'</button>';
+            }
+        } else {
+            $presetButtons = '<div class="no-presets">Keine Presets gefunden.</div>';
+        }
+
+        // kompakte Styles
         $btn = 42; // Kantenlänge Button (px)
         $gap = 6;  // Abstand (px)
 
@@ -1371,7 +1380,7 @@ private function SetEmailContent(int $mode): bool
         --gap: {$gap}px;
         --fs: 16px;
         --radius: 10px;
-        max-width: calc(var(--btn)*3 + var(--gap)*2);
+        max-width: 420px;
         margin: 0 auto;
         user-select: none;
     }
@@ -1382,9 +1391,9 @@ private function SetEmailContent(int $mode): bool
         gap: var(--gap);
         justify-content:center;
         align-items:center;
+        margin-bottom: 8px;
     }
     #ptz-wrap button{
-        width: var(--btn);
         height: var(--btn);
         border: 1px solid #cfcfcf;
         border-radius: var(--radius);
@@ -1394,29 +1403,44 @@ private function SetEmailContent(int $mode): bool
         cursor: pointer;
         box-shadow: 0 1px 2px rgba(0,0,0,.06);
         box-sizing: border-box;
-        padding: 0;
+        padding: 6px 10px;
     }
+    #ptz-wrap .dir { width: var(--btn); padding: 0; }
     #ptz-wrap button:hover { filter: brightness(.98); }
     #ptz-wrap button:active{ transform: translateY(1px); }
 
-    /* Positionen: Home in der Mitte, Pfeile drumherum */
     #ptz-wrap .up    { grid-column:2; grid-row:1; }
     #ptz-wrap .left  { grid-column:1; grid-row:2; }
-    #ptz-wrap .home  { grid-column:2; grid-row:2; }
     #ptz-wrap .right { grid-column:3; grid-row:2; }
     #ptz-wrap .down  { grid-column:2; grid-row:3; }
 
-    /* Status ausgeblendet (spart Höhe) */
+    #ptz-wrap .presets {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: var(--gap);
+        margin-top: 4px;
+    }
+    #ptz-wrap .preset {
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
     #ptz-wrap .status{ display:none; }
+    #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
     </style>
 
     <div class="grid">
-    <button data-dir="up"    class="up"    title="Hoch"   aria-label="Hoch">▲</button>
-    <button data-dir="left"  class="left"  title="Links"  aria-label="Links">◀</button>
-    <button data-dir="home"  class="home"  title="Home"   aria-label="Home">⌂</button>
-    <button data-dir="right" class="right" title="Rechts" aria-label="Rechts">▶</button>
-    <button data-dir="down"  class="down"  title="Runter" aria-label="Runter">▼</button>
+    <button data-dir="up"    class="dir up"    title="Hoch"   aria-label="Hoch">▲</button>
+    <button data-dir="left"  class="dir left"  title="Links"  aria-label="Links">◀</button>
+    <button data-dir="right" class="dir right" title="Rechts" aria-label="Rechts">▶</button>
+    <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
+
+    <div class="presets">
+    {$presetButtons}
+    </div>
+
     <div class="status" id="ptz-msg"></div>
     </div>
 
@@ -1426,15 +1450,14 @@ private function SetEmailContent(int $mode): bool
     var msg  = document.getElementById("ptz-msg");
     var wrap = document.getElementById("ptz-wrap");
 
-    function send(dir){
-        fetch(base + "?ptz=" + encodeURIComponent(dir), {
+    function call(param){
+        fetch(base + "?ptz=" + encodeURIComponent(param), {
         method: "GET",
         credentials: "same-origin",
         cache: "no-store"
         })
         .then(function(r){ return r.text(); })
         .then(function(t){
-        // still & tolerant – keine lauten Fehl-Einblendungen
         if ((t||"").trim().toUpperCase() !== "OK") {
             if (msg) msg.textContent = "Fehler: " + (t||"");
         }
@@ -1443,9 +1466,17 @@ private function SetEmailContent(int $mode): bool
     }
 
     wrap.addEventListener("click", function(ev){
-        var btn = ev.target.closest("button[data-dir]");
+        var btn = ev.target.closest("button");
         if (!btn) return;
-        send(btn.getAttribute("data-dir"));
+
+        if (btn.hasAttribute("data-dir")) {
+        call(btn.getAttribute("data-dir"));
+        return;
+        }
+        if (btn.hasAttribute("data-preset")) {
+        call("preset:" + btn.getAttribute("data-preset"));
+        return;
+        }
     });
     })();
     </script>
@@ -1456,13 +1487,24 @@ private function SetEmailContent(int $mode): bool
 
     private function HandlePtzCommand(string $dir): void
     {
+        // PRESET: "preset:<id>"
+        if (strpos($dir, 'preset:') === 0) {
+            $id = (int)substr($dir, 7+1); // "preset:" = 7 Zeichen
+            if ($id >= 0) {
+                $this->ptzGotoPreset($id);
+            } else {
+                $this->SendDebug("PTZ", "Ungueltige Preset-ID: $dir", 0);
+            }
+            return;
+        }
+
+        // Pfeile/Stop
         $map = [
             'left'  => 'Left',
             'right' => 'Right',
             'up'    => 'Up',
             'down'  => 'Down',
-            'stop'  => 'Stop',
-            'home'  => 'HOME_SPECIAL'
+            'stop'  => 'Stop'
         ];
 
         if (!isset($map[$dir])) {
@@ -1470,16 +1512,7 @@ private function SetEmailContent(int $mode): bool
             return;
         }
 
-        $op = $map[$dir];
-
-        if ($op === 'HOME_SPECIAL') {
-            // *** hier: direkt die robuste Funktion verwenden ***
-            $this->ptzHome();
-            return;
-        }
-
-        // Pfeile/Stop impulsartig
-        $this->ptzCtrl($op);
+        $this->ptzCtrl($map[$dir]);
     }
 
     private function getPtzStyle(): string {
@@ -1549,137 +1582,42 @@ private function SetEmailContent(int $mode): bool
         return true;
     }
 
-    /** Guard/Monitor-ID ermitteln (und cachen). */
-    private function probeGuardId(): ?int
+    /** Preset anfahren: versucht ToPos, dann ToPreset. */
+    private function ptzGotoPreset(int $id): bool
     {
-        // A) GetPtzGuard
-        $r = $this->postCmdDual('GetPtzGuard', ['channel'=>0], 'PtzGuard', /*suppress*/ true);
-        if (is_array($r)) {
-            $val   = $r[0]['value'] ?? null;
-            $guard = is_array($val) ? ($val['Guard'] ?? $val['PtzGuard'] ?? $val['guard'] ?? null) : null;
-            if (is_array($guard)) {
-                if (isset($guard['id']) && is_numeric($guard['id'])) return (int)$guard['id'];
-                if (isset($guard['point']['id']) && is_numeric($guard['point']['id'])) return (int)$guard['point']['id'];
-            }
-            if (isset($val['id']) && is_numeric($val['id'])) return (int)$val['id'];
-        }
+        // Erst ToPos
+        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPos', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
+        if ($ok) return true;
 
-        // B) Fallback: Presets durchsuchen (Name enthält Guard/Home)
-        $r2 = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
-        if (is_array($r2)) {
-            $v  = $r2[0]['value'] ?? [];
+        // Fallback ToPreset
+        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPreset', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
+        if ($ok) return true;
+
+        $this->SendDebug('PTZ/PRESET', "Anfahren fehlgeschlagen für ID=$id", 0);
+        return false;
+    }
+
+    /** Liest Presets (id, name) robust aus GetPtzPreset. */
+    private function getPresetList(): array
+    {
+        $res = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
+        $list = [];
+        if (is_array($res)) {
+            $v  = $res[0]['value'] ?? [];
             $ps = $v['PtzPreset']['preset'] ?? $v['preset'] ?? [];
             if (is_array($ps)) {
                 foreach ($ps as $p) {
-                    $name = (string)($p['name'] ?? $p['Name'] ?? '');
-                    if ($name !== '' && (stripos($name, 'guard') !== false || stripos($name, 'home') !== false)) {
-                        if (isset($p['id']) && is_numeric($p['id'])) return (int)$p['id'];
+                    $id   = $p['id']   ?? null;
+                    $name = $p['name'] ?? ($p['Name'] ?? null);
+                    if (is_numeric($id)) {
+                        $list[] = [
+                            'id'   => (int)$id,
+                            'name' => (string)($name !== null ? $name : ("Preset ".$id))
+                        ];
                     }
                 }
             }
         }
-
-        return null;
-    }
-
-    private function getGuardIdCached(): ?int
-    {
-        $raw = $this->ReadAttributeString('GuardId');
-        if ($raw !== '' && ctype_digit($raw)) return (int)$raw;
-
-        $id = $this->probeGuardId();
-        if ($id !== null) $this->WriteAttributeString('GuardId', (string)$id);
-        return $id;
-    }
-
-    /** HOME/Monitor-Point robust anfahren (ohne nerviges Logging auf den Zwischenversuchen). */
-    private function ptzHome(): bool
-    {
-        // 0) Direkt über SetPtzGuard → toPos (meist korrekt)
-        if ($this->tryGuardToPos()) return true;
-
-        // 1) Guard-ID holen & via PtzCtrl probieren
-        $id = $this->getGuardIdCached();
-        $tries = [];
-
-        if ($id !== null) {
-            $tries[] = ['op'=>'ToPos',    'extra'=>['id'=>$id]];
-            $tries[] = ['op'=>'ToPreset', 'extra'=>['id'=>$id]];
-        }
-        // weitere Kandidaten
-        $tries[] = ['op'=>'Home',  'extra'=>[]];
-        $tries[] = ['op'=>'ToPos', 'extra'=>['id'=>0]];
-        $tries[] = ['op'=>'ToPos', 'extra'=>['id'=>1]];
-
-        foreach ($tries as $t) {
-            $param = ['channel'=>0, 'op'=>$t['op']] + $t['extra'];
-            // suppress=true, damit "postCmdDual FAIL..." im Debug NICHT spamt
-            $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ true));
-            if ($ok) return true;
-        }
-
-        // 2) Kein Guard gesetzt? aktuellen Blick als Guard speichern und erneut versuchen
-        $info   = $this->postCmdDual("GetPtzGuard", ["channel"=>0], "PtzGuard", true);
-        $exists = is_array($info) ? ($info[0]['value']['PtzGuard']['bexistPos'] ?? null) : null;
-        if ((int)$exists === 0) {
-            $set = $this->postCmdDual(
-                "SetPtzGuard",
-                ["channel"=>0, "cmdStr"=>"setPos", "bSaveCurrentPos"=>1],
-                "PtzGuard",
-                /*suppress*/ true
-            );
-            if (is_array($set) && (($set[0]['code'] ?? -1) === 0)) {
-                // Cache leeren und gleich nochmal Guard anfahren
-                $this->WriteAttributeString('GuardId', '');
-                if ($this->tryGuardToPos()) return true;
-            }
-        }
-
-        $this->SendDebug('PTZ/HOME', 'Alle Varianten fehlgeschlagen.', 0);
-        return false;
-    }
-
-    /** Optional öffentlich: aktuellen Blick als Guard/Home sichern (falls du einen Button dafür willst). */
-    public function PtzSaveHome(): bool
-    {
-        $res = $this->postCmdDual(
-            "SetPtzGuard",
-            ["channel" => 0, "cmdStr" => "setPos", "bSaveCurrentPos" => 1],
-            "PtzGuard",
-            /*suppress*/ false
-        );
-        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-        if (!$ok) {
-            $this->SendDebug("PTZ", "SetPtzGuard setPos failed: ".json_encode($res), 0);
-        }
-        return $ok;
-    }
-
-    /** Versucht den Monitor/Guard-Punkt über SetPtzGuard anzufahren (versch. Schreibweisen). */
-    private function tryGuardToPos(): bool
-    {
-        $variants = [
-            // übliche Container + Schreibweisen
-            ["key"=>"PtzGuard", "cmdStr"=>"toPos"],
-            ["key"=>"PtzGuard", "cmdStr"=>"topos"],
-            ["key"=>"PtzGuard", "cmdStr"=>"toGuard"],
-            // manche FW nutzt 'cmd' statt 'cmdStr'
-            ["key"=>"PtzGuard", "cmd"=>"toPos"],
-            ["key"=>"PtzGuard", "cmd"=>"topos"],
-            ["key"=>"PtzGuard", "cmd"=>"toGuard"],
-            // selten: Container heißt 'Guard'
-            ["key"=>"Guard",    "cmdStr"=>"toPos"],
-            ["key"=>"Guard",    "cmd"=>"toPos"],
-        ];
-
-        foreach ($variants as $v) {
-            $body = ["channel"=>0];
-            if (isset($v["cmdStr"])) $body["cmdStr"] = $v["cmdStr"];
-            if (isset($v["cmd"]))    $body["cmd"]    = $v["cmd"];
-
-            $res = $this->postCmdDual("SetPtzGuard", $body, $v["key"], /*suppress*/ true);
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
-        }
-        return false;
+        return $list;
     }
 }
