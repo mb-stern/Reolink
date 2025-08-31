@@ -1429,6 +1429,7 @@ private function SetEmailContent(int $mode): bool
     <div class="new">
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
     <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
+    <span class="hint" id="ptz-nextid-hint"></span>
     </div>
 
     <div class="status" id="ptz-msg"></div>
@@ -1440,6 +1441,7 @@ private function SetEmailContent(int $mode): bool
     var wrap   = document.getElementById("ptz-wrap");
     var msg    = document.getElementById("ptz-msg");
     var nameIn = document.getElementById("ptz-new-name");
+    var nextHint = document.getElementById("ptz-nextid-hint");
 
     function show(text, ok){
         if (!msg) return;
@@ -1471,6 +1473,11 @@ private function SetEmailContent(int $mode): bool
         if (!isNaN(v) && v > max) max = v;
         });
         return max + 1;
+    }
+
+    function updateNextIdHint(){
+        var nid = calcNextId();
+        if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
     }
 
     // Initial anzeigen
