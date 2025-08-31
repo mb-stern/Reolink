@@ -1696,6 +1696,11 @@ private function SetEmailContent(int $mode): bool
 
                 if (isset($seen[$id])) continue; // Dedupe
 
+                $en = $p['enable'] ?? $p['Enable'] ?? null;
+                if ($en !== null && (int)$en === 0) {
+                    continue; // inaktiv -> nicht anzeigen
+                }
+
                 // Name lesen
                 $name = $p['name'] ?? $p['Name'] ?? $p['sName'] ?? $p['label'] ?? $p['presetName'] ?? '';
                 $name = (string)$name;
@@ -1776,76 +1781,54 @@ private function SetEmailContent(int $mode): bool
         return $list;
     }
 
-    /** Aktuelle Position als Preset speichern (id = 0..n) */
-    private function ptzSetPreset(int $id): bool {
-        // Standard: über PtzCtrl
-        if (is_array($this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>'SetPreset','id'=>$id], 'PtzCtrl', /*suppress*/true))) return true;
-        // Sehr alte FW: SetPos
-        if (is_array($this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>'SetPos','id'=>$id], 'PtzCtrl', /*suppress*/true))) return true;
-        $this->SendDebug('PTZ/SetPreset',"Fehlgeschlagen für id=$id",0);
-        return false;
+    private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
+        $entry = ['id'=>$id, 'enable'=>1];
+        if ($nameForCreate !== null && $nameForCreate !== '') {
+            $n = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $nameForCreate);
+            $entry['name'] = mb_substr($n, 0, 32, 'UTF-8');
+        }
+        // bevorzugt: nested "PtzPreset" + table[]
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ $entry ]], 'PtzPreset', /*suppress*/true));
+        // Fallback: einige FW akzeptieren "flat" (ohne table)
+        if (!$ok) {
+            $flat = ['channel'=>0, 'id'=>$id, 'enable'=>1] + (isset($entry['name'])?['name'=>$entry['name']]:[]);
+            $ok = is_array($this->postCmdDual('SetPtzPreset', $flat, 'PtzPreset', /*suppress*/true));
+        }
+        if (!$ok) $this->SendDebug('PTZ/SetPtzPreset', 'Fehlgeschlagen: '.json_encode($entry), 0);
+        return (bool)$ok;
     }
 
-    /** Preset löschen */
     private function ptzClearPreset(int $id): bool {
-        if (is_array($this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>'ClearPreset','id'=>$id], 'PtzCtrl', /*suppress*/true))) return true;
-        $this->SendDebug('PTZ/ClearPreset',"Fehlgeschlagen für id=$id",0);
-        return false;
+        $entry = ['id'=>$id, 'enable'=>0, 'name'=>''];
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'table'=>[$entry]], 'PtzPreset', /*suppress*/true));
+        if (!$ok) {
+            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'id'=>$id,'enable'=>0,'name'=>''], 'PtzPreset', /*suppress*/true));
+        }
+        if (!$ok) $this->SendDebug('PTZ/Clear', 'enable=0 für id='.$id.' gescheitert', 0);
+        return (bool)$ok;
     }
 
-    /** Preset umbenennen (Firmware-Varianten nacheinander probieren) */
-    private function ptzRenamePreset(int $id, string $name): bool
-    {
+    private function ptzRenamePreset(int $id, string $name): bool {
         $name = trim($name);
         if ($name === '') return false;
-
-        // Normalisieren (max 32, nur harmlose Zeichen)
         $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
         $name = mb_substr($name, 0, 32, 'UTF-8');
 
-        // A) Sehr häufig: SetPtzPreset mit table-Array (nested)
-        $payloadA = [[
-            'cmd'   => 'SetPtzPreset',
-            'param' => [ 'PtzPreset' => [ 'channel'=>0, 'table' => [ ['id'=>$id, 'name'=>$name] ] ] ]
-        ]];
-        $r = $this->apiCall($payloadA, /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // B) SetPtzPreset (flat)
-        $payloadB = [[
-            'cmd'   => 'SetPtzPreset',
-            'param' => [ 'channel'=>0, 'id'=>$id, 'name'=>$name ]
-        ]];
-        $r = $this->apiCall($payloadB, /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // C) PtzPreset mit cmd=SetName (nested)
-        $payloadC = [[
-            'cmd'   => 'PtzPreset',
-            'param' => [ 'PtzPreset' => [ 'cmd'=>'SetName', 'channel'=>0, 'id'=>$id, 'name'=>$name ] ]
-        ]];
-        $r = $this->apiCall($payloadC, /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // D) PtzPreset mit cmd=SetName (flat)
-        $payloadD = [[
-            'cmd'   => 'PtzPreset',
-            'param' => [ 'cmd'=>'SetName', 'channel'=>0, 'id'=>$id, 'name'=>$name ]
-        ]];
-        $r = $this->apiCall($payloadD, /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // E) Fallback: PtzCtrl SetPresetName
-        $payloadE = [[
-            'cmd'   => 'PtzCtrl',
-            'param' => [ 'PtzCtrl' => [ 'channel'=>0, 'op'=>'SetPresetName', 'id'=>$id, 'name'=>$name ] ]
-        ]];
-        $r = $this->apiCall($payloadE, /*suppress*/ true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        $this->SendDebug('PTZ/Rename',"Fehlgeschlagen für id=$id, name=$name",0);
-        return false;
+        // bevorzugt: nested mit table[]
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]], 'PtzPreset', /*suppress*/true));
+        if (!$ok) {
+            // Fallback: flat
+            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'PtzPreset', /*suppress*/true));
+        }
+        // als letzte Rückfallebenen die alten Varianten weiterprobieren:
+        if (!$ok) {
+            $ok = is_array($this->postCmdDual('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', /*suppress*/true))
+            ?: is_array($this->postCmdDual('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/true));
+        }
+        if (!$ok) $this->SendDebug('PTZ/Rename', "Fehlgeschlagen: id=$id, name=$name", 0);
+        return (bool)$ok;
     }
+
 
     /** Bequeme öffentliche Methoden für Skripte */
     public function PTZ_SavePreset(int $id, ?string $name=null): bool {
