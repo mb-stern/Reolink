@@ -1377,71 +1377,81 @@ private function SetEmailContent(int $mode): bool
         }
 
         $hook = $this->ReadAttributeString("CurrentHook");
+        if ($hook === "") $hook = $this->RegisterHook();
 
-        $html = <<<HTML
-    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:240px">
+        $html = '
+    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:260px">
     <style>
-        #ptz-wrap button {
-        padding:8px 10px; border:1px solid #bbb; border-radius:8px; cursor:pointer;
-        background:#f7f7f7; font-size:16px; line-height:1;
+        #ptz-wrap .grid{
+        display:grid;
+        grid-template-columns:repeat(3,64px);
+        grid-template-rows:repeat(3,64px);
+        gap:10px;
+        justify-content:center;
+        align-items:center;
+        user-select:none;
         }
-        #ptz-wrap button:active { transform:scale(0.98); }
-        #ptz-wrap .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; place-items:center; }
-        #ptz-msg { font-size:12px; color:#666; margin-top:6px; min-height:14px; }
-        #ptz-wrap .ok { background:#e8ffe8; transition:background .3s; }
-        #ptz-wrap .err{ background:#ffe8e8; transition:background .3s; }
+        #ptz-wrap button{
+        width:64px;height:64px;
+        border:1px solid #cfcfcf;border-radius:12px;
+        background:#f8f8f8;font-size:20px;cursor:pointer;
+        box-shadow:0 1px 2px rgba(0,0,0,.06);
+        }
+        #ptz-wrap button:hover{ filter:brightness(0.98); }
+        #ptz-wrap button:active{ transform:translateY(1px); }
+
+        /* D-Pad-Positionen */
+        #ptz-wrap .up    { grid-column:2; grid-row:1; }
+        #ptz-wrap .home  { grid-column:3; grid-row:1; }
+        #ptz-wrap .left  { grid-column:1; grid-row:2; }
+        #ptz-wrap .stop  { grid-column:2; grid-row:2; }
+        #ptz-wrap .right { grid-column:3; grid-row:2; }
+        #ptz-wrap .down  { grid-column:2; grid-row:3; }
+
+        #ptz-wrap .status{ margin-top:8px; min-height:1em; font-size:12px; opacity:.75; text-align:center; }
     </style>
 
     <div class="grid">
-        <button data-dir="up">▲</button>
-        <button data-dir="stop">■</button>
-        <button data-dir="home">⌂</button>
-        <button data-dir="left">◀</button>
-        <button data-dir="down">▼</button>
-        <button data-dir="right">▶</button>
+        <button data-dir="up"    class="up"    title="Hoch"   aria-label="Hoch">▲</button>
+        <button data-dir="home"  class="home"  title="Home"   aria-label="Home">⌂</button>
+        <button data-dir="left"  class="left"  title="Links"  aria-label="Links">◀</button>
+        <button data-dir="stop"  class="stop"  title="Stopp"  aria-label="Stopp">■</button>
+        <button data-dir="right" class="right" title="Rechts" aria-label="Rechts">▶</button>
+        <button data-dir="down"  class="down"  title="Runter" aria-label="Runter">▼</button>
     </div>
-    <div id="ptz-msg"></div>
+    <div class="status" id="ptz-msg"></div>
     </div>
+
     <script>
     (function(){
-    var base = '$hook';
-    var msg  = document.getElementById('ptz-msg');
-    var wrap = document.getElementById('ptz-wrap');
-
-    function flash(cls){
-        wrap.classList.add(cls);
-        setTimeout(function(){ wrap.classList.remove(cls); }, 250);
-    }
+    var base = "'.$hook.'";
+    var msg  = document.getElementById("ptz-msg");
+    var wrap = document.getElementById("ptz-wrap");
 
     function send(dir){
-        // GET: /hook/... ?ptz=DIR
-        var url = base + '?ptz=' + encodeURIComponent(dir);
-        fetch(url, { method: 'GET', credentials: 'same-origin' })
-        .then(function(r){ return r.text(); })
-        .then(function(t){
-            if ((t||'').trim().toUpperCase()==='OK') {
-            msg.textContent = 'PTZ: ' + dir;
-            flash('ok');
-            } else {
-            msg.textContent = 'Fehler: ' + (t||'');
-            flash('err');
-            }
+        fetch(base + "?ptz=" + encodeURIComponent(dir), {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store"
         })
-        .catch(function(e){
-            msg.textContent = 'Netzwerkfehler';
-            flash('err');
-        });
+        .then(r => r.text())
+        .then(t => {
+        if ((t||"").trim().toUpperCase() === "OK") {
+            msg.textContent = ""; // später gern Feedback anzeigen
+        } else {
+            msg.textContent = "Fehler: " + (t||"");
+        }
+        })
+        .catch(() => { msg.textContent = "Netzwerkfehler"; });
     }
 
-    Array.prototype.forEach.call(wrap.querySelectorAll('button[data-dir]'), function(btn){
-        btn.addEventListener('click', function(){
-        var dir = this.getAttribute('data-dir');
-        send(dir);
-        });
+    wrap.addEventListener("click", function(ev){
+        var btn = ev.target.closest("button[data-dir]");
+        if (!btn) return;
+        send(btn.getAttribute("data-dir"));
     });
     })();
-    </script>
-    HTML;
+    </script>';
 
         $this->SetValue("PTZ_HTML", $html);
     }
