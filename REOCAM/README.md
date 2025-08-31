@@ -68,11 +68,11 @@ Stream-Typ                          |   Standard ist Substream. Hier kann zwisch
 Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
 Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
 Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
-API-Funktionen                      |   Aktiviert die API-Funktionen. Vorerst ist die Ansteuerung der Kamera-LED und die Mailfunktion integriert. Die Istwerte werden alle 10 Sekunden von der Kamera abgerufen.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert.
 
 ### 5. Statusvariablen und Profile
 
@@ -104,7 +104,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.7 (31.08.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Dies enthält ein html-Element mit dem Steuerkreuz und der Möglichkeit, Presets abzurufen oder zu speichern.
-- Konfigurationsformular angepasst, die API-Funktion haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
+- Konfigurationsformular angepasst, die API-Funktionen haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
 
 Version 2.6 (25.08.2025)
 - Neue API-Funktion 'Mailversand'. Die SMTP-Konfiguration ist im Kameraintrface vorzunehmen. Im Modul kann der Mailversand de/aktiviert (zb bei Abwesenheit), das Versand-Intervall eingestellt und der Mailinhalt bestimmt werden.
