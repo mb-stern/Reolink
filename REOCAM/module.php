@@ -1376,90 +1376,72 @@ private function SetEmailContent(int $mode): bool
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
 
-        // Hook sicherstellen
         $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") {
-            $hook = $this->RegisterHook();
+
+        $html = <<<HTML
+    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:240px">
+    <style>
+        #ptz-wrap button {
+        padding:8px 10px; border:1px solid #bbb; border-radius:8px; cursor:pointer;
+        background:#f7f7f7; font-size:16px; line-height:1;
         }
+        #ptz-wrap button:active { transform:scale(0.98); }
+        #ptz-wrap .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; place-items:center; }
+        #ptz-msg { font-size:12px; color:#666; margin-top:6px; min-height:14px; }
+        #ptz-wrap .ok { background:#e8ffe8; transition:background .3s; }
+        #ptz-wrap .err{ background:#ffe8e8; transition:background .3s; }
+    </style>
 
-        $uid  = $this->InstanceID; // für eindeutige DOM-IDs
-        $html = '
-    <div id="ptz-'.$uid.'" class="ptz-wrap">
     <div class="grid">
-        <button data-cmd="up"    class="btn up"    title="Hoch"   aria-label="Hoch">▲</button>
-        <button data-cmd="home"  class="btn home"  title="Home"   aria-label="Home">⌂</button>
-        <button data-cmd="right" class="btn right" title="Rechts" aria-label="Rechts">▶</button>
-        <button data-cmd="left"  class="btn left"  title="Links"  aria-label="Links">◀</button>
-        <button data-cmd="stop"  class="btn stop"  title="Stopp"  aria-label="Stopp">■</button>
-        <button data-cmd="down"  class="btn down"  title="Runter" aria-label="Runter">▼</button>
+        <button data-dir="up">▲</button>
+        <button data-dir="stop">■</button>
+        <button data-dir="home">⌂</button>
+        <button data-dir="left">◀</button>
+        <button data-dir="down">▼</button>
+        <button data-dir="right">▶</button>
     </div>
-    <div class="status"></div>
+    <div id="ptz-msg"></div>
     </div>
-
     <script>
     (function(){
-    const ROOT   = document.getElementById("ptz-'.$uid.'");
-    const STATUS = ROOT.querySelector(".status");
-    const URL_HOOK = new URL("'.$hook.'", location.origin).toString();
+    var base = '$hook';
+    var msg  = document.getElementById('ptz-msg');
+    var wrap = document.getElementById('ptz-wrap');
 
-    ROOT.addEventListener("click", (ev) => {
-        const btn = ev.target.closest("button[data-cmd]");
-        if (!btn) return;
-        const cmd = btn.dataset.cmd;
+    function flash(cls){
+        wrap.classList.add(cls);
+        setTimeout(function(){ wrap.classList.remove(cls); }, 250);
+    }
 
-        btn.disabled = true;
-        fetch(URL_HOOK, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        credentials: "same-origin",      // wichtig für WebFront-Auth
-        cache: "no-store",
-        body: JSON.stringify({ ptz: cmd })
-        }).then(r => {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        }).catch(err => {
-        STATUS.textContent = "Netzwerkfehler: " + err.message;
-        setTimeout(() => STATUS.textContent = "", 2000);
-        }).finally(() => {
-        btn.disabled = false;
+    function send(dir){
+        // GET: /hook/... ?ptz=DIR
+        var url = base + '?ptz=' + encodeURIComponent(dir);
+        fetch(url, { method: 'GET', credentials: 'same-origin' })
+        .then(function(r){ return r.text(); })
+        .then(function(t){
+            if ((t||'').trim().toUpperCase()==='OK') {
+            msg.textContent = 'PTZ: ' + dir;
+            flash('ok');
+            } else {
+            msg.textContent = 'Fehler: ' + (t||'');
+            flash('err');
+            }
+        })
+        .catch(function(e){
+            msg.textContent = 'Netzwerkfehler';
+            flash('err');
+        });
+    }
+
+    Array.prototype.forEach.call(wrap.querySelectorAll('button[data-dir]'), function(btn){
+        btn.addEventListener('click', function(){
+        var dir = this.getAttribute('data-dir');
+        send(dir);
         });
     });
     })();
     </script>
-
-    <style>
-    #ptz-'.$uid.' .grid{
-    display:grid;
-    grid-template-columns:repeat(3,48px);
-    grid-template-rows:repeat(3,48px);
-    gap:8px;
-    justify-content:center;
-    align-items:center;
-    user-select:none;
-    }
-    #ptz-'.$uid.' .btn{
-    width:48px; height:48px;
-    border:1px solid #c9c9c9;
-    border-radius:10px;
-    font-size:18px; line-height:48px;
-    cursor:pointer;
-    background:#f7f7f7;
-    box-shadow:0 1px 2px rgba(0,0,0,.08);
-    }
-    #ptz-'.$uid.' .btn:active{ transform: translateY(1px); }
-
-    /* Positionen im 3x3-Raster */
-    #ptz-'.$uid.' .up    { grid-column:2; grid-row:1; }
-    #ptz-'.$uid.' .left  { grid-column:1; grid-row:2; }
-    #ptz-'.$uid.' .home  { grid-column:2; grid-row:2; }
-    #ptz-'.$uid.' .right { grid-column:3; grid-row:2; }
-    #ptz-'.$uid.' .down  { grid-column:2; grid-row:3; }
-    #ptz-'.$uid.' .stop  { grid-column:3; grid-row:1; } /* oben rechts */
-
-    #ptz-'.$uid.' .status{
-    margin-top:6px; min-height:1em;
-    font-size:12px; opacity:.8; text-align:center;
-    }
-    </style>';
+    HTML;
 
         $this->SetValue("PTZ_HTML", $html);
     }
@@ -1494,15 +1476,19 @@ private function SetEmailContent(int $mode): bool
 
     private function PtzOp(string $op, int $speed = 5): bool
     {
-        $param = ["channel" => 0, "op" => $op];
-        if ($op !== "Stop" && $op !== "Home") {
-            $param["speed"] = $speed; // nur dort, wo erlaubt
-        }
+        $payload = [[
+            "cmd"   => "PtzCtrl",
+            "param" => [
+                "channel" => 0,
+                "op"      => $op,
+                // speed nur mitsenden, wenn sinnvoll:
+                // Stop/Home brauchen keinen speed
+            ] + (($op === 'Stop' || $op === 'Home') ? [] : ["speed"=>$speed])
+        ]];
 
-        $res = $this->apiCall([[ "cmd" => "PtzCtrl", "param" => $param ]], false);
-        $ok  = is_array($res) && (($res[0]["code"] ?? -1) === 0);
-        if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=".$op.": ".json_encode($res), 0);
+        $res = $this->apiCall($payload, false);
+        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=$op: ".json_encode($res), 0);
         return $ok;
     }
-
 }
