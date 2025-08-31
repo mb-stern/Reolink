@@ -28,6 +28,8 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
         $this->RegisterAttributeString("EmailApiVersion", ""); // "V20" oder "LEGACY"
+        $this->RegisterAttributeString("PtzStyle", ""); // "", "flat" oder "nested"
+
 
 
         $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -235,6 +237,8 @@ class Reolink extends IPSModule
 
     public function ProcessHookData()
     {
+        while (ob_get_level() > 0) { @ob_end_clean(); }
+        
         $this->SendDebug('Webhook', 'triggered', 0);
 
         // 1) Versuch: JSON-Body
@@ -999,11 +1003,12 @@ class Reolink extends IPSModule
         $this->RemovePTZUI();
     }
 
-        private function RemovePTZUI(): void
+    private function RemovePTZUI(): void
     {
         $id = @$this->GetIDForIdent("PTZ_HTML");
         if ($id !== false) {
-            $this->UnregisterVariable("PTZ_HTML");
+            IPS_SetHidden($id, true);
+            $this->SetValue("PTZ_HTML", "");
         }
     }
 
@@ -1308,99 +1313,72 @@ private function SetEmailContent(int $mode): bool
 
     private function DetectPTZ(): bool
     {
-        // 1) Fähigkeiten prüfen
-        $res = $this->apiCall([[
-            "cmd"   => "GetAbility",
-            "param" => ["channel" => 0]
-        ]], /*suppressError*/ true);
-
+        // Fähigkeit abfragen (optional – nicht jede FW liefert das konsistent)
+        $res = $this->apiCall([[ "cmd"=>"GetAbility", "param"=>["channel"=>0] ]], true);
         if (is_array($res) && isset($res[0]['value'])) {
-            // Mögliche Strukturvarianten der Firmware abdecken
             $v = $res[0]['value'];
-            $ability =
-                $v['Ability']      ??   // häufig
-                $v['ability']      ??   // klein geschrieben
-                $v['abilityChn']   ??   // kanal-spezifisch
-                null;
-
-            // Wenn abilityChn ein Array pro Kanal ist, Kanal 0 herausziehen
-            if (is_array($ability) && isset($ability[0]) && is_array($ability[0])) {
-                $ability = $ability[0];
-            }
+            $ability = $v['Ability'] ?? $v['ability'] ?? $v['abilityChn'] ?? null;
+            if (is_array($ability) && isset($ability[0]) && is_array($ability[0])) $ability = $ability[0];
 
             if (is_array($ability)) {
-                $flag =
-                    $ability['ptz']        ??
-                    $ability['PTZ']        ??
-                    $ability['ptzType']    ??
-                    $ability['ptzCtrl']    ??
-                    $ability['ptzSupport'] ?? null;
-
-                // Verschiedene Formen tolerieren (bool/int/array)
-                if (is_bool($flag) && $flag) return true;
-                if (is_numeric($flag) && (int)$flag > 0) return true;
-                if (is_array($flag)) {
-                    foreach ($flag as $vflag) {
-                        if ((is_bool($vflag) && $vflag) || (is_numeric($vflag) && (int)$vflag > 0)) {
-                            return true;
-                        }
-                    }
+                $flag = $ability['ptz'] ?? $ability['PTZ'] ?? $ability['ptzType'] ?? $ability['ptzCtrl'] ?? $ability['ptzSupport'] ?? null;
+                if ((is_bool($flag) && $flag) || (is_numeric($flag) && (int)$flag > 0)) {
+                    // Stil per PtzCtrl-Stop kalibrieren (tut nicht weh)
+                    $probe = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"Stop"], "PtzCtrl", true);
+                    return true;
                 }
             }
         }
 
-        // 2) Harmloser Probe-Call: Stop (korrektes, flaches Param-Format!)
-        $probe = $this->apiCall([[
-            "cmd"   => "PtzCtrl",
-            "param" => ["channel" => 0, "op" => "Stop"]
-        ]], /*suppressError*/ true);
-        if (is_array($probe) && (($probe[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
+        // Robust: PtzCtrl Stop (auto flat/nested) ⇒ setzt nebenbei den Stil
+        $probe = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"Stop"], "PtzCtrl", true);
+        if (is_array($probe)) return true;
 
-        // 3) Alternativ: Presets abrufen (wenn unterstützt, ist PTZ sicher vorhanden)
-        $probe2 = $this->apiCall([[
-            "cmd"   => "GetPtzPreset",
-            "param" => ["channel" => 0]
-        ]], /*suppressError*/ true);
-        if (is_array($probe2) && (($probe2[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
-
-        return false;
+        // Alternativ: Presets
+        $probe2 = $this->apiCallCmd("GetPtzPreset", ["channel"=>0], "GetPtzPreset", true);
+        return is_array($probe2);
     }
 
     private function CreateOrUpdatePTZHtml(): void
     {
+        // Variable anlegen (falls nicht vorhanden) und sichtbar schalten
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
+        $id = $this->GetIDForIdent("PTZ_HTML");
+        if ($id !== false) { @IPS_SetHidden($id, false); }
 
+        // Hook sicherstellen
         $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") $hook = $this->RegisterHook();
+        if ($hook === "") {
+            $hook = $this->RegisterHook();
+        }
 
-        $html = '
+        // Größe für 4er-Kachel kompakt halten
+        $btn = 42; // Kantenlänge Button (px)
+        $gap = 6;  // Abstand (px)
+
+        $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
-        /* ---- kompakte Maße (einfach hier anpassen) ---- */
-        #ptz-wrap{
-        --btn: 48px;     /* Button-Kante */
-        --gap: 6px;      /* Abstand zwischen Buttons */
-        --fs: 18px;      /* Symbolgröße */
-        --radius: 10px;  /* Ecken */
+    #ptz-wrap{
+        --btn: {$btn}px;
+        --gap: {$gap}px;
+        --fs: 16px;
+        --radius: 10px;
         max-width: calc(var(--btn)*3 + var(--gap)*2);
-        margin: 0 auto;  /* zentriert in der Kachel */
+        margin: 0 auto;
         user-select: none;
-        }
-        #ptz-wrap .grid{
+    }
+    #ptz-wrap .grid{
         display:grid;
         grid-template-columns: repeat(3, var(--btn));
         grid-template-rows:    repeat(3, var(--btn));
         gap: var(--gap);
         justify-content:center;
         align-items:center;
-        }
-        #ptz-wrap button{
+    }
+    #ptz-wrap button{
         width: var(--btn);
         height: var(--btn);
         border: 1px solid #cfcfcf;
@@ -1410,38 +1388,36 @@ private function SetEmailContent(int $mode): bool
         line-height: 1;
         cursor: pointer;
         box-shadow: 0 1px 2px rgba(0,0,0,.06);
-        box-sizing: border-box;        /* wichtig gegen Scrollbalken */
-        padding: 0;                     /* kein Innenabstand */
-        }
-        #ptz-wrap button:hover { filter: brightness(.98); }
-        #ptz-wrap button:active{ transform: translateY(1px); }
+        box-sizing: border-box;
+        padding: 0;
+    }
+    #ptz-wrap button:hover { filter: brightness(.98); }
+    #ptz-wrap button:active{ transform: translateY(1px); }
 
-        /* D-Pad-Positionen */
-        #ptz-wrap .up    { grid-column:2; grid-row:1; }
-        #ptz-wrap .home  { grid-column:3; grid-row:1; }
-        #ptz-wrap .left  { grid-column:1; grid-row:2; }
-        #ptz-wrap .stop  { grid-column:2; grid-row:2; }
-        #ptz-wrap .right { grid-column:3; grid-row:2; }
-        #ptz-wrap .down  { grid-column:2; grid-row:3; }
+    /* Positionen: Home in der Mitte, Pfeile drumherum */
+    #ptz-wrap .up    { grid-column:2; grid-row:1; }
+    #ptz-wrap .left  { grid-column:1; grid-row:2; }
+    #ptz-wrap .home  { grid-column:2; grid-row:2; }
+    #ptz-wrap .right { grid-column:3; grid-row:2; }
+    #ptz-wrap .down  { grid-column:2; grid-row:3; }
 
-        /* Status ausblenden, spart Höhe */
-        #ptz-wrap .status{ display:none; }
+    /* Status ausgeblendet (spart Höhe) */
+    #ptz-wrap .status{ display:none; }
     </style>
 
     <div class="grid">
-        <button data-dir="up"    class="up"    title="Hoch"   aria-label="Hoch">▲</button>
-        <button data-dir="home"  class="home"  title="Home"   aria-label="Home">⌂</button>
-        <button data-dir="left"  class="left"  title="Links"  aria-label="Links">◀</button>
-        <button data-dir="stop"  class="stop"  title="Stopp"  aria-label="Stopp">■</button>
-        <button data-dir="right" class="right" title="Rechts" aria-label="Rechts">▶</button>
-        <button data-dir="down"  class="down"  title="Runter" aria-label="Runter">▼</button>
+    <button data-dir="up"    class="up"    title="Hoch"   aria-label="Hoch">▲</button>
+    <button data-dir="left"  class="left"  title="Links"  aria-label="Links">◀</button>
+    <button data-dir="home"  class="home"  title="Home"   aria-label="Home">⌂</button>
+    <button data-dir="right" class="right" title="Rechts" aria-label="Rechts">▶</button>
+    <button data-dir="down"  class="down"  title="Runter" aria-label="Runter">▼</button>
     </div>
     <div class="status" id="ptz-msg"></div>
     </div>
 
     <script>
     (function(){
-    var base = "'.$hook.'";
+    var base = "{$hook}";
     var msg  = document.getElementById("ptz-msg");
     var wrap = document.getElementById("ptz-wrap");
 
@@ -1451,13 +1427,14 @@ private function SetEmailContent(int $mode): bool
         credentials: "same-origin",
         cache: "no-store"
         })
-        .then(r => r.text())
-        .then(t => {
+        .then(function(r){ return r.text(); })
+        .then(function(t){
+        // still & tolerant – keine lauten Fehl-Einblendungen
         if ((t||"").trim().toUpperCase() !== "OK") {
             if (msg) msg.textContent = "Fehler: " + (t||"");
         }
         })
-        .catch(() => { if (msg) msg.textContent = "Netzwerkfehler"; });
+        .catch(function(){ if (msg) msg.textContent = "Netzwerkfehler"; });
     }
 
     wrap.addEventListener("click", function(ev){
@@ -1466,7 +1443,8 @@ private function SetEmailContent(int $mode): bool
         send(btn.getAttribute("data-dir"));
     });
     })();
-    </script>';
+    </script>
+    HTML;
 
         $this->SetValue("PTZ_HTML", $html);
     }
@@ -1478,42 +1456,105 @@ private function SetEmailContent(int $mode): bool
             'right' => 'Right',
             'up'    => 'Up',
             'down'  => 'Down',
-            'stop'  => 'Stop',
-            'home'  => 'Home' // falls unterstützt
+            'home'  => 'Home'
         ];
         if (!isset($map[$dir])) {
             $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
             return;
         }
-        $op = $map[$dir];
 
-        // Sofort-Stop/Home ohne „Impuls“
-        if ($op === 'Stop' || $op === 'Home') {
-            $this->PtzOp($op);
+        if ($dir === 'home') {
+            $this->PtzHome();
             return;
         }
 
-        // kurzer Impuls (z. B. 250 ms) + Stop
-        $this->PtzOp($op, 5); // speed 1..X (modellabhängig)
+        // kurzer Impuls + Stop (unsichtbar in der UI)
+        $this->PtzOp($map[$dir], 5);
         IPS_Sleep(250);
         $this->PtzOp('Stop');
     }
 
     private function PtzOp(string $op, int $speed = 5): bool
     {
-        $payload = [[
-            "cmd"   => "PtzCtrl",
-            "param" => [
-                "channel" => 0,
-                "op"      => $op,
-                // speed nur mitsenden, wenn sinnvoll:
-                // Stop/Home brauchen keinen speed
-            ] + (($op === 'Stop' || $op === 'Home') ? [] : ["speed"=>$speed])
-        ]];
-
-        $res = $this->apiCall($payload, false);
+        $body = ["channel"=>0, "op"=>$op];
+        if (!in_array($op, ["Stop","Home"], true)) {
+            $body["speed"] = $speed; // Stop/Home brauchen keinen speed
+        }
+        $res = $this->apiCallCmd("PtzCtrl", $body, "PtzCtrl", false);
         $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
         if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=$op: ".json_encode($res), 0);
         return $ok;
+    }
+
+    private function getPtzStyle(): string {
+    $s = $this->ReadAttributeString("PtzStyle");
+    return ($s === "flat" || $s === "nested") ? $s : "";
+    }
+
+    private function setPtzStyle(string $s): void {
+        if ($s === "flat" || $s === "nested") {
+            $this->WriteAttributeString("PtzStyle", $s);
+            $this->SendDebug("PTZ", "PtzStyle gesetzt: ".$s, 0);
+        }
+    }
+
+    /**
+     * Führt einen Reolink-API-Call aus und probiert automatisch
+     * "flat" (param = body) und "nested" (param = {nestedKey: body}).
+     * - Merkt sich die erfolgreiche Variante in PtzStyle, damit
+     *   alle späteren Calls sofort die richtige Form nutzen.
+     */
+    private function apiCallCmd(string $cmd, array $body, string $nestedKey, bool $suppressError=false): ?array {
+        // Falls schon bekannt, erst diese Variante probieren
+        $known = $this->getPtzStyle();
+        $variants = ($known === "nested") ? ["nested","flat"] : (($known === "flat") ? ["flat","nested"] : ["flat","nested"]);
+
+        foreach ($variants as $mode) {
+            $payload = [[
+                "cmd"   => $cmd,
+                "param" => ($mode === "flat") ? $body : [$nestedKey => $body]
+            ]];
+
+            $resp = $this->apiCall($payload, /*suppress*/ true);
+            if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
+                // Erfolg ⇒ Stil merken (falls neu erkannt)
+                if ($known !== $mode) $this->setPtzStyle($mode);
+                return $resp;
+            }
+            // bei Auth- oder Param-Fehler nächste Variante probieren
+        }
+
+        // Wenn beide fehlgeschlagen sind, optional Fehlereintrag
+        if (!$suppressError) {
+            $this->SendDebug("apiCallCmd", "Beide Varianten fehlgeschlagen: cmd=".$cmd." body=".json_encode($body), 0);
+            $this->LogMessage("Reolink: apiCallCmd FAIL for {$cmd}", KL_ERROR);
+        }
+        return null;
+    }
+
+    private function PtzHome(): bool
+    {
+        // 1) SetPtzGuard (Monitor Point) – diverse Schreibweisen
+        $tries = [
+            ["cmd"=>"SetPtzGuard", "key"=>"PtzGuard", "body"=>["channel"=>0, "cmdStr"=>"topos"]],
+            ["cmd"=>"SetPtzGuard", "key"=>"PtzGuard", "body"=>["channel"=>0, "cmd"=>"topos"]],
+            // Manche FW will "cmd":"toPos" klein etc. – optional:
+            ["cmd"=>"SetPtzGuard", "key"=>"PtzGuard", "body"=>["channel"=>0, "cmdStr"=>"toPos"]],
+        ];
+        foreach ($tries as $t) {
+            $res = $this->apiCallCmd($t["cmd"], $t["body"], $t["key"], true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
+        }
+
+        // 2) PtzCtrl → ToPos id=0 (oft ist Guard = Preset 0)
+        $res = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"ToPos", "id"=>0], "PtzCtrl", true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
+
+        // 3) (falls unterstützt) direktes "Home"
+        $res = $this->apiCallCmd("PtzCtrl", ["channel"=>0, "op"=>"Home"], "PtzCtrl", true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
+
+        $this->SendDebug("PTZ","HOME: alle Varianten fehlgeschlagen",0);
+        return false;
     }
 }
