@@ -1450,35 +1450,18 @@ private function SetEmailContent(int $mode): bool
     }
 
     function call(op, extra){
-    var qs = new URLSearchParams(extra || {});
-    qs.set("ptz", op);
-
-    // Absolute URL bauen, damit kein Mixed-Content/Origin-Quirk zuschlägt
-    var url = (base && base.charAt(0) === '/')
-        ? (window.location.origin + base + "?" + qs.toString())
-        : (base + "?" + qs.toString());
-
-    // 1) Normal per fetch
-    return fetch(url, { method: "GET", cache: "no-store" })
-        .then(function(r){ return r.text().catch(function(){ return ""; }); })
+        var qs = new URLSearchParams(extra || {});
+        qs.set("ptz", op);
+        return fetch(base + "?" + qs.toString(), {
+        method: "GET", credentials: "same-origin", cache: "no-store"
+        })
+        .then(function(r){ return r.text(); })
         .then(function(t){
         var ok = (t||"").trim().toUpperCase() === "OK";
         show(ok ? "OK" : ("Fehler: " + (t||"")), ok);
         return ok;
         })
-        .catch(function(err){
-        // 2) Fallback: Image-Ping (triggert GET, ohne CORS-Ärger)
-        return new Promise(function(resolve){
-            var img = new Image();
-            var done = function(ok){
-            show(ok ? "OK" : "Netzwerkfehler", ok);
-            resolve(ok);
-            };
-            img.onload = function(){ done(true); };
-            img.onerror = function(){ done(false); };
-            img.src = url + (url.indexOf("?")>=0 ? "&" : "?") + "_ts=" + Date.now();
-        });
-        });
+        .catch(function(){ show("Netzwerkfehler", false); return false; });
     }
 
     function calcNextId(){
