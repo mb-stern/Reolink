@@ -42,7 +42,7 @@
     {
       "type": "CheckBox",
       "name": "ShowTestElements",
-      "caption": "Test-Funktion Bewegungserkennung (Im Webhook Reolink aktivierbar)"
+      "caption": "Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)"
     },
     {
       "type": "CheckBox",
@@ -78,7 +78,7 @@
         {
           "type": "CheckBox",
           "name": "EnableApiWhiteLed",
-          "caption": "White-LED/Spotlight steuern"
+          "caption": "Spotlight steuern"
         },
         {
           "type": "CheckBox",
@@ -88,7 +88,7 @@
         {
           "type": "CheckBox",
           "name": "EnableApiPTZ",
-          "caption": "PTZ-Steuerung (HTML-Box) anzeigen"
+          "caption": "PTZ-Steuerung und Presets anzeigen"
         }
       ]
     },

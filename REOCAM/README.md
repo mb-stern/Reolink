@@ -104,6 +104,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.7 (31.08.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Dies enthält ein html-Element mit dem Steuerkreuz und der Möglichkeit, die gespeicherten Presets abzurufen.
+- Konfigurationsformular angepasst, die API-Funktion haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
 
 Version 2.6 (25.08.2025)
 - Neue API-Funktion 'Mailversand'. Die SMTP-Konfiguration ist im Kameraintrface vorzunehmen. Im Modul kann der Mailversand de/aktiviert (zb bei Abwesenheit), das Versand-Intervall eingestellt und der Mailinhalt bestimmt werden.
