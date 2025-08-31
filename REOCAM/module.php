@@ -993,7 +993,7 @@ class Reolink extends IPSModule
 
         $this->UpdateWhiteLedStatus();
         $this->UpdateEmailVars();
-        $this->CheckAndMaintainPTZUI();
+        $this->CheckAndCreatePTZUI();
     }
 
     private function UpdateWhiteLedStatus()
