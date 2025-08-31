@@ -1511,55 +1511,6 @@ private function SetEmailContent(int $mode): bool
         $this->setHtmlIfChanged("PTZ_HTML", $html);
     }
 
-  function callParam(param){ callQS("ptz=" + encodeURIComponent(param)); }
-
-  wrap.addEventListener("click", function(ev){
-    var btn = ev.target.closest("button");
-    if (!btn) return;
-
-    // Richtungen & Preset anfahren
-    if (btn.hasAttribute("data-dir"))    { callParam(btn.getAttribute("data-dir")); return; }
-    if (btn.hasAttribute("data-preset")) { callParam("preset:" + btn.getAttribute("data-preset")); return; }
-
-    // SAVE (oben im Verwaltungsbereich)
-    if (btn.id === "ptz-btn-save") {
-      var idEl   = document.getElementById("ptz-save-id");
-      var nameEl = document.getElementById("ptz-save-name");
-      var id     = idEl && idEl.value !== "" ? parseInt(idEl.value,10) : NaN;
-      var name   = nameEl ? nameEl.value : "";
-      if (isNaN(id) || id < 0) { if (msg) msg.textContent = "Bitte gültige ID angeben."; return; }
-      callQS("ptz=save&id=" + encodeURIComponent(id) + (name ? "&name=" + encodeURIComponent(name) : ""));
-      return;
-    }
-
-    // RENAME je Zeile
-    if (btn.classList.contains("preset-rename")) {
-      var id  = parseInt(btn.getAttribute("data-id"),10);
-      var neu = prompt("Neuer Name für Preset " + id + ":");
-      if (neu && neu.trim() !== "") {
-        callQS("ptz=rename&id=" + encodeURIComponent(id) + "&name=" + encodeURIComponent(neu.trim()));
-      }
-      return;
-    }
-
-    // DELETE je Zeile
-    if (btn.classList.contains("preset-delete")) {
-      var id = parseInt(btn.getAttribute("data-id"),10);
-      if (confirm("Preset " + id + " wirklich löschen?")) {
-        callQS("ptz=delete&id=" + encodeURIComponent(id));
-      }
-      return;
-    }
-  });
-})();
-</script>
-HTML;
-
-    // Nur setzen, wenn sich der Wert ändert
-    $this->setHtmlIfChanged("PTZ_HTML", $html);
-}
-
-
     /** Setzt eine String-Variable nur, wenn der neue Inhalt sich unterscheidet. */
     private function setHtmlIfChanged(string $ident, string $html): void
     {
