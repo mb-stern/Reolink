@@ -1007,8 +1007,10 @@ class Reolink extends IPSModule
     {
         $id = @$this->GetIDForIdent("PTZ_HTML");
         if ($id !== false) {
-            IPS_SetHidden($id, true);
-            $this->SetValue("PTZ_HTML", "");
+            // nicht Unregistern -> nur ausblenden
+            @IPS_SetHidden($id, true);
+            // optional: Hinweis anzeigen
+            $this->SetValue("PTZ_HTML", '<div style="font-family:system-ui;opacity:.7;padding:6px">PTZ nicht verfügbar.</div>');
         }
     }
 
@@ -1456,32 +1458,33 @@ private function SetEmailContent(int $mode): bool
             'right' => 'Right',
             'up'    => 'Up',
             'down'  => 'Down',
-            'home'  => 'Home'
+            'home'  => 'Home' // Placeholder, echte Logik unten
         ];
         if (!isset($map[$dir])) {
             $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
             return;
         }
+        $op = $map[$dir];
 
-        if ($dir === 'home') {
-            $this->PtzHome();
+        if ($op === 'Home') {
+            $this->PtzGoHome();
             return;
         }
 
-        // kurzer Impuls + Stop (unsichtbar in der UI)
-        $this->PtzOp($map[$dir], 5);
+        // Impuls + Stop
+        $this->PtzOp($op, 5);
         IPS_Sleep(250);
         $this->PtzOp('Stop');
     }
 
     private function PtzOp(string $op, int $speed = 5): bool
     {
-        $body = ["channel"=>0, "op"=>$op];
-        if (!in_array($op, ["Stop","Home"], true)) {
-            $body["speed"] = $speed; // Stop/Home brauchen keinen speed
+        $param = ["channel"=>0, "op"=>$op];
+        if ($op !== 'Stop' && $op !== 'Home') {
+            $param["speed"] = $speed;
         }
-        $res = $this->apiCallCmd("PtzCtrl", $body, "PtzCtrl", false);
-        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        $res = $this->apiCallCompat("PtzCtrl", $param, /*suppress*/ false);
+        $ok  = $this->ptzOk($res);
         if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=$op: ".json_encode($res), 0);
         return $ok;
     }
@@ -1556,5 +1559,22 @@ private function SetEmailContent(int $mode): bool
 
         $this->SendDebug("PTZ","HOME: alle Varianten fehlgeschlagen",0);
         return false;
+    }
+
+    private function ptzOk(?array $res): bool {
+    return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+    }
+
+    private function apiCallCompat(string $cmd, array $paramFlat, bool $suppressError=false): ?array {
+        // 1) flaches Format
+        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>$paramFlat ]], $suppressError);
+        if ($this->ptzOk($res)) return $res;
+
+        // 2) verschachtelt: gleicher Containername wie cmd
+        $res2 = $this->apiCall([[ "cmd"=>$cmd, "param"=>[ $cmd => $paramFlat ] ]], $suppressError);
+        if ($this->ptzOk($res2)) return $res2;
+
+        // Rückgabe letztes Ergebnis (für Debug/Fehlercode)
+        return $res2 ?: $res;
     }
 }
