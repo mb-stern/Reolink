@@ -1404,10 +1404,6 @@ private function SetEmailContent(int $mode): bool
     }
     #ptz-wrap .new button{ height:36px; padding:6px 10px; }
     #ptz-wrap .hint{ font-size:14px; opacity:.75; }
-
-    #ptz-wrap .status{ display:block; margin-top:6px; font-size:14px; opacity:.95; }
-    #ptz-wrap .ok{ color:#2e7d32; }  /* grün */
-    #ptz-wrap .err{ color:#c62828; } /* rot  */
     </style>
 
     <!-- 1) Pfeil-Grid -->
@@ -1430,9 +1426,6 @@ private function SetEmailContent(int $mode): bool
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
     <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
     <span class="hint" id="ptz-nextid-hint"></span>
-    </div>
-
-    <div class="status" id="ptz-msg"></div>
     </div>
 
     <script>
