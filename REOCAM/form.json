@@ -88,7 +88,7 @@
         {
           "type": "CheckBox",
           "name": "EnableApiPTZ",
-          "caption": "PTZ-Steuerung und Presets anzeigen"
+          "caption": "PTZ-Steuerung und Presets anzeigen (nur wenn Kamera PTZ unterstützt)"
         }
       ]
     },
