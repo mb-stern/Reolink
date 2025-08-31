@@ -1479,100 +1479,41 @@ private function SetEmailContent(int $mode): bool
             'up'    => 'Up',
             'down'  => 'Down',
             'stop'  => 'Stop',
-            'home'  => 'HOME' // Platzhalter, wir behandeln das separat
+            'home'  => 'Home' // falls unterstützt
         ];
         if (!isset($map[$dir])) {
             $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
             return;
         }
-
-        if ($dir === 'home') {
-            // „Monitor Point“ anfahren
-            $this->PtzGuardTopos();
-            return;
-        }
-
-        // normale Richtungs-Impulse über PtzCtrl (flaches Format!)
         $op = $map[$dir];
-        if ($op === 'Stop') {
-            $this->PtzOp('Stop');
+
+        // Sofort-Stop/Home ohne „Impuls“
+        if ($op === 'Stop' || $op === 'Home') {
+            $this->PtzOp($op);
             return;
         }
-        $this->PtzOp($op, 5);
+
+        // kurzer Impuls (z. B. 250 ms) + Stop
+        $this->PtzOp($op, 5); // speed 1..X (modellabhängig)
         IPS_Sleep(250);
         $this->PtzOp('Stop');
     }
 
     private function PtzOp(string $op, int $speed = 5): bool
     {
-        $param = ["channel" => 0, "op" => $op];
-        if (!in_array($op, ['Stop', 'Home'], true)) {
-            $param["speed"] = $speed;
-        }
-
-        $payload = [[ "cmd" => "PtzCtrl", "param" => $param ]];
+        $payload = [[
+            "cmd"   => "PtzCtrl",
+            "param" => [
+                "channel" => 0,
+                "op"      => $op,
+                // speed nur mitsenden, wenn sinnvoll:
+                // Stop/Home brauchen keinen speed
+            ] + (($op === 'Stop' || $op === 'Home') ? [] : ["speed"=>$speed])
+        ]];
 
         $res = $this->apiCall($payload, false);
         $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
         if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=$op: ".json_encode($res), 0);
         return $ok;
-    }
-
-    private function PtzGotoGuard(): bool
-    {
-        $payload = [[
-            "cmd"   => "SetPtzGuard",
-            "param" => [
-                "PtzGuard" => [
-                    "channel" => 0,
-                    "cmdStr"  => "topos"
-                ]
-            ]
-        ]];
-
-        $res = $this->apiCall($payload, /*suppressError*/ false);
-        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-        if (!$ok) $this->SendDebug("PTZ", "GotoGuard fehlgeschlagen: ".json_encode($res), 0);
-        return $ok;
-    }
-
-    private function PtzSetGuardHere(): bool
-    {
-        $payload = [[
-            "cmd"   => "SetPtzGuard",
-            "param" => [
-                "PtzGuard" => [
-                    "channel" => 0,
-                    "cmdStr"  => "setpos"
-                ]
-            ]
-        ]];
-
-        $res = $this->apiCall($payload, true);
-        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
-    }
-
-    private function PtzGuardTopos(): bool
-    {
-        // Erst Variante 'toPos' (CamelCase) probieren, dann 'topos' als Fallback
-        foreach (['toPos', 'topos'] as $variant) {
-            $payload = [[
-                "cmd"   => "SetPtzGuard",
-                "action"=> 0,
-                "param" => [
-                    "PtzGuard" => [
-                        "channel" => 0,
-                        "cmdStr"  => $variant
-                        // Optional möglich, aber nicht nötig für 'topos':
-                        // "benable" => 1, "timeout" => 60
-                    ]
-                ]
-            ]];
-            $res = $this->apiCall($payload, /*suppressError*/ false);
-            $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-            if ($ok) return true;
-            $this->SendDebug("PTZ", "SetPtzGuard cmdStr=$variant FAIL: ".json_encode($res), 0);
-        }
-        return false;
     }
 }
