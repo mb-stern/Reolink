@@ -960,17 +960,26 @@ class Reolink extends IPSModule
             $this->EnableAction("EmailContent");
         }
     }
-    
+
     private function RemoveApiVariables()
     {
-        // Alle API-Variablen, die wir ggf. angelegt haben
+        // Standard-API-Variablen
         $idents = ["WhiteLed", "Mode", "Bright", "EmailNotify", "EmailInterval", "EmailContent"];
-
         foreach ($idents as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) {
                 $this->UnregisterVariable($ident);
             }
+        }
+
+        $this->RemovePTZUI();
+    }
+
+        private function RemovePTZUI(): void
+    {
+        $id = @$this->GetIDForIdent("PTZ_HTML");
+        if ($id !== false) {
+            $this->UnregisterVariable("PTZ_HTML");
         }
     }
 
@@ -984,6 +993,7 @@ class Reolink extends IPSModule
 
         $this->UpdateWhiteLedStatus();
         $this->UpdateEmailVars();
+        $this->CheckAndMaintainPTZUI();
     }
 
     private function UpdateWhiteLedStatus()
@@ -1257,19 +1267,18 @@ private function SetEmailContent(int $mode): bool
 
     private function CheckAndCreatePTZUI(): void
     {
-        if (!$this->apiEnsureToken()) return;
+        if (!$this->ReadPropertyBoolean("ApiFunktionen") || !$this->apiEnsureToken()) {
+            $this->RemovePTZUI();
+            return;
+        }
 
         $has = $this->DetectPTZ();
         $this->WriteAttributeBoolean("HasPTZ", $has);
 
         if ($has) {
             $this->CreateOrUpdatePTZHtml();
-            $this->SendDebug("PTZ", "PTZ erkannt: HTML-Steuerung angelegt.", 0);
         } else {
-            // Falls vorhanden, UI entfernen
-            $id = @$this->GetIDForIdent("PTZ_HTML");
-            if ($id !== false) $this->UnregisterVariable("PTZ_HTML");
-            $this->SendDebug("PTZ", "Keine PTZ-Funktion erkannt.", 0);
+            $this->RemovePTZUI();
         }
     }
 
