@@ -1325,111 +1325,92 @@ private function SetEmailContent(int $mode): bool
 
     private function CreateOrUpdatePTZHtml(): void
     {
-        // Variable anlegen (falls nicht vorhanden) und sichtbar schalten
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
         $id = $this->GetIDForIdent("PTZ_HTML");
         if ($id !== false) { @IPS_SetHidden($id, false); }
 
-        // Hook sicherstellen
         $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") {
-            $hook = $this->RegisterHook();
-        }
+        if ($hook === "") { $hook = $this->RegisterHook(); }
 
-        // Presets holen und Buttons bauen (eine Zeile pro Preset)
         $presets = $this->getPresetList();
-        $presetRows = '';
+
+        // Preset-Zeilen: Button links, Icon-Buttons rechts
+        $rows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
-                $title = htmlspecialchars($p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $presetRows .= '<div class="preset-row"><button class="preset" data-preset="'.$p['id'].'" title="'.$title.'">'.$title.'</button></div>';
+                $pid   = (int)$p['id'];
+                $title = htmlspecialchars((string)$p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $rows .=
+                    '<div class="preset-row" data-preset="'.$pid.'">'.
+                        '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
+                        '<div class="icons">'.
+                            '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
+                            '<button class="icon del"     data-preset="'.$pid.'" title="Löschen"    aria-label="Löschen">🗑</button>'.
+                        '</div>'.
+                    '</div>';
             }
         } else {
-            $presetRows = '<div class="no-presets">Keine Presets gefunden.</div>';
+            $rows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
-        // kompaktes Styling wie vorher
-        $btn = 42; // Kantenlänge Buttons
-        $gap = 6;  // Abstand
-
+        // kompaktes Styling (Grid → Presets → Neues Preset)
+        $btn = 42; $gap = 6;
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
     #ptz-wrap{
-    --btn: {$btn}px;
-    --gap: {$gap}px;
-    --fs: 16px;
-    --radius: 10px;
-    max-width: 520px;
-    margin: 0 auto;
-    user-select: none;
+    --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px;
+    max-width: 520px; margin:0 auto; user-select:none;
     }
     #ptz-wrap .grid{
-    display:grid;
-    grid-template-columns: repeat(3, var(--btn));
-    grid-template-rows:    repeat(3, var(--btn));
-    gap: var(--gap);
-    justify-content:center;
-    align-items:center;
-    margin-bottom: 10px;
+    display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn));
+    gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px;
     }
     #ptz-wrap button{
-    height: var(--btn);
-    border: 1px solid #cfcfcf;
-    border-radius: var(--radius);
-    background: #f8f8f8;
-    font-size: var(--fs);
-    line-height: 1;
-    cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0,0,0,.06);
-    box-sizing: border-box;
-    padding: 6px 10px;
+    height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8;
+    font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06);
+    box-sizing:border-box; padding:6px 10px;
     }
-    #ptz-wrap .dir { width: var(--btn); padding: 0; }
-    #ptz-wrap button:hover { filter: brightness(.98); }
-    #ptz-wrap button:active{ transform: translateY(1px); }
+    #ptz-wrap .dir{ width:var(--btn); padding:0; }
+    #ptz-wrap button:hover{ filter:brightness(.98); } 
+    #ptz-wrap button:active{ transform:translateY(1px); }
+    #ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;}
+    #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
 
-    #ptz-wrap .up    { grid-column:2; grid-row:1; }
-    #ptz-wrap .left  { grid-column:1; grid-row:2; }
-    #ptz-wrap .right { grid-column:3; grid-row:2; }
-    #ptz-wrap .down  { grid-column:2; grid-row:3; }
-
-    #ptz-wrap .section-title{ font-weight: 600; margin: 10px 0 6px 0; }
+    #ptz-wrap .section-title{ font-weight:600; margin:10px 0 6px; }
 
     #ptz-wrap .presets{ display:block; }
-    #ptz-wrap .preset-row{ margin-bottom: var(--gap); }
+    #ptz-wrap .preset-row{
+    display:flex; align-items:center; gap:8px; margin-bottom:var(--gap);
+    }
     #ptz-wrap .preset{
-    width: 100%;
-    height: auto;
-    min-height: 36px;
-    padding: 8px 12px;
-    text-align: left;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    #ptz-wrap .icons { display:flex; gap:6px; }
+    #ptz-wrap .icon{
+    width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center;
+    padding:0; font-size:18px;
     }
     #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
 
-    /* Kompakte Verwaltungszeile (wie Toolleiste, klein, einzeilig) */
-    #ptz-wrap .manage{
-    margin-top: 10px;
-    display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+    #ptz-wrap .new{
+    margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;
     }
-    #ptz-wrap .manage input[type="number"]{
-    width: 72px; height: 30px; padding: 4px 6px; border:1px solid #cfcfcf; border-radius:8px;
+    #ptz-wrap .new input[type="text"]{
+    flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px;
     }
-    #ptz-wrap .manage input[type="text"]{
-    flex:1; min-width: 160px; height: 30px; padding: 4px 6px; border:1px solid #cfcfcf; border-radius:8px;
-    }
-    #ptz-wrap .manage button{
-    height: 32px; padding: 4px 8px;
-    }
-    #ptz-wrap .status{ display:block; margin-top:6px; font-size:14px; opacity:.85; }
+    #ptz-wrap .new button{ height:36px; padding:6px 10px; }
+    #ptz-wrap .hint{ font-size:14px; opacity:.75; }
+
+    #ptz-wrap .status{ display:block; margin-top:6px; font-size:14px; opacity:.95; }
     #ptz-wrap .ok{ color:#2e7d32; }  /* grün */
     #ptz-wrap .err{ color:#c62828; } /* rot  */
     </style>
 
-    <!-- 1) Pfeil-Grid (wie vorher) -->
+    <!-- 1) Pfeil-Grid -->
     <div class="grid">
     <button data-dir="up"    class="dir up"    title="Hoch"   aria-label="Hoch">▲</button>
     <button data-dir="left"  class="dir left"  title="Links"  aria-label="Links">◀</button>
@@ -1437,19 +1418,18 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
-    <!-- 2) Presets (wie vorher direkt unter dem Grid) -->
+    <!-- 2) Presets (wie erste Version, jetzt mit ✎/🗑) -->
     <div class="section-title">Presets</div>
     <div class="presets">
-    {$presetRows}
+    {$rows}
     </div>
 
-    <!-- 3) Kompakte Verwaltung (klein, einzeilig, unter der Liste) -->
-    <div class="manage">
-    <input type="number" id="ptz-id"   min="0" step="1" value="0" title="Preset-ID"/>
-    <input type="text"   id="ptz-name" maxlength="32" placeholder="Name (optional)"/>
-    <button id="btn-save"   title="Aktuelle Position als Preset speichern">Speichern</button>
-    <button id="btn-rename" title="Preset umbenennen">Umbenennen</button>
-    <button id="btn-delete" title="Preset löschen">Löschen</button>
+    <!-- 3) Neues Preset (ID auto fortlaufend, Start 0) -->
+    <div class="section-title">Neues Preset</div>
+    <div class="new">
+    <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
+    <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
+    <span class="hint" id="ptz-nextid-hint"></span>
     </div>
 
     <div class="status" id="ptz-msg"></div>
@@ -1457,11 +1437,11 @@ private function SetEmailContent(int $mode): bool
 
     <script>
     (function(){
-    var base  = "{$hook}";
-    var wrap  = document.getElementById("ptz-wrap");
-    var idIn  = document.getElementById("ptz-id");
-    var nameIn= document.getElementById("ptz-name");
-    var msg   = document.getElementById("ptz-msg");
+    var base   = "{$hook}";
+    var wrap   = document.getElementById("ptz-wrap");
+    var msg    = document.getElementById("ptz-msg");
+    var nameIn = document.getElementById("ptz-new-name");
+    var nextHint = document.getElementById("ptz-nextid-hint");
 
     function show(text, ok){
         if (!msg) return;
@@ -1472,40 +1452,88 @@ private function SetEmailContent(int $mode): bool
     function call(op, extra){
         var qs = new URLSearchParams(extra || {});
         qs.set("ptz", op);
-        fetch(base + "?" + qs.toString(), {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store"
+        return fetch(base + "?" + qs.toString(), {
+        method: "GET", credentials: "same-origin", cache: "no-store"
         })
         .then(function(r){ return r.text(); })
         .then(function(t){
         var ok = (t||"").trim().toUpperCase() === "OK";
         show(ok ? "OK" : ("Fehler: " + (t||"")), ok);
+        return ok;
         })
-        .catch(function(){ show("Netzwerkfehler", false); });
+        .catch(function(){ show("Netzwerkfehler", false); return false; });
     }
+
+    function calcNextId(){
+        // Max der vorhandenen data-preset sammeln -> next = max+1, Start 0
+        var rows = wrap.querySelectorAll(".preset-row[data-preset]");
+        var max = -1;
+        rows.forEach(function(el){
+        var v = parseInt(el.getAttribute("data-preset") || "-1", 10);
+        if (!isNaN(v) && v > max) max = v;
+        });
+        return max + 1;
+    }
+
+    function updateNextIdHint(){
+        var nid = calcNextId();
+        if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
+    }
+
+    // Initial anzeigen
+    updateNextIdHint();
 
     wrap.addEventListener("click", function(ev){
         var btn = ev.target.closest("button");
         if (!btn) return;
 
-        // Pfeile / Presets
+        // Pfeile
         if (btn.hasAttribute("data-dir")) {
         call(btn.getAttribute("data-dir"));
         return;
         }
-        if (btn.classList.contains("preset")) {
+
+        // Preset anfahren
+        if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
         call("preset:" + btn.getAttribute("data-preset"));
         return;
         }
 
-        // Verwaltung
-        var id = parseInt(idIn.value, 10);
-        var name = (nameIn.value || "").trim();
+        // Umbenennen-Icon
+        if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
+        var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
+        var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
+                    ? btn.parentElement.previousElementSibling.textContent.trim() : "";
+        var neu = window.prompt("Neuer Name für Preset "+id+":", cur);
+        if (neu && neu.trim() !== "") {
+            call("rename", { id:id, name:neu.trim() }).then(function(ok){
+            if (ok) updateNextIdHint(); // UI wird ohnehin vom Server neu gerendert
+            });
+        }
+        return;
+        }
 
-        if (btn.id === "btn-save")   { call("save",   { id: isNaN(id)?0:id, name: name }); return; }
-        if (btn.id === "btn-rename") { call("rename", { id: isNaN(id)?0:id, name: name }); return; }
-        if (btn.id === "btn-delete") { call("delete", { id: isNaN(id)?0:id });            return; }
+        // Löschen-Icon
+        if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
+        var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
+        if (window.confirm("Preset "+idd+" löschen?")) {
+            call("delete", { id: idd }).then(function(ok){
+            if (ok) updateNextIdHint();
+            });
+        }
+        return;
+        }
+
+        // "Neues Preset" speichern (auto ID)
+        if (btn.id === "ptz-new-save") {
+        var nm = (nameIn.value || "").trim();
+        if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
+        var nid = calcNextId();
+        call("save", { id: nid, name: nm }).then(function(ok){
+            if (ok) { nameIn.value = ""; updateNextIdHint(); }
+        });
+        return;
+        }
     });
     })();
     </script>
