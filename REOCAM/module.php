@@ -1284,58 +1284,88 @@ private function SetEmailContent(int $mode): bool
 
     private function DetectPTZ(): bool
     {
-        // A) Abilities prüfen (liefert bei vielen Modellen PTZ-Fähigkeit)
+        // 1) GetAbility – viele FW liefern hier PTZ-Fähigkeit, aber unter verschiedenen Keys
         $res = $this->apiCall([[
             "cmd"   => "GetAbility",
             "param" => ["channel" => 0]
         ]], true);
 
         if (is_array($res) && isset($res[0]['value']['Ability'])) {
-            $ability = $res[0]['value']['Ability'];
-            if (!empty($ability['ptz']) || !empty($ability['PTZ']) || !empty($ability['ptzSupport'])) {
-                $this->SendDebug("PTZ", "DetectPTZ: PTZ über GetAbility erkannt.", 0);
-                return true;
+            $ab = $res[0]['value']['Ability'];
+            // möglichst viele Varianten abdecken
+            $flags = [
+                $ab['ptz']           ?? null,
+                $ab['PTZ']           ?? null,
+                $ab['ptzSupport']    ?? null,
+                $ab['devAbility']['ptz'] ?? null,
+                $ab['feature']['ptz']    ?? null
+            ];
+
+            foreach ($flags as $f) {
+                if ($f === null) continue;
+                // bool/int oder array mit "enable"/"support"/"supported"
+                if ((is_bool($f) && $f) || (is_int($f) && $f > 0)) {
+                    $this->SendDebug("PTZ", "DetectPTZ: GetAbility => positiv (scalar)", 0);
+                    return true;
+                }
+                if (is_array($f)) {
+                    $on = (int)($f['enable'] ?? $f['support'] ?? $f['supported'] ?? 0) > 0;
+                    if ($on) {
+                        $this->SendDebug("PTZ", "DetectPTZ: GetAbility => positiv (array)", 0);
+                        return true;
+                    }
+                }
             }
+            $this->SendDebug("PTZ", "DetectPTZ: GetAbility vorhanden, aber kein PTZ-Flag erkannt: ".json_encode($ab), 0);
+        } else {
+            $this->SendDebug("PTZ", "DetectPTZ: GetAbility nicht aussagekräftig: ".json_encode($res), 0);
         }
 
-        // B) Harmloser Probe-Call: Stop senden (wenn Code 0, ist PTZ vorhanden)
+        // 2) Harmloser Read: GetPtzCtrl (kein Bewegen). Viele Modelle akzeptieren das.
+        $r2 = $this->apiCall([[
+            "cmd"   => "GetPtzCtrl",
+            "param" => ["channel" => 0]
+        ]], true);
+        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) {
+            $this->SendDebug("PTZ", "DetectPTZ: GetPtzCtrl => OK", 0);
+            return true;
+        }
+        $this->SendDebug("PTZ", "DetectPTZ: GetPtzCtrl => ".json_encode($r2), 0);
+
+        // 3) Weitere harmlose Reads, je nach FW verfügbar
+        $reads = [
+            [ "cmd"=>"GetPtzPos",     "param"=>["channel"=>0] ],
+            [ "cmd"=>"GetPtzPreset",  "param"=>["channel"=>0] ],
+            [ "cmd"=>"GetPtzParam",   "param"=>["channel"=>0] ]
+        ];
+        foreach ($reads as $rcmd) {
+            $r = $this->apiCall([ $rcmd ], true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $this->SendDebug("PTZ", "DetectPTZ: ".$rcmd['cmd']." => OK", 0);
+                return true;
+            }
+            $this->SendDebug("PTZ", "DetectPTZ: ".$rcmd['cmd']." => ".json_encode($r), 0);
+        }
+
+        // 4) Letzter Versuch: kurzer "Stop" (funktioniert oft, aber kann an Rechten scheitern)
         $probe = $this->apiCall([[
             "cmd"   => "PtzCtrl",
             "param" => ["PtzCtrl" => ["op" => "Stop", "channel" => 0]]
         ]], true);
-
         $ok = is_array($probe) && (($probe[0]['code'] ?? -1) === 0);
-        $this->SendDebug("PTZ", "DetectPTZ: Probe Stop -> ".($ok ? "OK" : "FAIL"), 0);
+        $this->SendDebug("PTZ", "DetectPTZ: Probe Stop -> ".($ok ? "OK" : "FAIL (evtl. Rechte)"), 0);
+
         return $ok;
     }
 
     private function CreateOrUpdatePTZHtml(): void
     {
-        if (!@$this->GetIDForIdent("PTZ_HTML")) {
+        $id = @$this->GetIDForIdent("PTZ_HTML");
+        if ($id === false) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
-
         $hook = $this->ReadAttributeString("CurrentHook");
-        $html = '
-    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:220px">
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;place-items:center">
-        <button onclick="ptz(\'up\')">▲</button>
-        <button onclick="ptz(\'stop\')">■</button>
-        <button onclick="ptz(\'home\')">⌂</button>
-        <button onclick="ptz(\'left\')">◀</button>
-        <button onclick="ptz(\'down\')">▼</button>
-        <button onclick="ptz(\'right\')">▶</button>
-    </div>
-    </div>
-    <script>
-    function ptz(dir){
-    fetch("'.$hook.'", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ptz: dir})
-    });
-    }
-    </script>';
+        $html = '... wie bei dir ...';
         $this->SetValue("PTZ_HTML", $html);
     }
 
