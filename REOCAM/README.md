@@ -103,7 +103,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 ### 8. Versionen
 
 Version 2.7 (31.08.2025)
-- Neue API-Funktion 'PTZ-Steuerung'. Dies enthält ein html-Element mit dem Steuerkreuz und der Möglichkeit, die gespeicherten Presets abzurufen.
+- Neue API-Funktion 'PTZ-Steuerung'. Dies enthält ein html-Element mit dem Steuerkreuz und der Möglichkeit, Presets abzurufen oder zu speichern.
 - Konfigurationsformular angepasst, die API-Funktion haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
 
 Version 2.6 (25.08.2025)
