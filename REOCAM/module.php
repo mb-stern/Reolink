@@ -311,6 +311,8 @@ class Reolink extends IPSModule
         echo "ERROR";
     }
 
+    // ====== POLLING / SNAPSHOTS / ARCHIV ========================================
+    
     private function ProcessAllData($data)
     {
         if (isset($data['alarm']['type'])) {
@@ -790,7 +792,7 @@ class Reolink extends IPSModule
         }
     }
     
-    // === ZENTRALE API-HELFER ===
+    // ====== API / TOKEN ==========================================================
 
     private function apiBase(): string {
         $ip = $this->ReadPropertyString("CameraIP");
@@ -833,11 +835,6 @@ class Reolink extends IPSModule
         return $this->ReadAttributeString("ApiToken") !== "";
     }
 
-    /**
-     * Generischer API-Call mit Token + Auto-Retry bei rspCode -6.
-     * Beispiel:
-     *   $this->apiCall([[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]]);
-     */
     private function apiCall(array $cmdPayload, bool $suppressError=false): ?array {
         if (!$this->apiEnsureToken()) return null;
 
@@ -873,8 +870,6 @@ class Reolink extends IPSModule
         }
         return null;
     }
-    
-    // ab hier API-Funktionen
 
     public function GetToken()
     {
@@ -934,22 +929,6 @@ class Reolink extends IPSModule
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
     }
-    
-    private function SendLedRequest(array $ledParams): bool
-    {
-        $payload = [[
-            "cmd"   => "SetWhiteLed",
-            "param" => [ "WhiteLed" => array_merge($ledParams, ["channel" => 0]) ]
-        ]];
-        $res = $this->apiCall($payload);
-        return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-    }
-
-    private function SetWhiteLed(bool $state): bool { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
-    
-    private function SetMode(int $mode): bool      { return $this->SendLedRequest(['mode'  => $mode]); }
-    
-    private function SetBrightness(int $b): bool   { return $this->SendLedRequest(['bright'=> $b]); }
 
     private function CreateApiVariables()
     {
@@ -957,7 +936,6 @@ class Reolink extends IPSModule
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
 
-        /* --- WHITE LED --- */
         if ($enableWhiteLed) {
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
                 IPS_CreateVariableProfile("REOCAM.WLED", 1);
@@ -986,7 +964,6 @@ class Reolink extends IPSModule
             }
         }
 
-        /* --- EMAIL --- */
         if ($enableEmail) {
             if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
                 IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
@@ -1022,16 +999,12 @@ class Reolink extends IPSModule
             }
         }
 
-        /* --- PTZ (HTML-Box) --- */
         if ($enablePTZ) {
-            // anlegen (falls fehlt)
             if (!@$this->GetIDForIdent("PTZ_HTML")) {
                 $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
             }
-            // UI jetzt erzeugen/aktualisieren (setzt nur bei Änderung)
             $this->CreateOrUpdatePTZHtml();
         } else {
-            // komplett entfernen (nicht nur verstecken)
             $id = @$this->GetIDForIdent("PTZ_HTML");
             if ($id !== false) {
                 $this->UnregisterVariable("PTZ_HTML");
@@ -1054,6 +1027,25 @@ class Reolink extends IPSModule
         }
     }
 
+
+    // ====== LED ==================================================================
+
+        private function SendLedRequest(array $ledParams): bool
+    {
+        $payload = [[
+            "cmd"   => "SetWhiteLed",
+            "param" => [ "WhiteLed" => array_merge($ledParams, ["channel" => 0]) ]
+        ]];
+        $res = $this->apiCall($payload);
+        return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
+    }
+
+    private function SetWhiteLed(bool $state): bool { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
+    
+    private function SetMode(int $mode): bool      { return $this->SendLedRequest(['mode'  => $mode]); }
+    
+    private function SetBrightness(int $b): bool   { return $this->SendLedRequest(['bright'=> $b]); }
+    
     private function UpdateWhiteLedStatus()
     {
         $resp = $this->apiCall([[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]]);
@@ -1086,6 +1078,10 @@ class Reolink extends IPSModule
             $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
         }
     }
+
+
+    // ====== MAIL =================================================================
+
 
     private function DetectEmailApiVersion(): string
     {
@@ -1323,6 +1319,9 @@ private function SetEmailContent(int $mode): bool
         }
     }
 
+ 
+    // ====== PTZ ==================================================================
+ 
     private function CreateOrUpdatePTZHtml(): void
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
@@ -1336,7 +1335,6 @@ private function SetEmailContent(int $mode): bool
 
         $presets = $this->getPresetList();
 
-        // Preset-Zeilen: Button links, Icon-Buttons rechts
         $rows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
@@ -1355,7 +1353,6 @@ private function SetEmailContent(int $mode): bool
             $rows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
-        // kompaktes Styling (Grid → Presets → Neues Preset)
         $btn = 42; $gap = 6;
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
@@ -1406,7 +1403,6 @@ private function SetEmailContent(int $mode): bool
     #ptz-wrap .hint{ font-size:14px; opacity:.75; }
     </style>
 
-    <!-- 1) Pfeil-Grid -->
     <div class="grid">
     <button data-dir="up"    class="dir up"    title="Hoch"   aria-label="Hoch">▲</button>
     <button data-dir="left"  class="dir left"  title="Links"  aria-label="Links">◀</button>
@@ -1414,13 +1410,12 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
-    <!-- 2) Presets (wie erste Version, jetzt mit ✎/🗑) -->
+
     <div class="section-title">Presets</div>
     <div class="presets">
     {$rows}
     </div>
 
-    <!-- 3) Neues Preset (ID auto fortlaufend, Start 0) -->
     <div class="section-title">Neues Preset</div>
     <div class="new">
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
@@ -1657,7 +1652,6 @@ private function SetEmailContent(int $mode): bool
     return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
-    /** Ein Call, der automatisch flat/nested probiert und den Stil cached. */
     private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
     {
         $nestedKey = $nestedKey ?: $cmd;
@@ -1685,7 +1679,6 @@ private function SetEmailContent(int $mode): bool
         return null;
     }
 
-    /** Pfeil/Einzel-PTZ (impulsartig). */
     private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
     {
         $param = ['channel'=>0, 'op'=>$op] + $extra;
@@ -1706,7 +1699,6 @@ private function SetEmailContent(int $mode): bool
         return true;
     }
 
-    /** Preset anfahren: versucht ToPos, dann ToPreset. */
     private function ptzGotoPreset(int $id): bool
     {
         // Erst ToPos
@@ -1721,10 +1713,6 @@ private function SetEmailContent(int $mode): bool
         return false;
     }
 
-    /** Rekursiv nach Preset-Arrays suchen (Einträge mit 'id' + optional 'name'),
-     *  generische Platzhalter (pos1/pos 01/preset2/position3 ...) ausfiltern,
-     *  sofern keine Set-Flags oder Positionswerte vorhanden sind.
-     */
     private function collectPresetsRecursive($node, array &$out, array &$seen): void
     {
         if (!is_array($node) || empty($node)) return;
@@ -1788,7 +1776,6 @@ private function SetEmailContent(int $mode): bool
         }
     }
 
-    /** Liest Presets robust aus GetPtzPreset (versch. FW-Varianten). */
     private function getPresetList(): array
     {
         $res = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
@@ -1874,8 +1861,6 @@ private function SetEmailContent(int $mode): bool
         return (bool)$ok;
     }
 
-
-    /** Bequeme öffentliche Methoden für Skripte */
     public function PTZ_SavePreset(int $id, ?string $name=null): bool {
         if (!$this->apiEnsureToken()) return false;
         $ok = $this->ptzSetPreset($id);
