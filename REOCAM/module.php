@@ -1475,12 +1475,7 @@ private function SetEmailContent(int $mode): bool
         return max + 1;
     }
 
-    function updateNextIdHint(){
-        var nid = calcNextId();
-        if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
-    }
-
-    // Initial anzeigen
+    function updateNextIdHint()
     updateNextIdHint();
 
     wrap.addEventListener("click", function(ev){
