@@ -1454,27 +1454,38 @@ private function SetEmailContent(int $mode): bool
     private function HandlePtzCommand(string $dir): void
     {
         $map = [
-            'left'  => 'Left',
-            'right' => 'Right',
-            'up'    => 'Up',
-            'down'  => 'Down',
-            'home'  => 'Home' // Placeholder, echte Logik unten
+            'left'  => ['op'=>'Left'],
+            'right' => ['op'=>'Right'],
+            'up'    => ['op'=>'Up'],
+            'down'  => ['op'=>'Down'],
+            // 'stop' lassen wir intern unterstützt (falls du’s mal brauchst),
+            // aber im UI ist er ja nicht mehr sichtbar:
+            'stop'  => ['op'=>'Stop'],
+            // 'home' fährt jetzt über ToPos zur Guard-ID:
+            'home'  => ['op'=>'HOME_SPECIAL']
         ];
         if (!isset($map[$dir])) {
             $this->SendDebug("PTZ", "Unbekannte Richtung: $dir", 0);
             return;
         }
-        $op = $map[$dir];
 
-        if ($op === 'Home') {
+        if ($map[$dir]['op'] === 'HOME_SPECIAL') {
             $this->PtzGoHome();
             return;
         }
 
+        $op = $map[$dir]['op'];
+
+        // kurze Impulsfahrt für Pfeile; Stop/Home ohne Speed
+        if ($op === 'Stop') {
+            $this->ptzCtrlSend(["channel"=>0, "op"=>"Stop"]);
+            return;
+        }
+
         // Impuls + Stop
-        $this->PtzOp($op, 5);
+        $this->ptzCtrlSend(["channel"=>0, "op"=>$op, "speed"=>5]);
         IPS_Sleep(250);
-        $this->PtzOp('Stop');
+        $this->ptzCtrlSend(["channel"=>0, "op"=>"Stop"]);
     }
 
     private function PtzOp(string $op, int $speed = 5): bool
@@ -1576,5 +1587,66 @@ private function SetEmailContent(int $mode): bool
 
         // Rückgabe letztes Ergebnis (für Debug/Fehlercode)
         return $res2 ?: $res;
+    }
+
+    private function apiCallCompatPTZ(string $cmd, array $param, bool $suppressError=false): ?array
+    {
+        // Versuch A: flaches Param-Format
+        $resp = $this->apiCall([[ "cmd"=>$cmd, "param"=>$param ]], /*suppress*/ true);
+        if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) return $resp;
+
+        // Versuch B: verschachtelt (param => { <cmd>: { ... } })
+        $resp2 = $this->apiCall([[ "cmd"=>$cmd, "param"=>[ $cmd => $param ] ]], /*suppress*/ $suppressError);
+        if (is_array($resp2) && (($resp2[0]['code'] ?? -1) === 0)) return $resp2;
+
+        if (!$suppressError) {
+            $this->SendDebug("apiCallCompatPTZ/$cmd", "FAIL A=".json_encode($resp)." B=".json_encode($resp2), 0);
+        }
+        return null;
+    }
+
+    private function ptzCtrlSend(array $flatParam, bool $suppressError=false): ?array
+{
+    // probiert automatisch flach & verschachtelt
+    return $this->apiCallCompatPTZ("PtzCtrl", $flatParam, $suppressError);
+}
+
+    private function getGuardId(): ?int
+    {
+        $resp = $this->apiCallCompatPTZ("GetPtzGuard", ["channel"=>0], /*suppress*/ true);
+        if (!is_array($resp)) return null;
+
+        $val   = $resp[0]['value'] ?? null;
+        if (!is_array($val)) return null;
+
+        // mögliche Rückgabeformen robust abdecken
+        $guard = $val['Guard'] ?? $val['PtzGuard'] ?? $val['guard'] ?? null;
+        if (is_array($guard)) {
+            if (isset($guard['id']) && is_numeric($guard['id'])) return (int)$guard['id'];
+            // manchmal liegt es unter 'point' o.ä.
+            if (isset($guard['point']['id']) && is_numeric($guard['point']['id'])) return (int)$guard['point']['id'];
+        }
+        // ganz flach (selten)
+        if (isset($val['id']) && is_numeric($val['id'])) return (int)$val['id'];
+
+        return null;
+    }
+
+    /** Fährt den konfigurierten Monitor/Guard-Punkt an. */
+    private function PtzGoHome(): bool
+    {
+        $id = $this->getGuardId();
+        if ($id === null) {
+            $this->SendDebug("PTZ", "Kein Guard/Monitor-Punkt konfiguriert (GetPtzGuard lieferte keine ID).", 0);
+            return false;
+        }
+
+        // Home = zu Preset/Monitor-Point fahren: PtzCtrl op=ToPos, id=<guardId>
+        $resp = $this->ptzCtrlSend(["channel"=>0, "op"=>"ToPos", "id"=>$id], /*suppress*/ false);
+        $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
+        if (!$ok) {
+            $this->SendDebug("PTZ", "ToPos auf Guard-ID $id fehlgeschlagen: ".json_encode($resp), 0);
+        }
+        return $ok;
     }
 }
