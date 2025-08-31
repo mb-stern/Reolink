@@ -1356,20 +1356,20 @@ private function SetEmailContent(int $mode): bool
             $hook = $this->RegisterHook();
         }
 
-        // Presets holen und Buttons bauen
+        // Presets holen und Buttons bauen (eine Zeile pro Preset)
         $presets = $this->getPresetList();
-        $presetButtons = '';
+        $presetRows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
                 $title = htmlspecialchars($p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $presetButtons .= '<button class="preset" data-preset="'.$p['id'].'" title="'.$title.'">'.$title.'</button>';
+                $presetRows .= '<div class="preset-row"><button class="preset" data-preset="'.$p['id'].'" title="'.$title.'">'.$title.'</button></div>';
             }
         } else {
-            $presetButtons = '<div class="no-presets">Keine Presets gefunden.</div>';
+            $presetRows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
         // kompakte Styles
-        $btn = 42; // Kantenlänge Button (px)
+        $btn = 42; // Kantenlänge für die Richtungsbuttons (px)
         $gap = 6;  // Abstand (px)
 
         $html = <<<HTML
@@ -1380,7 +1380,7 @@ private function SetEmailContent(int $mode): bool
         --gap: {$gap}px;
         --fs: 16px;
         --radius: 10px;
-        max-width: 420px;
+        max-width: 520px;
         margin: 0 auto;
         user-select: none;
     }
@@ -1391,7 +1391,7 @@ private function SetEmailContent(int $mode): bool
         gap: var(--gap);
         justify-content:center;
         align-items:center;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
     }
     #ptz-wrap button{
         height: var(--btn);
@@ -1414,16 +1414,26 @@ private function SetEmailContent(int $mode): bool
     #ptz-wrap .right { grid-column:3; grid-row:2; }
     #ptz-wrap .down  { grid-column:2; grid-row:3; }
 
-    #ptz-wrap .presets {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-        gap: var(--gap);
-        margin-top: 4px;
+    #ptz-wrap .section-title{
+        font-weight: 600;
+        margin: 10px 0 6px 0;
     }
-    #ptz-wrap .preset {
-        text-overflow: ellipsis;
+
+    #ptz-wrap .presets{
+        display: block;           /* eine Zeile pro Preset */
+    }
+    #ptz-wrap .preset-row{
+        margin-bottom: var(--gap);
+    }
+    #ptz-wrap .preset{
+        width: 100%;
+        height: auto;
+        min-height: 36px;
+        padding: 8px 12px;
+        text-align: left;         /* Namen linksbündig, falls lang */
         white-space: nowrap;
         overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     #ptz-wrap .status{ display:none; }
@@ -1437,8 +1447,9 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
+    <div class="section-title">Presets</div>
     <div class="presets">
-    {$presetButtons}
+    {$presetRows}
     </div>
 
     <div class="status" id="ptz-msg"></div>
@@ -1482,7 +1493,20 @@ private function SetEmailContent(int $mode): bool
     </script>
     HTML;
 
-        $this->SetValue("PTZ_HTML", $html);
+        // <<< wichtig: nur setzen, wenn sich der Wert ändert >>>
+        $this->setHtmlIfChanged("PTZ_HTML", $html);
+    }
+
+    /** Setzt eine String-Variable nur, wenn der neue Inhalt sich unterscheidet. */
+    private function setHtmlIfChanged(string $ident, string $html): void
+    {
+        $id = @$this->GetIDForIdent($ident);
+        $old = ($id !== false) ? GetValue($id) : null;
+        if (!is_string($old) || $old !== $html) {
+            $this->SetValue($ident, $html);
+        } else {
+            $this->SendDebug($ident, 'Unverändert – kein Update', 0);
+        }
     }
 
     private function HandlePtzCommand(string $dir): void
@@ -1530,8 +1554,6 @@ private function SetEmailContent(int $mode): bool
     private function ptzOk(?array $res): bool {
     return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
-
-    /* ========== PTZ: kompaktes Kern-Set ========== */
 
     /** Ein Call, der automatisch flat/nested probiert und den Stil cached. */
     private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
