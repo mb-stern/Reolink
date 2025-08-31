@@ -741,7 +741,7 @@ class Reolink extends IPSModule
 
     private function apiBase(): string {
         $ip = $this->ReadPropertyString("CameraIP");
-        return "https://{$ip}/api.cgi";
+        return "http://{$ip}/api.cgi";
     }
 
     private function apiHttpPostJson(string $url, array $payload, bool $suppressError=false): ?array {
@@ -843,7 +843,7 @@ class Reolink extends IPSModule
         $this->WriteAttributeBoolean("TokenRefreshing", true);
 
         try {
-            $url = "https://$cameraIP/api.cgi?cmd=Login";
+            $url = "http://$cameraIP/api.cgi?cmd=Login";
             $data = [[
                 "cmd"   => "Login",
                 "param" => ["User" => ["Version"=>"0","userName"=>$username,"password"=>$password]]
@@ -1284,29 +1284,29 @@ private function SetEmailContent(int $mode): bool
 
     private function DetectPTZ(): bool
     {
-        // 1) Viele Reolink-Modelle verstehen GetPtzCtrl (harmlos, lesend)
+        // A) Abilities prüfen (liefert bei vielen Modellen PTZ-Fähigkeit)
         $res = $this->apiCall([[
-            "cmd"   => "GetPtzCtrl",
-            "param" => ["channel" => 0]
-        ]], /*suppressError*/ true);
-
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
-
-        // 2) Alternativ liefert GetAbility auf manchen FW Stände PTZ-Fähigkeiten
-        $res2 = $this->apiCall([[
             "cmd"   => "GetAbility",
             "param" => ["channel" => 0]
-        ]], /*suppressError*/ true);
+        ]], true);
 
-        if (is_array($res2) && isset($res2[0]['value']['Ability'])) {
-            $ability = $res2[0]['value']['Ability'];
-            if (isset($ability['ptz']) || isset($ability['PTZ'])) {
+        if (is_array($res) && isset($res[0]['value']['Ability'])) {
+            $ability = $res[0]['value']['Ability'];
+            if (!empty($ability['ptz']) || !empty($ability['PTZ']) || !empty($ability['ptzSupport'])) {
+                $this->SendDebug("PTZ", "DetectPTZ: PTZ über GetAbility erkannt.", 0);
                 return true;
             }
         }
-        return false;
+
+        // B) Harmloser Probe-Call: Stop senden (wenn Code 0, ist PTZ vorhanden)
+        $probe = $this->apiCall([[
+            "cmd"   => "PtzCtrl",
+            "param" => ["PtzCtrl" => ["op" => "Stop", "channel" => 0]]
+        ]], true);
+
+        $ok = is_array($probe) && (($probe[0]['code'] ?? -1) === 0);
+        $this->SendDebug("PTZ", "DetectPTZ: Probe Stop -> ".($ok ? "OK" : "FAIL"), 0);
+        return $ok;
     }
 
     private function CreateOrUpdatePTZHtml(): void
