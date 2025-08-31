@@ -1364,8 +1364,31 @@ private function SetEmailContent(int $mode): bool
         if ($id === false) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
+
         $hook = $this->ReadAttributeString("CurrentHook");
-        $html = '... wie bei dir ...';
+
+        $html = <<<HTML
+    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;max-width:220px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;place-items:center">
+        <button onclick="ptz('up')">▲</button>
+        <button onclick="ptz('stop')">■</button>
+        <button onclick="ptz('home')">⌂</button>
+        <button onclick="ptz('left')">◀</button>
+        <button onclick="ptz('down')">▼</button>
+        <button onclick="ptz('right')">▶</button>
+    </div>
+    </div>
+    <script>
+    function ptz(dir){
+        fetch('$hook', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ptz: dir })
+        });
+    }
+    </script>
+    HTML;
+
         $this->SetValue("PTZ_HTML", $html);
     }
 
