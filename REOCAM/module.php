@@ -237,28 +237,49 @@ class Reolink extends IPSModule
     {
         $this->SendDebug('Webhook', 'triggered', 0);
 
-        // A) Query-Param ?ptz=left unterstützen (schneller Test im Browser)
-        if (isset($_GET['ptz'])) {
-            $this->HandlePtzCommand((string)$_GET['ptz']);
+        // 1) Versuch: JSON-Body
+        $ptz = null;
+        $raw = file_get_contents('php://input');
+        if ($raw !== false && $raw !== '') {
+            $data = json_decode($raw, true);
+            if (is_array($data) && isset($data['ptz'])) {
+                $ptz = (string)$data['ptz'];
+            }
+        }
+
+        // 2) Fallback: POST- oder GET-Parameter
+        if ($ptz === null) {
+            if (isset($_POST['ptz'])) {
+                $ptz = (string)$_POST['ptz'];
+            } elseif (isset($_GET['ptz'])) {
+                $ptz = (string)$_GET['ptz'];
+            }
+        }
+
+        // 3) PTZ-Steuerung?
+        if ($ptz !== null) {
+            $this->SendDebug('Webhook', 'PTZ='.$ptz, 0);
+            $this->HandlePtzCommand($ptz);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo "OK";
             return;
         }
 
-        // B) JSON-Body wie bisher
-        $raw = file_get_contents("php://input");
-        if ($raw) {
+        // 4) Bestehende Alarm-Verarbeitung (nur wenn sinnvolles JSON vorlag)
+        if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data)) {
-                if (isset($data['ptz'])) {
-                    $this->HandlePtzCommand((string)$data['ptz']);
-                    return;
-                }
                 $this->ProcessAllData($data);
+                header('Content-Type: text/plain; charset=utf-8');
+                echo "OK";
                 return;
             }
-            $this->SendDebug('Webhook', 'JSON decode failed', 0);
-        } else {
-            $this->SendDebug('Webhook', 'empty body', 0);
         }
+
+        $this->SendDebug('Webhook', 'No PTZ / no usable payload', 0);
+        header('HTTP/1.1 400 Bad Request');
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "ERROR";
     }
 
     private function ProcessAllData($data)
@@ -1355,10 +1376,13 @@ private function SetEmailContent(int $mode): bool
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
 
-        $hook = $this->ReadAttributeString("CurrentHook"); // z.B. "/hook/reolink_12345"
-        if ($hook === "") $hook = $this->RegisterHook();
+        // Hook sicherstellen
+        $hook = $this->ReadAttributeString("CurrentHook");
+        if ($hook === "") {
+            $hook = $this->RegisterHook();
+        }
 
-        $uid  = $this->InstanceID;
+        $uid  = $this->InstanceID; // für eindeutige DOM-IDs
         $html = '
     <div id="ptz-'.$uid.'" class="ptz-wrap">
     <div class="grid">
@@ -1376,26 +1400,7 @@ private function SetEmailContent(int $mode): bool
     (function(){
     const ROOT   = document.getElementById("ptz-'.$uid.'");
     const STATUS = ROOT.querySelector(".status");
-
-    function resolveHookUrl(path){
-        // Bevorzugt Origin des WebFront-Elternfensters
-        try {
-        if (window.parent && parent.location && parent.location.origin && parent.location.origin !== "null") {
-            return parent.location.origin + path;
-        }
-        } catch(e){ /* Cross-origin? fallback unten */ }
-        // Fallback: eigener Origin
-        if (location && location.origin && location.origin !== "null") {
-        return location.origin + path;
-        }
-        if (location && location.protocol && location.host) {
-        return location.protocol + "//" + location.host + path;
-        }
-        // Letzter Fallback: roher Pfad (funktioniert, wenn iFrame same-origin gerendert wird)
-        return path;
-    }
-
-    const HOOK = resolveHookUrl("'.$hook.'");
+    const URL_HOOK = new URL("'.$hook.'", location.origin).toString();
 
     ROOT.addEventListener("click", (ev) => {
         const btn = ev.target.closest("button[data-cmd]");
@@ -1403,18 +1408,17 @@ private function SetEmailContent(int $mode): bool
         const cmd = btn.dataset.cmd;
 
         btn.disabled = true;
-        fetch(HOOK, {
+        fetch(URL_HOOK, {
         method: "POST",
-        headers: {"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"},
-        credentials: "include",
+        headers: {"Content-Type":"application/json"},
+        credentials: "same-origin",      // wichtig für WebFront-Auth
         cache: "no-store",
         body: JSON.stringify({ ptz: cmd })
         }).then(r => {
         if (!r.ok) throw new Error("HTTP " + r.status);
-        STATUS.textContent = "";
         }).catch(err => {
         STATUS.textContent = "Netzwerkfehler: " + err.message;
-        setTimeout(() => STATUS.textContent = "", 2500);
+        setTimeout(() => STATUS.textContent = "", 2000);
         }).finally(() => {
         btn.disabled = false;
         });
@@ -1425,26 +1429,25 @@ private function SetEmailContent(int $mode): bool
     <style>
     #ptz-'.$uid.' .grid{
     display:grid;
-    grid-template-columns:repeat(3,52px);
-    grid-template-rows:repeat(3,52px);
+    grid-template-columns:repeat(3,48px);
+    grid-template-rows:repeat(3,48px);
     gap:8px;
     justify-content:center;
     align-items:center;
     user-select:none;
     }
     #ptz-'.$uid.' .btn{
-    width:52px; height:52px;
-    border:1px solid #cfcfcf;
-    border-radius:12px;
-    font-size:20px;
+    width:48px; height:48px;
+    border:1px solid #c9c9c9;
+    border-radius:10px;
+    font-size:18px; line-height:48px;
     cursor:pointer;
-    background:#f8f8f8;
+    background:#f7f7f7;
     box-shadow:0 1px 2px rgba(0,0,0,.08);
     }
-    #ptz-'.$uid.' .btn:hover{ filter:brightness(0.98); }
     #ptz-'.$uid.' .btn:active{ transform: translateY(1px); }
 
-    /* D-Pad-Positionen */
+    /* Positionen im 3x3-Raster */
     #ptz-'.$uid.' .up    { grid-column:2; grid-row:1; }
     #ptz-'.$uid.' .left  { grid-column:1; grid-row:2; }
     #ptz-'.$uid.' .home  { grid-column:2; grid-row:2; }
@@ -1454,7 +1457,7 @@ private function SetEmailContent(int $mode): bool
 
     #ptz-'.$uid.' .status{
     margin-top:6px; min-height:1em;
-    font-size:12px; opacity:.75; text-align:center;
+    font-size:12px; opacity:.8; text-align:center;
     }
     </style>';
 
@@ -1501,4 +1504,5 @@ private function SetEmailContent(int $mode): bool
         if (!$ok) $this->SendDebug("PTZ", "Fehler bei op=".$op.": ".json_encode($res), 0);
         return $ok;
     }
+
 }
