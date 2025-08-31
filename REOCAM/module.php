@@ -1597,7 +1597,10 @@ private function SetEmailContent(int $mode): bool
         return false;
     }
 
-    /** Rekursiv nach Preset-Arrays suchen (Einträge mit 'id' + optional 'name'). */
+    /** Rekursiv nach Preset-Arrays suchen (Einträge mit 'id' + optional 'name'),
+     *  generische Platzhalter (pos1/pos 01/preset2/position3 ...) ausfiltern,
+     *  sofern keine Set-Flags oder Positionswerte vorhanden sind.
+     */
     private function collectPresetsRecursive($node, array &$out, array &$seen): void
     {
         if (!is_array($node) || empty($node)) return;
@@ -1607,23 +1610,48 @@ private function SetEmailContent(int $mode): bool
         if (is_array($first) && (isset($first['id']) || isset($first['Id']))) {
             foreach ($node as $p) {
                 if (!is_array($p)) continue;
+
                 $rawId = $p['id'] ?? $p['Id'] ?? null;
                 if (!is_numeric($rawId)) continue;
-
                 $id = (int)$rawId;
+
                 if (isset($seen[$id])) continue; // Dedupe
 
+                // Name lesen
                 $name = $p['name'] ?? $p['Name'] ?? $p['sName'] ?? $p['label'] ?? $p['presetName'] ?? '';
                 $name = (string)$name;
-                if ($name === '') $name = "Preset ".$id;
+                $trim = trim($name);
+
+                // --- integrierte Platzhalter-Erkennung (pos/preset/position + Zahl) ---
+                // Beispiele: "pos1", "pos 01", "preset2", "position3" (Groß/klein egal)
+                $isGeneric = ($trim !== '') && (preg_match('/^(pos|preset|position)\s*0*\d+$/i', $trim) === 1);
+
+                // Heuristik "belegt": typische Flags und/oder Koordinaten
+                $flag  = $p['exist'] ?? $p['bExist'] ?? $p['bexistPos'] ?? $p['enable'] ?? $p['enabled'] ?? $p['set'] ?? $p['bSet'] ?? null;
+                $isSet = ($flag === 1 || $flag === '1' || $flag === true);
+
+                $posArr = $p['pos'] ?? $p['position'] ?? $p['ptzpos'] ?? $p['ptz'] ?? null;
+                $hasPos = false;
+                if (is_array($posArr)) {
+                    foreach ($posArr as $v) {
+                        if (is_numeric($v) && (float)$v != 0.0) { $hasPos = true; break; }
+                    }
+                }
+
+                // Filter: Nur dann überspringen, wenn (Name leer ODER generisch) UND keine Flags/Koordinaten
+                if (($trim === '' || $isGeneric) && !$isSet && !$hasPos) {
+                    continue;
+                }
+
+                if ($trim === '') $name = "Preset ".$id;
 
                 $out[] = ['id'=>$id, 'name'=>$name];
                 $seen[$id] = true;
             }
-            // hier nicht return, falls tiefer noch andere Strukturen liegen
+            // nicht return; darunter weiter tiefer suchen
         }
 
-        // Durch alle Kinder laufen (tiefe Verschachtelungen abdecken)
+        // Tiefer rekursiv durchsuchen
         foreach ($node as $v) {
             if (is_array($v)) {
                 $this->collectPresetsRecursive($v, $out, $seen);
