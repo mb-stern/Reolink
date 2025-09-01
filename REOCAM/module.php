@@ -1508,6 +1508,13 @@ private function SetEmailContent(int $mode): bool
         call(btn.getAttribute("data-dir"));
         return;
         }
+        
+        // Zoom
+        if (btn.hasAttribute("data-zoom")) {
+        var z = btn.getAttribute("data-zoom");
+        call(z === "in" ? "zoomin" : "zoomout");
+        return;
+        }
 
         // Preset anfahren
         if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
@@ -1636,11 +1643,9 @@ private function SetEmailContent(int $mode): bool
                 return $ok;
             
             case 'zoomin':
-                return $this->ptzCtrl('ZoomIn', [], 300, 'ZoomStop');
+                return $this->ptzZoom('in');
             case 'zoomout':
-                return $this->ptzCtrl('ZoomOut', [], 300, 'ZoomStop');
-            case 'zoomstop':
-                return $this->ptzCtrl('ZoomStop');
+                return $this->ptzZoom('out');
         }
 
         // Pfeile/Stop
@@ -1704,24 +1709,25 @@ private function SetEmailContent(int $mode): bool
         return null;
     }
 
-    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250, ?string $stopOp = 'Stop'): bool
+    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
     {
-        $param = ['channel'=>0, 'op'=>$op] + $extra;
+        $param = ['channel' => 0, 'op' => $op] + $extra;
 
-        // Geschwindigkeit nur für Beweg-OPs setzen
-        if (in_array($op, ['Left','Right','Up','Down'], true)) {
-            if (!isset($param['speed'])) $param['speed'] = 5;
+        // Nur bei Bewegungen Speed setzen – bei Zoom führt 'speed' oft zu Fehlern
+        $isMove = in_array($op, ['Left','Right','Up','Down'], true);
+        if ($isMove && !isset($param['speed'])) {
+            $param['speed'] = 5;
         }
 
         $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
         if (!$ok) return false;
 
-        // Bei diesen Ops nach kurzer Zeit wieder stoppen (Impuls)
-        $needsPulse = ['Left','Right','Up','Down','ZoomIn','ZoomOut'];
-        if (in_array($op, $needsPulse, true)) {
+        // Impuls + Stop nur für Bewegungen (Zoom handled separat)
+        if ($isMove) {
             IPS_Sleep($pulseMs);
-            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=> ($stopOp ?: 'Stop')], 'PtzCtrl', /*suppress*/ true);
+            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
         }
+
         return true;
     }
 
@@ -1905,5 +1911,27 @@ private function SetEmailContent(int $mode): bool
         $ok = $this->ptzClearPreset($id);
         if ($ok) $this->CreateOrUpdatePTZHtml();
         return $ok;
+    }
+
+    private function ptzZoom(string $dir, int $pulseMs = 250): bool
+    {
+        // Kandidaten je nach FW: In = Tele/Add, Out = Wide/Dec
+        $candidates = ($dir === 'in')
+            ? ['ZoomIn', 'ZoomTele', 'ZoomAdd']
+            : ['ZoomOut', 'ZoomWide', 'ZoomDec'];
+
+        foreach ($candidates as $op) {
+            $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                // kurzer Impuls, dann Stop – sonst bleibt Zoom laufen
+                IPS_Sleep($pulseMs);
+                $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+                $this->SendDebug('PTZ/Zoom', "OK mit op={$op}", 0);
+                return true;
+            }
+        }
+
+        $this->SendDebug('PTZ/Zoom', "Alle Op-Namen fehlgeschlagen (dir={$dir})", 0);
+        return false;
     }
 }
