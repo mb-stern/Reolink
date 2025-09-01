@@ -1907,40 +1907,49 @@ private function SetEmailContent(int $mode): bool
         return $ok;
     }
 
-    private function ptzZoom(string $dir, int $pulseMs = 400): bool
-    {
-        // Paare, die auf vielen FW-Ständen vorkommen:
-        // in  <-> out
-        // ZoomIn  <-> ZoomOut
-        // ZoomTele<-> ZoomWide
-        // ZoomAdd <-> ZoomDec
-        // ZoomNear<-> ZoomFar
-        $pairs = [
-            ['in' => 'ZoomIn',   'out' => 'ZoomOut'],
-            ['in' => 'ZoomTele', 'out' => 'ZoomWide'],
-            ['in' => 'ZoomAdd',  'out' => 'ZoomDec'],
-            ['in' => 'ZoomNear', 'out' => 'ZoomFar'],
-        ];
+    private function getZoomInfo(): ?array {
+        $res = $this->apiCall([[ "cmd"=>"GetZoomFocus", "action"=>0, "param"=>["channel"=>0] ]], /*suppress*/ false);
+        if (!is_array($res) || !isset($res[0]['value'])) return null;
 
-        // Kandidaten für die gewünschte Richtung erzeugen
-        $candidates = [];
-        foreach ($pairs as $p) {
-            $candidates[] = $p[$dir];
-        }
+        // möglichst robust verschiedene Key-Varianten abdecken
+        $val  = $res[0]['value'];
+        $zf   = $val['ZoomFocus'] ?? $val['zoomFocus'] ?? null;
+        $zoom = is_array($zf) ? ($zf['zoom'] ?? $zf['Zoom'] ?? null) : null;
 
-        foreach ($candidates as $op) {
-            $this->SendDebug('PTZ/Zoom', "Versuche op={$op}", 0);
-            $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                // kurzer Impuls, dann Stop, damit kein Dauerzoom läuft
-                IPS_Sleep($pulseMs);
-                $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
-                $this->SendDebug('PTZ/Zoom', "OK mit op={$op}", 0);
-                return true;
-            }
-        }
+        if (!is_array($zoom)) return null;
 
-        $this->SendDebug('PTZ/Zoom', "Alle OP-Namen fehlgeschlagen (dir={$dir})", 0);
-        return false;
+        $pos = (int)($zoom['pos'] ?? $zoom['Pos'] ?? 0);
+        $min = (int)($zoom['min'] ?? $zoom['Min'] ?? 0);
+        $max = (int)($zoom['max'] ?? $zoom['Max'] ?? 10);
+
+        return ['pos'=>$pos, 'min'=>$min, 'max'=>$max];
+    }
+
+    private function setZoomPos(int $pos): bool {
+        $payload = [[
+            "cmd"   => "StartZoomFocus",
+            "param" => [ "ZoomFocus" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$pos ] ]
+        ]];
+        $res = $this->apiCall($payload);
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+    }
+
+    private function ptzZoom(string $dir, int $step = 1): bool {
+        $info = $this->getZoomInfo();
+        if (!$info) { $this->SendDebug('PTZ/Zoom','GetZoomFocus fehlgeschlagen',0); return false; }
+
+        $pos = $info['pos'];
+        $min = $info['min'];
+        $max = $info['max'];
+
+        $target = ($dir === 'in') ? $pos + $step : $pos - $step;
+        if     ($target > $max) $target = $max;
+        elseif ($target < $min) $target = $min;
+
+        if ($target === $pos) { $this->SendDebug('PTZ/Zoom','Bereits am Limit',0); return true; }
+
+        $ok = $this->setZoomPos($target);
+        if ($ok) $this->SendDebug('PTZ/Zoom', "pos {$pos} -> {$target}", 0);
+        return $ok;
     }
 }
