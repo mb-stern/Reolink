@@ -1644,7 +1644,16 @@ private function SetEmailContent(int $mode): bool
         }
 
         // Pfeile/Stop
-        $map = ['left'=>'Left','right'=>'Right','up'=>'Up','down'=>'Down','stop'=>'Stop'];
+        $map = [
+            'left'    => 'Left',
+            'right'   => 'Right',
+            'up'      => 'Up',
+            'down'    => 'Down',
+            'stop'    => 'Stop',
+            'zoomin'  => 'ZoomIn',
+            'zoomout' => 'ZoomOut'
+        ];
+
         if (!isset($map[$cmd])) {
             $this->SendDebug("PTZ", "Unbekanntes Kommando: {$cmd}", 0);
             return false;
@@ -1695,11 +1704,11 @@ private function SetEmailContent(int $mode): bool
         return null;
     }
 
-    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
+    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250, ?string $stopOp = 'Stop'): bool
     {
         $param = ['channel'=>0, 'op'=>$op] + $extra;
 
-        // Speed nur bei Beweg-OPs geben
+        // Geschwindigkeit nur für Beweg-OPs setzen
         if (in_array($op, ['Left','Right','Up','Down'], true)) {
             if (!isset($param['speed'])) $param['speed'] = 5;
         }
@@ -1707,10 +1716,11 @@ private function SetEmailContent(int $mode): bool
         $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
         if (!$ok) return false;
 
-        // Impuls (nur bei Pfeilen), danach Stop
-        if (in_array($op, ['Left','Right','Up','Down'], true)) {
+        // Bei diesen Ops nach kurzer Zeit wieder stoppen (Impuls)
+        $needsPulse = ['Left','Right','Up','Down','ZoomIn','ZoomOut'];
+        if (in_array($op, $needsPulse, true)) {
             IPS_Sleep($pulseMs);
-            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=> ($stopOp ?: 'Stop')], 'PtzCtrl', /*suppress*/ true);
         }
         return true;
     }
@@ -1895,25 +1905,5 @@ private function SetEmailContent(int $mode): bool
         $ok = $this->ptzClearPreset($id);
         if ($ok) $this->CreateOrUpdatePTZHtml();
         return $ok;
-    }
-    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250, ?string $stopOp = 'Stop'): bool
-    {
-        $param = ['channel'=>0, 'op'=>$op] + $extra;
-
-        // Geschwindigkeit nur für Beweg-OPs setzen
-        if (in_array($op, ['Left','Right','Up','Down'], true)) {
-            if (!isset($param['speed'])) $param['speed'] = 5;
-        }
-
-        $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
-        if (!$ok) return false;
-
-        // Bei diesen Ops nach kurzer Zeit wieder stoppen (Impuls)
-        $needsPulse = ['Left','Right','Up','Down','ZoomIn','ZoomOut'];
-        if (in_array($op, $needsPulse, true)) {
-            IPS_Sleep($pulseMs);
-            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=> ($stopOp ?: 'Stop')], 'PtzCtrl', /*suppress*/ true);
-        }
-        return true;
     }
 }
