@@ -1320,7 +1320,7 @@ private function SetEmailContent(int $mode): bool
     }
 
  
-    // ====== PTZ ==================================================================
+    // ====== PTZ/Zoom ==================================================================
  
     private function CreateOrUpdatePTZHtml(): void
     {
@@ -1410,6 +1410,10 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
+    <div class="zoom" style="display:flex; gap:6px; justify-content:center; margin:6px 0 10px;">
+    <button data-zoom="in"  title="Zoom In"  aria-label="Zoom In">＋</button>
+    <button data-zoom="out" title="Zoom Out" aria-label="Zoom Out">－</button>
+    </div>
 
     <div class="section-title">Presets</div>
     <div class="presets">
@@ -1511,6 +1515,12 @@ private function SetEmailContent(int $mode): bool
         return;
         }
 
+        if (btn.hasAttribute("data-zoom")) {
+        var dir = btn.getAttribute("data-zoom");
+        call(dir === "in" ? "zoomin" : "zoomout");
+        return;
+        }
+
         // Umbenennen-Icon
         if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
         var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
@@ -1554,7 +1564,6 @@ private function SetEmailContent(int $mode): bool
         $this->setHtmlIfChanged("PTZ_HTML", $html);
     }
 
-    /** Setzt eine String-Variable nur, wenn der neue Inhalt sich unterscheidet. */
     private function setHtmlIfChanged(string $ident, string $html): void
     {
         $id = @$this->GetIDForIdent($ident);
@@ -1625,6 +1634,13 @@ private function SetEmailContent(int $mode): bool
                 $ok = $this->PTZ_DeletePreset($id);
                 $this->SendDebug("PTZ/DELETE", "id={$id} -> ".($ok?'OK':'FAIL'), 0);
                 return $ok;
+            
+            case 'zoomin':
+                return $this->ptzCtrl('ZoomIn', [], 300, 'ZoomStop');
+            case 'zoomout':
+                return $this->ptzCtrl('ZoomOut', [], 300, 'ZoomStop');
+            case 'zoomstop':
+                return $this->ptzCtrl('ZoomStop');
         }
 
         // Pfeile/Stop
@@ -1879,5 +1895,25 @@ private function SetEmailContent(int $mode): bool
         $ok = $this->ptzClearPreset($id);
         if ($ok) $this->CreateOrUpdatePTZHtml();
         return $ok;
+    }
+    private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250, ?string $stopOp = 'Stop'): bool
+    {
+        $param = ['channel'=>0, 'op'=>$op] + $extra;
+
+        // Geschwindigkeit nur für Beweg-OPs setzen
+        if (in_array($op, ['Left','Right','Up','Down'], true)) {
+            if (!isset($param['speed'])) $param['speed'] = 5;
+        }
+
+        $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
+        if (!$ok) return false;
+
+        // Bei diesen Ops nach kurzer Zeit wieder stoppen (Impuls)
+        $needsPulse = ['Left','Right','Up','Down','ZoomIn','ZoomOut'];
+        if (in_array($op, $needsPulse, true)) {
+            IPS_Sleep($pulseMs);
+            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=> ($stopOp ?: 'Stop')], 'PtzCtrl', /*suppress*/ true);
+        }
+        return true;
     }
 }
