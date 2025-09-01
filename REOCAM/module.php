@@ -1522,12 +1522,6 @@ private function SetEmailContent(int $mode): bool
         return;
         }
 
-        if (btn.hasAttribute("data-zoom")) {
-        var dir = btn.getAttribute("data-zoom");
-        call(dir === "in" ? "zoomin" : "zoomout");
-        return;
-        }
-
         // Umbenennen-Icon
         if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
         var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
@@ -1913,17 +1907,32 @@ private function SetEmailContent(int $mode): bool
         return $ok;
     }
 
-    private function ptzZoom(string $dir, int $pulseMs = 250): bool
+    private function ptzZoom(string $dir, int $pulseMs = 400): bool
     {
-        // Kandidaten je nach FW: In = Tele/Add, Out = Wide/Dec
-        $candidates = ($dir === 'in')
-            ? ['ZoomIn', 'ZoomTele', 'ZoomAdd']
-            : ['ZoomOut', 'ZoomWide', 'ZoomDec'];
+        // Paare, die auf vielen FW-Ständen vorkommen:
+        // in  <-> out
+        // ZoomIn  <-> ZoomOut
+        // ZoomTele<-> ZoomWide
+        // ZoomAdd <-> ZoomDec
+        // ZoomNear<-> ZoomFar
+        $pairs = [
+            ['in' => 'ZoomIn',   'out' => 'ZoomOut'],
+            ['in' => 'ZoomTele', 'out' => 'ZoomWide'],
+            ['in' => 'ZoomAdd',  'out' => 'ZoomDec'],
+            ['in' => 'ZoomNear', 'out' => 'ZoomFar'],
+        ];
+
+        // Kandidaten für die gewünschte Richtung erzeugen
+        $candidates = [];
+        foreach ($pairs as $p) {
+            $candidates[] = $p[$dir];
+        }
 
         foreach ($candidates as $op) {
+            $this->SendDebug('PTZ/Zoom', "Versuche op={$op}", 0);
             $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
             if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                // kurzer Impuls, dann Stop – sonst bleibt Zoom laufen
+                // kurzer Impuls, dann Stop, damit kein Dauerzoom läuft
                 IPS_Sleep($pulseMs);
                 $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
                 $this->SendDebug('PTZ/Zoom', "OK mit op={$op}", 0);
@@ -1931,7 +1940,7 @@ private function SetEmailContent(int $mode): bool
             }
         }
 
-        $this->SendDebug('PTZ/Zoom', "Alle Op-Namen fehlgeschlagen (dir={$dir})", 0);
+        $this->SendDebug('PTZ/Zoom', "Alle OP-Namen fehlgeschlagen (dir={$dir})", 0);
         return false;
     }
 }
