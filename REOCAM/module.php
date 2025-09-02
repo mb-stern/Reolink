@@ -1418,7 +1418,7 @@ private function SetEmailContent(int $mode): bool
     <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
     <input type="range" id="ptz-zoom"
             min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}"
-            style="width:250px;">
+            style="width:150px;">
     </div>
 
     <div class="section-title">Presets</div>
