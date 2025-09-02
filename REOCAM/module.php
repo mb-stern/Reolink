@@ -1415,6 +1415,7 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
+    <div class="section-title">Zoom</div>
     <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
     <input type="range" id="ptz-zoom"
             min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}"
