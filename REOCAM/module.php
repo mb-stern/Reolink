@@ -23,7 +23,9 @@ class Reolink extends IPSModule
         
         $this->RegisterPropertyInteger("PollingInterval", 2);
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
-        
+
+        $this->RegisterPropertyString("PtzApiMode", "auto"); // auto|flat|nested
+
         $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeBoolean("TokenRefreshing", false);
         
@@ -1450,8 +1452,7 @@ private function SetEmailContent(int $mode): bool
     function call(op, extra){
         var qs = new URLSearchParams(extra || {});
         qs.set("ptz", op);
-        var url = base + "?" + qs.toString();
-        return fetch(url, { method: "GET", credentials: "same-origin", cache: "no-store" })
+        return fetch(base + "?" + qs.toString(), { method:"GET", credentials:"same-origin", cache:"no-store" })
         .then(function(r){ return r.text().catch(function(){ return ""; }); })
         .then(function(t){
             var body = (t || "").trim().toUpperCase();
@@ -1463,6 +1464,38 @@ private function SetEmailContent(int $mode): bool
         .catch(function(){ show("Gesendet", true); return true; });
     }
 
+    // ========= Press & Hold für Richtungen =========
+    function startMove(dir){ call("move:start", { dir: dir }); }
+    function stopMove(){     call("move:stop"); }
+
+    // Start bei gedrücktem Button (Maus/Touch/Pointer)
+    ["pointerdown","touchstart","mousedown"].forEach(function(evt){
+        wrap.addEventListener(evt, function(e){
+        var btn = e.target.closest("button.dir");
+        if (!btn) return;
+        e.preventDefault();               // wichtig für Touch: kein Ghost-Click
+        startMove(btn.getAttribute("data-dir"));
+        }, {passive:false});
+    });
+
+    // Stop bei Loslassen/Verlassen
+    ["pointerup","pointercancel","touchend","touchcancel","mouseup","mouseleave"].forEach(function(evt){
+        wrap.addEventListener(evt, function(e){
+        stopMove();
+        });
+    });
+
+    // ========= Zoom-Slider =========
+    var zoomEl = document.getElementById("ptz-zoom");
+    if (zoomEl) {
+        zoomEl.addEventListener("change", function(){
+        var target = parseInt(zoomEl.value, 10);
+        if (isNaN(target)) return;
+        call("zoompos", { pos: target });
+        });
+    }
+
+    // ========= Presets: Liste & Tools =========
     function calcNextId(){
         var rows = wrap.querySelectorAll(".preset-row[data-preset]");
         var max = -1;
@@ -1479,30 +1512,21 @@ private function SetEmailContent(int $mode): bool
     }
     updateNextIdHint();
 
-    var zoomEl = document.getElementById("ptz-zoom");
-    if (zoomEl) {
-    zoomEl.addEventListener("change", function(){
-        var target = parseInt(zoomEl.value, 10);
-        if (isNaN(target)) return;
-        call("zoompos", { pos: target });
-    });
-    }
-
-    // ---- Buttons: Pfeile / Presets / CRUD ----
+    // Klick-Handling NUR für Presets/Umbenennen/Löschen/Speichern
     wrap.addEventListener("click", function(ev){
         var btn = ev.target.closest("button");
         if (!btn) return;
 
-        if (btn.hasAttribute("data-dir")) {
-        call(btn.getAttribute("data-dir"));
-        return;
-        }
+        // Richtungs-Buttons NICHT per click behandeln (dafür gibt's Press&Hold oben)
+        if (btn.classList.contains("dir")) return;
 
+        // Preset anfahren
         if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
         call("preset:" + btn.getAttribute("data-preset"));
         return;
         }
 
+        // Preset umbenennen
         if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
         var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
         var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
@@ -1516,6 +1540,7 @@ private function SetEmailContent(int $mode): bool
         return;
         }
 
+        // Preset löschen
         if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
         var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
         if (window.confirm("Preset " + idd + " löschen?")) {
@@ -1526,6 +1551,7 @@ private function SetEmailContent(int $mode): bool
         return;
         }
 
+        // Neues Preset anlegen
         if (btn.id === "ptz-new-save") {
         var nm = (nameIn.value || "").trim();
         if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
@@ -1564,13 +1590,17 @@ private function SetEmailContent(int $mode): bool
         $id   = is_null($idParam)   ? null : (int)$idParam;
         $name = is_null($nameParam) ? null : (string)$nameParam;
 
-        // PRESET anfahren: "preset:<id>"
-        if (strpos($cmd, 'preset:') === 0) {
-            $pid = (int)substr($cmd, 7);
-            if ($pid >= 0) {
-                return $this->ptzGotoPreset($pid);
+        if (strpos($cmd, 'move:') === 0) {
+            $op = substr($cmd, 5); // "start" | "stop"
+            if ($op === 'start') {
+                $dir = strtolower((string)($_REQUEST['dir'] ?? ''));
+                $map = ['left'=>'Left','right'=>'Right','up'=>'Up','down'=>'Down'];
+                if (!isset($map[$dir])) return false;
+                return $this->ptzStart($map[$dir]); // ohne Sleep
             }
-            $this->SendDebug("PTZ", "Ungueltige Preset-ID: $cmd", 0);
+            if ($op === 'stop') {
+                return $this->ptzStop();
+            }
             return false;
         }
 
@@ -1668,29 +1698,34 @@ private function SetEmailContent(int $mode): bool
     return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
-    private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
+    private function postCmdPtz(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
     {
+        $modeProp  = strtolower($this->ReadPropertyString("PtzApiMode") ?: "auto");
+        $cached    = $this->getPtzStyle(); // ""|"flat"|"nested"
         $nestedKey = $nestedKey ?: $cmd;
 
-        $known = $this->getPtzStyle();                 // "flat", "nested" oder ""
-        $order = $known ? [$known, ($known === 'flat' ? 'nested' : 'flat')] : ['flat','nested'];
+        $modes = match ($modeProp) {
+            "flat"   => ["flat"],
+            "nested" => ["nested"],
+            default  => $cached ? [$cached] : ["flat", "nested"], // auto
+        };
 
-        foreach ($order as $mode) {
+        foreach ($modes as $mode) {
             $payload = [[
                 'cmd'   => $cmd,
                 'param' => ($mode === 'flat') ? $body : [$nestedKey => $body]
             ]];
 
-            $resp = $this->apiCall($payload, /*suppress*/ true);
+            $resp = $this->apiCall($payload, /*suppressError*/ true);
             if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
-                if ($known !== $mode) $this->setPtzStyle($mode);
+                if ($cached !== $mode) $this->setPtzStyle($mode);
                 return $resp;
             }
         }
 
         if (!$suppress) {
-            $this->SendDebug("postCmdDual/$cmd", "FAIL body=".json_encode($body), 0);
-            $this->LogMessage("Reolink: postCmdDual FAIL for {$cmd}", KL_ERROR);
+            $this->SendDebug("postCmdPtz/$cmd", "FAIL body=".json_encode($body), 0);
+            $this->LogMessage("Reolink: postCmdPtz FAIL for {$cmd}", KL_ERROR);
         }
         return null;
     }
@@ -1705,26 +1740,47 @@ private function SetEmailContent(int $mode): bool
             $param['speed'] = 5;
         }
 
-        $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
+        $ok = is_array($this->postCmdPtz('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
         if (!$ok) return false;
 
         // Impuls + Stop nur für Bewegungen (Zoom handled separat)
         if ($isMove) {
             IPS_Sleep($pulseMs);
-            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+            $this->postCmdPtz('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
         }
 
         return true;
     }
 
+    private function ptzStart(string $op, int $speed=5): bool
+    {
+        // optional: Semaphore, damit keine parallel laufenden Moves kollidieren
+        $sem = "REOCAM_{$this->InstanceID}_PTZ";
+        if (function_exists('IPS_SemaphoreEnter')) IPS_SemaphoreEnter($sem, 200);
+
+        // nur Bewegungen mit Speed
+        $param = ['channel'=>0, 'op'=>$op, 'speed'=>$speed];
+        $ok = is_array($this->postCmdPtz('PtzCtrl', $param, 'PtzCtrl', /*suppress*/false));
+
+        if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
+        return $ok;
+    }
+
+    private function ptzStop(): bool
+    {
+        // Stop MUSS schnell raus; keine Token-Refresh-Orgie -> suppress=true
+        $res = $this->postCmdPtz('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/true);
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+    }
+
     private function ptzGotoPreset(int $id): bool
     {
         // Erst ToPos
-        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPos', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
+        $ok = is_array($this->postCmdPtz('PtzCtrl', ['channel'=>0, 'op'=>'ToPos', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
         if ($ok) return true;
 
         // Fallback ToPreset
-        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPreset', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
+        $ok = is_array($this->postCmdPtz('PtzCtrl', ['channel'=>0, 'op'=>'ToPreset', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
         if ($ok) return true;
 
         $this->SendDebug('PTZ/PRESET', "Anfahren fehlgeschlagen für ID=$id", 0);
@@ -1796,7 +1852,7 @@ private function SetEmailContent(int $mode): bool
 
     private function getPresetList(): array
     {
-        $res = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
+        $res = $this->postCmdPtz('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
         $list = [];
         $seen = [];
 
@@ -1838,11 +1894,11 @@ private function SetEmailContent(int $mode): bool
             $entry['name'] = mb_substr($n, 0, 32, 'UTF-8');
         }
         // bevorzugt: nested "PtzPreset" + table[]
-        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ $entry ]], 'PtzPreset', /*suppress*/true));
+        $ok = is_array($this->postCmdPtz('SetPtzPreset', ['channel'=>0, 'table'=>[ $entry ]], 'PtzPreset', /*suppress*/true));
         // Fallback: einige FW akzeptieren "flat" (ohne table)
         if (!$ok) {
             $flat = ['channel'=>0, 'id'=>$id, 'enable'=>1] + (isset($entry['name'])?['name'=>$entry['name']]:[]);
-            $ok = is_array($this->postCmdDual('SetPtzPreset', $flat, 'PtzPreset', /*suppress*/true));
+            $ok = is_array($this->postCmdPtz('SetPtzPreset', $flat, 'PtzPreset', /*suppress*/true));
         }
         if (!$ok) $this->SendDebug('PTZ/SetPtzPreset', 'Fehlgeschlagen: '.json_encode($entry), 0);
         return (bool)$ok;
@@ -1850,9 +1906,9 @@ private function SetEmailContent(int $mode): bool
 
     private function ptzClearPreset(int $id): bool {
         $entry = ['id'=>$id, 'enable'=>0, 'name'=>''];
-        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'table'=>[$entry]], 'PtzPreset', /*suppress*/true));
+        $ok = is_array($this->postCmdPtz('SetPtzPreset', ['channel'=>0,'table'=>[$entry]], 'PtzPreset', /*suppress*/true));
         if (!$ok) {
-            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'id'=>$id,'enable'=>0,'name'=>''], 'PtzPreset', /*suppress*/true));
+            $ok = is_array($this->postCmdPtz('SetPtzPreset', ['channel'=>0,'id'=>$id,'enable'=>0,'name'=>''], 'PtzPreset', /*suppress*/true));
         }
         if (!$ok) $this->SendDebug('PTZ/Clear', 'enable=0 für id='.$id.' gescheitert', 0);
         return (bool)$ok;
@@ -1865,15 +1921,15 @@ private function SetEmailContent(int $mode): bool
         $name = mb_substr($name, 0, 32, 'UTF-8');
 
         // bevorzugt: nested mit table[]
-        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]], 'PtzPreset', /*suppress*/true));
+        $ok = is_array($this->postCmdPtz('SetPtzPreset', ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]], 'PtzPreset', /*suppress*/true));
         if (!$ok) {
             // Fallback: flat
-            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'PtzPreset', /*suppress*/true));
+            $ok = is_array($this->postCmdPtz('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'PtzPreset', /*suppress*/true));
         }
         // als letzte Rückfallebenen die alten Varianten weiterprobieren:
         if (!$ok) {
-            $ok = is_array($this->postCmdDual('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', /*suppress*/true))
-            ?: is_array($this->postCmdDual('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/true));
+            $ok = is_array($this->postCmdPtz('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', /*suppress*/true))
+            ?: is_array($this->postCmdPtz('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/true));
         }
         if (!$ok) $this->SendDebug('PTZ/Rename', "Fehlgeschlagen: id=$id, name=$name", 0);
         return (bool)$ok;
@@ -1970,12 +2026,12 @@ private function SetEmailContent(int $mode): bool
         for ($i = 0; $i < $step; $i++) {
             $ok = false;
             foreach ($ops as $op) {
-                $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
+                $res = $this->postCmdPtz('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
                 if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
                     $ok = $okAny = true;
                     IPS_Sleep($pulseMs);
                     // unbedingt stoppen, sonst läuft der Zoom weiter
-                    $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+                    $this->postCmdPtz('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
                     break;
                 }
             }
