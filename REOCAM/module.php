@@ -1354,6 +1354,11 @@ private function SetEmailContent(int $mode): bool
         }
 
         $btn = 42; $gap = 6;
+        $zInfo = $this->getZoomInfo();
+        $zMin  = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
+        $zMax  = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
+        $zPos  = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
+
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
@@ -1410,14 +1415,10 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
-    <div class="zoomline" style="margin:6px 0 12px;">
-    <div style="display:flex; align-items:center; gap:10px; justify-content:center;">
-        <span style="min-width:32px; text-align:right;">0</span>
-        <input type="range" id="ptz-zoom" min="0" max="27" step="1" value="0"
-            style="width:260px;">
-        <span style="min-width:32px;">27</span>
-        <span class="hint" style="margin-left:10px;">Zoom: <strong id="ptz-zoom-val">0</strong></span>
-    </div>
+    <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
+    <input type="range" id="ptz-zoom"
+            min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}"
+            style="width:300px;">
     </div>
 
     <div class="section-title">Presets</div>
@@ -1477,28 +1478,13 @@ private function SetEmailContent(int $mode): bool
     }
     updateNextIdHint();
 
-    // ---- Zoom-Slider (0–27) ----
-    var zoomEl   = document.getElementById("ptz-zoom");
-    var zoomLbl  = document.getElementById("ptz-zoom-val");
-    var lastZoom = parseInt(zoomEl ? zoomEl.value : "0", 10) || 0;
-    var busy     = false;
-    function setLabel(v){ if (zoomLbl) zoomLbl.textContent = v; }
-
+    var zoomEl = document.getElementById("ptz-zoom");
     if (zoomEl) {
-        zoomEl.addEventListener("input", function(){ setLabel(zoomEl.value); });
-        zoomEl.addEventListener("change", function(){
-        if (busy) { zoomEl.value = lastZoom; setLabel(lastZoom); return; }
-        var target = parseInt(zoomEl.value, 10) || 0;
-        var delta  = target - lastZoom;
-        if (delta === 0) return;
-        busy = true;
-        var dir  = (delta > 0) ? "zoomin" : "zoomout";
-        var step = Math.abs(delta);
-        call(dir, { step: step }).then(function(ok){
-            if (ok) { lastZoom = target; }
-            else { zoomEl.value = lastZoom; setLabel(lastZoom); }
-        }).finally(function(){ busy = false; });
-        });
+    zoomEl.addEventListener("change", function(){
+        var target = parseInt(zoomEl.value, 10);
+        if (isNaN(target)) return;
+        call("zoompos", { pos: target });
+    });
     }
 
     // ---- Buttons: Pfeile / Presets / CRUD ----
@@ -1632,6 +1618,23 @@ private function SetEmailContent(int $mode): bool
                 return $this->ptzZoom('in', $stepParam);
             case 'zoomout':
                 return $this->ptzZoom('out', $stepParam);
+        }
+
+        case 'zoompos':
+        {
+            if (!isset($_REQUEST['pos'])) {
+                $this->SendDebug("PTZ/ZOOMPOS", "pos fehlt", 0);
+                return false;
+            }
+            $pos = (int)$_REQUEST['pos'];
+            // an Kamera-Grenzen klemmen
+            $info = $this->getZoomInfo();
+            if (is_array($info)) {
+                $pos = max($info['min'], min($info['max'], $pos));
+            }
+            $ok = $this->setZoomPos($pos);
+            $this->SendDebug("PTZ/ZOOMPOS", "pos={$pos} -> ".($ok?'OK':'FAIL'), 0);
+            return $ok;
         }
 
         // Pfeile/Stop
