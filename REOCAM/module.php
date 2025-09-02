@@ -1918,12 +1918,39 @@ private function SetEmailContent(int $mode): bool
     }
 
     private function setZoomPos(int $pos): bool {
-        $payload = [[
+        $info = $this->getZoomInfo(); // liest min/max aus der Kamera
+        if (!is_array($info)) {
+            // zur Sicherheit: wenn wir nichts wissen, auf 0..10 klemmen
+            $info = ['min'=>0, 'max'=>10];
+        }
+
+        $min = (int)$info['min'];
+        $max = (int)$info['max'];
+        $p   = max($min, min($max, $pos));
+
+        // Viele Reolink-FWs akzeptieren bei ZoomPos nur 0..10.
+        // ==> auf 0..10 normalisieren, wenn max > 10 gemeldet wird.
+        $sendPos = $p;
+        $nativeMax = 10;
+        if ($max > $nativeMax) {
+            $sendPos = (int)round(($p - $min) * $nativeMax / max(1, $max - $min));
+        }
+
+        // 1) Bevorzugt: verschachtelte Variante
+        $payloadNested = [[
             "cmd"   => "StartZoomFocus",
-            "param" => [ "ZoomFocus" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$pos ] ]
+            "param" => [ "ZoomFocus" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos ] ]
         ]];
-        $res = $this->apiCall($payload);
-        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        $res = $this->apiCall($payloadNested, /*suppressError*/ true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
+
+        // 2) Fallback: flache Variante (manche Firmwares wollen das so)
+        $payloadFlat = [[
+            "cmd"   => "StartZoomFocus",
+            "param" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos ]
+        ]];
+        $res2 = $this->apiCall($payloadFlat, /*suppressError*/ true);
+        return is_array($res2) && (($res2[0]['code'] ?? -1) === 0);
     }
 
     private function ptzZoom(string $dir, int $step = 1): bool
