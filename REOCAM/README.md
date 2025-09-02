@@ -102,7 +102,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
-Version 2.7 (31.08.2025)
+Version 2.7 (02.09.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.
 - Konfigurationsformular angepasst, die API-Funktionen haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
 
