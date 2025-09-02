@@ -1501,57 +1501,56 @@ private function SetEmailContent(int $mode): bool
         });
     }
 
-  // ---- Buttons: Pfeile / Presets / CRUD ----
-  wrap.addEventListener("click", function(ev){
-    var btn = ev.target.closest("button");
-    if (!btn) return;
+    // ---- Buttons: Pfeile / Presets / CRUD ----
+    wrap.addEventListener("click", function(ev){
+        var btn = ev.target.closest("button");
+        if (!btn) return;
 
-    if (btn.hasAttribute("data-dir")) {
-      call(btn.getAttribute("data-dir"));
-      return;
-    }
+        if (btn.hasAttribute("data-dir")) {
+        call(btn.getAttribute("data-dir"));
+        return;
+        }
 
-    if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
-      call("preset:" + btn.getAttribute("data-preset"));
-      return;
-    }
+        if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
+        call("preset:" + btn.getAttribute("data-preset"));
+        return;
+        }
 
-    if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
-      var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
-      var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
-                  ? btn.parentElement.previousElementSibling.textContent.trim() : "";
-      var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
-      if (neu && neu.trim() !== "") {
-        call("rename", { id:id, name:neu.trim() }).then(function(ok){
-          if (ok) updateNextIdHint();
+        if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
+        var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
+        var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
+                    ? btn.parentElement.previousElementSibling.textContent.trim() : "";
+        var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
+        if (neu && neu.trim() !== "") {
+            call("rename", { id:id, name:neu.trim() }).then(function(ok){
+            if (ok) updateNextIdHint();
+            });
+        }
+        return;
+        }
+
+        if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
+        var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
+        if (window.confirm("Preset " + idd + " löschen?")) {
+            call("delete", { id: idd }).then(function(ok){
+            if (ok) updateNextIdHint();
+            });
+        }
+        return;
+        }
+
+        if (btn.id === "ptz-new-save") {
+        var nm = (nameIn.value || "").trim();
+        if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
+        var nid = calcNextId();
+        call("save", { id: nid, name: nm }).then(function(ok){
+            if (ok) { nameIn.value = ""; updateNextIdHint(); }
         });
-      }
-      return;
-    }
-
-    if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
-      var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
-      if (window.confirm("Preset " + idd + " löschen?")) {
-        call("delete", { id: idd }).then(function(ok){
-          if (ok) updateNextIdHint();
-        });
-      }
-      return;
-    }
-
-    if (btn.id === "ptz-new-save") {
-      var nm = (nameIn.value || "").trim();
-      if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
-      var nid = calcNextId();
-      call("save", { id: nid, name: nm }).then(function(ok){
-        if (ok) { nameIn.value = ""; updateNextIdHint(); }
-      });
-      return;
-    }
-  });
-})();
-</script>
-
+        return;
+        }
+    });
+    })();
+    </script>
     HTML;
 
         $this->setHtmlIfChanged("PTZ_HTML", $html);
