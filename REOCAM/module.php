@@ -1501,7 +1501,6 @@ private function SetEmailContent(int $mode): bool
         if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
     }
 
-    // Initial anzeigen
     updateNextIdHint();
 
     <script>
