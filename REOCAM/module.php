@@ -1573,7 +1573,6 @@ private function SetEmailContent(int $mode): bool
             return false;
         }
 
-        // neue Kommandos
         switch (strtolower($cmd)) {
             case 'save':
                 if ($id === null || $id < 0) {
@@ -1613,43 +1612,43 @@ private function SetEmailContent(int $mode): bool
                 $ok = $this->PTZ_DeletePreset($id);
                 $this->SendDebug("PTZ/DELETE", "id={$id} -> ".($ok?'OK':'FAIL'), 0);
                 return $ok;
-            
+
             case 'zoomin':
                 return $this->ptzZoom('in', $stepParam);
+
             case 'zoomout':
                 return $this->ptzZoom('out', $stepParam);
+
+            case 'zoompos':
+                if (!isset($_REQUEST['pos'])) {
+                    $this->SendDebug("PTZ/ZOOMPOS", "pos fehlt", 0);
+                    return false;
+                }
+                $pos = (int)$_REQUEST['pos'];
+                // an Kamera-Grenzen klemmen
+                $info = $this->getZoomInfo();
+                if (is_array($info)) {
+                    $pos = max($info['min'], min($info['max'], $pos));
+                }
+                $ok = $this->setZoomPos($pos);
+                $this->SendDebug("PTZ/ZOOMPOS", "pos={$pos} -> ".($ok?'OK':'FAIL'), 0);
+                return $ok;
         }
 
-        case 'zoompos':
-        {
-            if (!isset($_REQUEST['pos'])) {
-                $this->SendDebug("PTZ/ZOOMPOS", "pos fehlt", 0);
-                return false;
-            }
-            $pos = (int)$_REQUEST['pos'];
-            // an Kamera-Grenzen klemmen
-            $info = $this->getZoomInfo();
-            if (is_array($info)) {
-                $pos = max($info['min'], min($info['max'], $pos));
-            }
-            $ok = $this->setZoomPos($pos);
-            $this->SendDebug("PTZ/ZOOMPOS", "pos={$pos} -> ".($ok?'OK':'FAIL'), 0);
-            return $ok;
-        }
-
-        // Pfeile/Stop
+        // Pfeile (kurzer Impuls + Stop)
         $map = [
-            'left'    => 'Left',
-            'right'   => 'Right',
-            'up'      => 'Up',
-            'down'    => 'Down'
+            'left'  => 'Left',
+            'right' => 'Right',
+            'up'    => 'Up',
+            'down'  => 'Down'
         ];
 
-        if (!isset($map[$cmd])) {
+        $k = strtolower($cmd);
+        if (!isset($map[$k])) {
             $this->SendDebug("PTZ", "Unbekanntes Kommando: {$cmd}", 0);
             return false;
         }
-        return $this->ptzCtrl($map[$cmd]);
+        return $this->ptzCtrl($map[$k]);
     }
 
     private function getPtzStyle(): string {
