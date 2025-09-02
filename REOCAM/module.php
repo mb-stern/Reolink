@@ -1766,6 +1766,11 @@ private function SetEmailContent(int $mode): bool
         return $ok;
     }
 
+    private function postCmdZoomFocus(array $body, bool $suppress=true): ?array {
+    // nutzt denselben Modus-Switch wie PTZ (auto|flat|nested)
+    return $this->postCmdPtz('StartZoomFocus', $body, 'ZoomFocus', $suppress);
+    }
+
     private function ptzStop(): bool
     {
         // Stop MUSS schnell raus; keine Token-Refresh-Orgie -> suppress=true
@@ -1956,7 +1961,7 @@ private function SetEmailContent(int $mode): bool
     }
 
     private function getZoomInfo(): ?array {
-        $res = $this->apiCall([[ "cmd"=>"GetZoomFocus", "action"=>0, "param"=>["channel"=>0] ]], /*suppress*/ false);
+        $res = $this->postCmdPtz('GetZoomFocus', ['channel'=>0], 'ZoomFocus', /*suppress*/ false);
         if (!is_array($res) || !isset($res[0]['value'])) return null;
 
         // möglichst robust verschiedene Key-Varianten abdecken
@@ -1992,21 +1997,9 @@ private function SetEmailContent(int $mode): bool
             $sendPos = (int)round(($p - $min) * $nativeMax / max(1, $max - $min));
         }
 
-        // 1) Bevorzugt: verschachtelte Variante
-        $payloadNested = [[
-            "cmd"   => "StartZoomFocus",
-            "param" => [ "ZoomFocus" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos ] ]
-        ]];
-        $res = $this->apiCall($payloadNested, /*suppressError*/ true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
-
-        // 2) Fallback: flache Variante (manche Firmwares wollen das so)
-        $payloadFlat = [[
-            "cmd"   => "StartZoomFocus",
-            "param" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos ]
-        ]];
-        $res2 = $this->apiCall($payloadFlat, /*suppressError*/ true);
-        return is_array($res2) && (($res2[0]['code'] ?? -1) === 0);
+        $body = ["channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos];
+        $res = $this->postCmdZoomFocus($body, /*suppress*/ true);
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function ptzZoom(string $dir, int $step = 1): bool
