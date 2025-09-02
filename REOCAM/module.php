@@ -1410,9 +1410,14 @@ private function SetEmailContent(int $mode): bool
     <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
 
-    <div class="zoom" style="display:flex; gap:6px; justify-content:center; margin:6px 0 10px;">
-    <button data-zoom="in"  title="Zoom In"  aria-label="Zoom In">＋</button>
-    <button data-zoom="out" title="Zoom Out" aria-label="Zoom Out">－</button>
+    <div class="zoomline" style="margin:6px 0 12px;">
+    <div style="display:flex; align-items:center; gap:10px; justify-content:center;">
+        <span style="min-width:32px; text-align:right;">0</span>
+        <input type="range" id="ptz-zoom" min="0" max="27" step="1" value="0"
+            style="width:260px;">
+        <span style="min-width:32px;">27</span>
+        <span class="hint" style="margin-left:10px;">Zoom: <strong id="ptz-zoom-val">0</strong></span>
+    </div>
     </div>
 
     <div class="section-title">Presets</div>
@@ -1499,6 +1504,46 @@ private function SetEmailContent(int $mode): bool
     // Initial anzeigen
     updateNextIdHint();
 
+    <script>
+    (function(){
+    // ... dein bestehendes IIFE ...
+    var zoomEl   = document.getElementById("ptz-zoom");
+    var zoomLbl  = document.getElementById("ptz-zoom-val");
+    var lastZoom = parseInt(zoomEl ? zoomEl.value : "0", 10) || 0;
+    var busy     = false;
+
+    function setLabel(v){ if (zoomLbl) zoomLbl.textContent = v; }
+
+    if (zoomEl) {
+        // Beim Schieben nur die Anzeige aktualisieren
+        zoomEl.addEventListener("input", function(){
+        setLabel(zoomEl.value);
+        });
+
+        // Beim Loslassen/Commit: Delta berechnen und an Server schicken
+        zoomEl.addEventListener("change", function(){
+        if (busy) { zoomEl.value = lastZoom; setLabel(lastZoom); return; }
+
+        var target = parseInt(zoomEl.value, 10) || 0;
+        var delta  = target - lastZoom;
+        if (delta === 0) return;
+
+        busy = true;
+        var dir  = (delta > 0) ? "zoomin" : "zoomout";
+        var step = Math.abs(delta); // 1 Klick = 1 "Stufe"
+
+        call(dir, { step: step }).then(function(ok){
+            if (ok) {
+            lastZoom = target; // Server hat's akzeptiert → lokalen Stand übernehmen
+            } else {
+            // Rückgängig machen, wenn Server-Call daneben ging
+            zoomEl.value = lastZoom;
+            setLabel(lastZoom);
+            }
+        }).finally(function(){ busy = false; });
+        });
+    }
+
     wrap.addEventListener("click", function(ev){
         var btn = ev.target.closest("button");
         if (!btn) return;
@@ -1506,13 +1551,6 @@ private function SetEmailContent(int $mode): bool
         // Pfeile
         if (btn.hasAttribute("data-dir")) {
         call(btn.getAttribute("data-dir"));
-        return;
-        }
-        
-        // Zoom
-        if (btn.hasAttribute("data-zoom")) {
-        var z = btn.getAttribute("data-zoom");
-        call(z === "in" ? "zoomin" : "zoomout");
         return;
         }
 
