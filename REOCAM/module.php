@@ -799,16 +799,21 @@ class Reolink extends IPSModule
         return "http://{$ip}/api.cgi";
     }
 
-    private function apiHttpPostJson(string $url, array $payload, bool $suppressError=false): ?array {
+    private function apiHttpPostJson(string $url, array $payload, bool $suppressError=false, int $timeoutMs=2500): ?array {
         $this->SendDebug("HTTP", "POST $url :: ".json_encode($payload), 0);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload)
+            CURLOPT_SSL_VERIFYPEER      => false,
+            CURLOPT_SSL_VERIFYHOST      => false,
+            CURLOPT_RETURNTRANSFER      => true,
+            CURLOPT_POST                => true,
+            CURLOPT_POSTFIELDS          => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_HTTPHEADER          => ['Content-Type: application/json', 'Expect:', 'Connection: close'],
+            // <<< wichtige Timeouts
+            CURLOPT_NOSIGNAL            => true,
+            CURLOPT_TIMEOUT_MS          => $timeoutMs,
+            CURLOPT_CONNECTTIMEOUT_MS   => min(800, $timeoutMs),
+            CURLOPT_HTTP_VERSION        => CURL_HTTP_VERSION_1_1,
         ]);
         $raw = curl_exec($ch);
         if ($raw === false) {
@@ -835,18 +840,14 @@ class Reolink extends IPSModule
         return $this->ReadAttributeString("ApiToken") !== "";
     }
 
-    private function apiCall(array $cmdPayload, bool $suppressError=false): ?array {
+    private function apiCall(array $cmdPayload, bool $suppressError=false, int $timeoutMs=2500): ?array {
         if (!$this->apiEnsureToken()) return null;
-
         $token = $this->ReadAttributeString("ApiToken");
         $url   = $this->apiBase() . "?token={$token}";
-
-        $resp  = $this->apiHttpPostJson($url, $cmdPayload, $suppressError);
+        $resp  = $this->apiHttpPostJson($url, $cmdPayload, $suppressError, $timeoutMs);
         if (!$resp) return null;
 
-        if (isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) {
-            return $resp;
-        }
+        if (isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) return $resp;
 
         $rsp = $resp[0]['error']['rspCode'] ?? null;
         if ((int)$rsp === -6) {
@@ -855,15 +856,11 @@ class Reolink extends IPSModule
             $token2 = $this->ReadAttributeString("ApiToken");
             if ($token2) {
                 $url2  = $this->apiBase() . "?token={$token2}";
-                $resp2 = $this->apiHttpPostJson($url2, $cmdPayload, $suppressError);
-                if (is_array($resp2) && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) {
-                    return $resp2;
-                }
-                // Falls wieder Fehler: unten in den generischen Fehlerpfad fallen
+                $resp2 = $this->apiHttpPostJson($url2, $cmdPayload, $suppressError, $timeoutMs);
+                if (is_array($resp2) && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) return $resp2;
                 $resp = $resp2;
             }
         }
-
         if (!$suppressError) {
             $this->SendDebug("API", "FAIL ".json_encode($resp), 0);
             $this->LogMessage("Reolink: API-Befehl fehlgeschlagen: ".json_encode($resp), KL_ERROR);
@@ -917,10 +914,10 @@ class Reolink extends IPSModule
             if (isset($responseData[0]['value']['Token']['name'])) {
                 $token = $responseData[0]['value']['Token']['name'];
                 $this->WriteAttributeString("ApiToken", $token);
-                $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5); // ~1h mit Puffer
-                // proaktives Erneuern: ~50min
+                $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
                 $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
                 $this->SendDebug("GetToken", "Token gespeichert & Ablauf gesetzt.", 0);
+                $this->ptzWarmup();
             } else {
                 throw new Exception("Fehler beim Abrufen des Tokens: ".json_encode($responseData));
             }
@@ -1009,6 +1006,7 @@ class Reolink extends IPSModule
             if ($id !== false) {
                 $this->UnregisterVariable("PTZ_HTML");
             }
+            $this->ptzWarmup();
         }
     }
 
@@ -1322,6 +1320,25 @@ private function SetEmailContent(int $mode): bool
  
     // ====== PTZ/Zoom ==================================================================
  
+    private function withPtzLock(callable $fn) {
+    $sem = "REOCAM_{$this->InstanceID}_PTZ";
+    $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($sem, 2000) : true;
+    try { return $fn(); }
+    finally { if ($entered && function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem); }
+    }
+
+    private function ptzStopBurst(string $op): void {
+        $variants = [
+            ['op'=>'Stop'],
+            ['op'=>$op.'Stop'],
+            ['op'=>'Stop', 'type'=>'PT'],
+        ];
+        foreach ($variants as $v) {
+            $this->postCmdDual('PtzCtrl', ['channel'=>0] + $v, 'PtzCtrl', /*suppress*/ true, /*timeoutMs*/ 600);
+            IPS_Sleep(20);
+        }
+    }
+    
     private function CreateOrUpdatePTZHtml(): void
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
@@ -1668,53 +1685,54 @@ private function SetEmailContent(int $mode): bool
     return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
-    private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
-    {
-        $nestedKey = $nestedKey ?: $cmd;
+    private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false, int $timeoutMs=2500): ?array {
+    $nestedKey = $nestedKey ?: $cmd;
+    $known = $this->getPtzStyle();
+    $order = $known ? [$known, ($known === 'flat' ? 'nested' : 'flat')] : ['flat','nested'];
 
-        $known = $this->getPtzStyle();                 // "flat", "nested" oder ""
-        $order = $known ? [$known, ($known === 'flat' ? 'nested' : 'flat')] : ['flat','nested'];
-
-        foreach ($order as $mode) {
-            $payload = [[
-                'cmd'   => $cmd,
-                'param' => ($mode === 'flat') ? $body : [$nestedKey => $body]
-            ]];
-
-            $resp = $this->apiCall($payload, /*suppress*/ true);
-            if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
-                if ($known !== $mode) $this->setPtzStyle($mode);
-                return $resp;
-            }
+    foreach ($order as $mode) {
+        $payload = [[ 'cmd'=>$cmd, 'param'=> ($mode==='flat') ? $body : [$nestedKey=>$body] ]];
+        $resp = $this->apiCall($payload, /*suppress*/ true, $timeoutMs);
+        if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
+            if ($known !== $mode) $this->setPtzStyle($mode);
+            return $resp;
         }
-
-        if (!$suppress) {
-            $this->SendDebug("postCmdDual/$cmd", "FAIL body=".json_encode($body), 0);
-            $this->LogMessage("Reolink: postCmdDual FAIL for {$cmd}", KL_ERROR);
-        }
-        return null;
+    }
+    if (!$suppress) {
+        $this->SendDebug("postCmdDual/$cmd", "FAIL body=".json_encode($body), 0);
+        $this->LogMessage("Reolink: postCmdDual FAIL for {$cmd}", KL_ERROR);
+    }
+    return null;
     }
 
     private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
     {
-        $param = ['channel' => 0, 'op' => $op] + $extra;
+        return $this->withPtzLock(function() use ($op, $extra, $pulseMs) {
+            // Token nicht mitten im Impuls erneuern
+            if (!$this->apiEnsureToken()) return false;
 
-        // Nur bei Bewegungen Speed setzen – bei Zoom führt 'speed' oft zu Fehlern
-        $isMove = in_array($op, ['Left','Right','Up','Down'], true);
-        if ($isMove && !isset($param['speed'])) {
-            $param['speed'] = 5;
-        }
+            $param = ['channel'=>0, 'op'=>$op] + $extra;
+            $isMove = in_array($op, ['Left','Right','Up','Down'], true);
+            if ($isMove && !isset($param['speed'])) $param['speed'] = 5;
 
-        $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
-        if (!$ok) return false;
+            // Start – für PTZ knapperes Timeout
+            $okStart = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false, /*timeoutMs*/ 900));
+            if (!$okStart) return false;
 
-        // Impuls + Stop nur für Bewegungen (Zoom handled separat)
-        if ($isMove) {
+            // kurzer Impuls
+            $pulseMs = max(80, min(500, $pulseMs));
             IPS_Sleep($pulseMs);
-            $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
-        }
 
-        return true;
+            // Immer „Stop-Burst“
+            $this->ptzStopBurst($op);
+            return true;
+        });
+    }
+
+    private function ptzWarmup(): void {
+    // Stil cachen + Kamera „aufwecken“
+    // suppress=true, kurzer Timeout → blockiert nicht
+    $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true, /*timeoutMs*/ 700);
     }
 
     private function ptzGotoPreset(int $id): bool
@@ -1973,10 +1991,14 @@ private function SetEmailContent(int $mode): bool
                 $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
                 if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
                     $ok = $okAny = true;
-                    IPS_Sleep($pulseMs);
-                    // unbedingt stoppen, sonst läuft der Zoom weiter
-                    $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
-                    break;
+                    $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true, /*timeoutMs*/ 900);
+                    if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                        $ok = $okAny = true;
+                        IPS_Sleep($pulseMs);
+                        // >>> Stop-Burst deckt mehrere FW-Varianten ab
+                        $this->ptzStopBurst($op); // siehe Hilfsfunktion unten
+                        break;
+                    }
                 }
             }
             if (!$ok) break;             // Kein passender Op → abbrechen

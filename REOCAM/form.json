@@ -88,7 +88,7 @@
         {
           "type": "CheckBox",
           "name": "EnableApiPTZ",
-          "caption": "PTZ, Presets und Zoom als html-Kachel (kann nicht oder nur teilweise unterstützt sein"
+          "caption": "PTZ, Presets und Zoom als html-Kachel (kann nicht oder nur teilweise unterstützt sein)"
         }
       ]
     },
