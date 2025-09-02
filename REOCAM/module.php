@@ -1446,47 +1446,22 @@ private function SetEmailContent(int $mode): bool
     }
 
     function call(op, extra){
-    var qs = new URLSearchParams(extra || {});
-    qs.set("ptz", op);
-
-    var url = base + "?" + qs.toString();
-
-    return fetch(url, {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store"
-    })
-    .then(function(r){
-        // Manche Umgebungen lassen r.text() nicht zu -> abfangen
-        return r.text().catch(function(){ return ""; });
-    })
-    .then(function(t){
-        var body = (t || "").trim().toUpperCase();
-        var ok   = (body === "OK");
-
-        if (ok) {
-        show("OK", true);
-        return true;
-        }
-        // Wenn keine lesbare Antwort vorliegt, werten wir als gesendet
-        if ((t || "").trim() === "") {
-        show("Gesendet", true);
-        return true;
-        }
-        // Server hat explizit was anderes geliefert
-        show("Fehler: " + (t || ""), false);
-        return false;
-    })
-    .catch(function(){
-        // Hier landen wir, wenn der Browser die Antwort komplett blockiert.
-        // Nicht als Fehler anzeigen, sonst wirkt es wie „falsch negativ“.
-        show("Gesendet", true);
-        return true;
-    });
+        var qs = new URLSearchParams(extra || {});
+        qs.set("ptz", op);
+        var url = base + "?" + qs.toString();
+        return fetch(url, { method: "GET", credentials: "same-origin", cache: "no-store" })
+        .then(function(r){ return r.text().catch(function(){ return ""; }); })
+        .then(function(t){
+            var body = (t || "").trim().toUpperCase();
+            var ok   = (body === "OK");
+            if (ok) { show("OK", true); return true; }
+            if ((t || "").trim() === "") { show("Gesendet", true); return true; }
+            show("Fehler: " + (t || ""), false); return false;
+        })
+        .catch(function(){ show("Gesendet", true); return true; });
     }
 
     function calcNextId(){
-        // Max der vorhandenen data-preset sammeln -> next = max+1, Start 0
         var rows = wrap.querySelectorAll(".preset-row[data-preset]");
         var max = -1;
         rows.forEach(function(el){
@@ -1500,103 +1475,83 @@ private function SetEmailContent(int $mode): bool
         var nid = calcNextId();
         if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
     }
-
     updateNextIdHint();
 
-    <script>
-    (function(){
-    // ... dein bestehendes IIFE ...
+    // ---- Zoom-Slider (0–27) ----
     var zoomEl   = document.getElementById("ptz-zoom");
     var zoomLbl  = document.getElementById("ptz-zoom-val");
     var lastZoom = parseInt(zoomEl ? zoomEl.value : "0", 10) || 0;
     var busy     = false;
-
     function setLabel(v){ if (zoomLbl) zoomLbl.textContent = v; }
 
     if (zoomEl) {
-        // Beim Schieben nur die Anzeige aktualisieren
-        zoomEl.addEventListener("input", function(){
-        setLabel(zoomEl.value);
-        });
-
-        // Beim Loslassen/Commit: Delta berechnen und an Server schicken
+        zoomEl.addEventListener("input", function(){ setLabel(zoomEl.value); });
         zoomEl.addEventListener("change", function(){
         if (busy) { zoomEl.value = lastZoom; setLabel(lastZoom); return; }
-
         var target = parseInt(zoomEl.value, 10) || 0;
         var delta  = target - lastZoom;
         if (delta === 0) return;
-
         busy = true;
         var dir  = (delta > 0) ? "zoomin" : "zoomout";
-        var step = Math.abs(delta); // 1 Klick = 1 "Stufe"
-
+        var step = Math.abs(delta);
         call(dir, { step: step }).then(function(ok){
-            if (ok) {
-            lastZoom = target; // Server hat's akzeptiert → lokalen Stand übernehmen
-            } else {
-            // Rückgängig machen, wenn Server-Call daneben ging
-            zoomEl.value = lastZoom;
-            setLabel(lastZoom);
-            }
+            if (ok) { lastZoom = target; }
+            else { zoomEl.value = lastZoom; setLabel(lastZoom); }
         }).finally(function(){ busy = false; });
         });
     }
 
-    wrap.addEventListener("click", function(ev){
-        var btn = ev.target.closest("button");
-        if (!btn) return;
+  // ---- Buttons: Pfeile / Presets / CRUD ----
+  wrap.addEventListener("click", function(ev){
+    var btn = ev.target.closest("button");
+    if (!btn) return;
 
-        // Pfeile
-        if (btn.hasAttribute("data-dir")) {
-        call(btn.getAttribute("data-dir"));
-        return;
-        }
+    if (btn.hasAttribute("data-dir")) {
+      call(btn.getAttribute("data-dir"));
+      return;
+    }
 
-        // Preset anfahren
-        if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
-        call("preset:" + btn.getAttribute("data-preset"));
-        return;
-        }
+    if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
+      call("preset:" + btn.getAttribute("data-preset"));
+      return;
+    }
 
-        // Umbenennen-Icon
-        if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
-        var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
-        var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
-                    ? btn.parentElement.previousElementSibling.textContent.trim() : "";
-        var neu = window.prompt("Neuer Name für Preset "+id+":", cur);
-        if (neu && neu.trim() !== "") {
-            call("rename", { id:id, name:neu.trim() }).then(function(ok){
-            if (ok) updateNextIdHint(); // UI wird ohnehin vom Server neu gerendert
-            });
-        }
-        return;
-        }
-
-        // Löschen-Icon
-        if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
-        var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
-        if (window.confirm("Preset "+idd+" löschen?")) {
-            call("delete", { id: idd }).then(function(ok){
-            if (ok) updateNextIdHint();
-            });
-        }
-        return;
-        }
-
-        // "Neues Preset" speichern (auto ID)
-        if (btn.id === "ptz-new-save") {
-        var nm = (nameIn.value || "").trim();
-        if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
-        var nid = calcNextId();
-        call("save", { id: nid, name: nm }).then(function(ok){
-            if (ok) { nameIn.value = ""; updateNextIdHint(); }
+    if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
+      var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
+      var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
+                  ? btn.parentElement.previousElementSibling.textContent.trim() : "";
+      var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
+      if (neu && neu.trim() !== "") {
+        call("rename", { id:id, name:neu.trim() }).then(function(ok){
+          if (ok) updateNextIdHint();
         });
-        return;
-        }
-    });
-    })();
-    </script>
+      }
+      return;
+    }
+
+    if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
+      var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
+      if (window.confirm("Preset " + idd + " löschen?")) {
+        call("delete", { id: idd }).then(function(ok){
+          if (ok) updateNextIdHint();
+        });
+      }
+      return;
+    }
+
+    if (btn.id === "ptz-new-save") {
+      var nm = (nameIn.value || "").trim();
+      if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
+      var nid = calcNextId();
+      call("save", { id: nid, name: nm }).then(function(ok){
+        if (ok) { nameIn.value = ""; updateNextIdHint(); }
+      });
+      return;
+    }
+  });
+})();
+</script>
+
     HTML;
 
         $this->setHtmlIfChanged("PTZ_HTML", $html);
@@ -1685,10 +1640,7 @@ private function SetEmailContent(int $mode): bool
             'left'    => 'Left',
             'right'   => 'Right',
             'up'      => 'Up',
-            'down'    => 'Down',
-            'stop'    => 'Stop',
-            'zoomin'  => 'ZoomIn',
-            'zoomout' => 'ZoomOut'
+            'down'    => 'Down'
         ];
 
         if (!isset($map[$cmd])) {
