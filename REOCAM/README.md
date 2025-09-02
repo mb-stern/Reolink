@@ -72,7 +72,7 @@ Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserke
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
-API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert.
+API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell sind PTZ-Steuerung, Presets (auswählen und speichern) und Zoom verfügbar. AKtuelle EInschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27
 
 ### 5. Statusvariablen und Profile
 
