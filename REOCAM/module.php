@@ -1900,57 +1900,34 @@ private function SetEmailContent(int $mode): bool
     }
 
     private function getZoomInfo(): ?array {
-        $res = $this->apiCall([[ "cmd"=>"GetZoomFocus", "action"=>0, "param"=>["channel"=>0] ]], /*suppress*/ false);
+        $res = $this->postCmdDual('GetZoomFocus', ['channel'=>0], 'ZoomFocus', /*suppress*/ false);
         if (!is_array($res) || !isset($res[0]['value'])) return null;
 
-        // möglichst robust verschiedene Key-Varianten abdecken
         $val  = $res[0]['value'];
         $zf   = $val['ZoomFocus'] ?? $val['zoomFocus'] ?? null;
         $zoom = is_array($zf) ? ($zf['zoom'] ?? $zf['Zoom'] ?? null) : null;
-
         if (!is_array($zoom)) return null;
 
         $pos = (int)($zoom['pos'] ?? $zoom['Pos'] ?? 0);
         $min = (int)($zoom['min'] ?? $zoom['Min'] ?? 0);
         $max = (int)($zoom['max'] ?? $zoom['Max'] ?? 10);
-
         return ['pos'=>$pos, 'min'=>$min, 'max'=>$max];
     }
 
     private function setZoomPos(int $pos): bool {
-        $info = $this->getZoomInfo(); // liest min/max aus der Kamera
-        if (!is_array($info)) {
-            // zur Sicherheit: wenn wir nichts wissen, auf 0..10 klemmen
-            $info = ['min'=>0, 'max'=>10];
-        }
+        $info = $this->getZoomInfo() ?: ['min'=>0, 'max'=>10];
+        $min  = (int)$info['min'];
+        $max  = (int)$info['max'];
+        $p    = max($min, min($max, $pos));
 
-        $min = (int)$info['min'];
-        $max = (int)$info['max'];
-        $p   = max($min, min($max, $pos));
-
-        // Viele Reolink-FWs akzeptieren bei ZoomPos nur 0..10.
-        // ==> auf 0..10 normalisieren, wenn max > 10 gemeldet wird.
+        // Falls Kamera intern 0..10 erwartet → normalisieren
         $sendPos = $p;
-        $nativeMax = 10;
-        if ($max > $nativeMax) {
-            $sendPos = (int)round(($p - $min) * $nativeMax / max(1, $max - $min));
+        if ($max > 10) {
+            $sendPos = (int)round(($p - $min) * 10 / max(1, $max - $min));
         }
 
-        // 1) Bevorzugt: verschachtelte Variante
-        $payloadNested = [[
-            "cmd"   => "StartZoomFocus",
-            "param" => [ "ZoomFocus" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos ] ]
-        ]];
-        $res = $this->apiCall($payloadNested, /*suppressError*/ true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) return true;
-
-        // 2) Fallback: flache Variante (manche Firmwares wollen das so)
-        $payloadFlat = [[
-            "cmd"   => "StartZoomFocus",
-            "param" => [ "channel"=>0, "op"=>"ZoomPos", "pos"=>$sendPos ]
-        ]];
-        $res2 = $this->apiCall($payloadFlat, /*suppressError*/ true);
-        return is_array($res2) && (($res2[0]['code'] ?? -1) === 0);
+        $res = $this->postCmdDual('StartZoomFocus', ['channel'=>0, 'op'=>'ZoomPos', 'pos'=>$sendPos], 'ZoomFocus', /*suppress*/ true);
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function ptzZoom(string $dir, int $step = 1): bool
