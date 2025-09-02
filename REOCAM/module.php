@@ -1616,6 +1616,7 @@ private function SetEmailContent(int $mode): bool
     private function HandlePtzCommand(string $cmd): bool
     {
         // optionale Parameter (aus GET/POST/JSON übernommen)
+        $stepParam = isset($_REQUEST['step']) ? max(1, (int)$_REQUEST['step']) : 1;
         $idParam   = $_REQUEST['id']   ?? null;
         $nameParam = $_REQUEST['name'] ?? null;
 
@@ -1674,9 +1675,9 @@ private function SetEmailContent(int $mode): bool
                 return $ok;
             
             case 'zoomin':
-                return $this->ptzZoom('in');
+                return $this->ptzZoom('in', $stepParam);
             case 'zoomout':
-                return $this->ptzZoom('out');
+                return $this->ptzZoom('out', $stepParam);
         }
 
         // Pfeile/Stop
@@ -1971,22 +1972,35 @@ private function SetEmailContent(int $mode): bool
         return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
-    private function ptzZoom(string $dir, int $step = 1): bool {
-        $info = $this->getZoomInfo();
-        if (!$info) { $this->SendDebug('PTZ/Zoom','GetZoomFocus fehlgeschlagen',0); return false; }
+    private function ptzZoom(string $dir, int $step = 1): bool
+    {
+        // step = wie viele kurze Zoom-Impulse
+        $step    = max(1, min(27, $step)); // harte Kappe (sicher)
+        $pulseMs = 160;                    // Dauer eines Impulses → feiner/grober
+        $gapMs   = 60;                     // Pause zwischen Impulsen
 
-        $pos = $info['pos'];
-        $min = $info['min'];
-        $max = $info['max'];
+        // Kandidaten: je nach FW heißt es unterschiedlich
+        $ops = ($dir === 'in')
+            ? ['ZoomIn','ZoomTele','ZoomAdd']
+            : ['ZoomOut','ZoomWide','ZoomDec'];
 
-        $target = ($dir === 'in') ? $pos + $step : $pos - $step;
-        if     ($target > $max) $target = $max;
-        elseif ($target < $min) $target = $min;
+        $okAny = false;
 
-        if ($target === $pos) { $this->SendDebug('PTZ/Zoom','Bereits am Limit',0); return true; }
-
-        $ok = $this->setZoomPos($target);
-        if ($ok) $this->SendDebug('PTZ/Zoom', "pos {$pos} -> {$target}", 0);
-        return $ok;
+        for ($i = 0; $i < $step; $i++) {
+            $ok = false;
+            foreach ($ops as $op) {
+                $res = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op], 'PtzCtrl', /*suppress*/ true);
+                if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                    $ok = $okAny = true;
+                    IPS_Sleep($pulseMs);
+                    // unbedingt stoppen, sonst läuft der Zoom weiter
+                    $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
+                    break;
+                }
+            }
+            if (!$ok) break;             // Kein passender Op → abbrechen
+            if ($i < $step-1) IPS_Sleep($gapMs);
+        }
+        return $okAny;
     }
 }
