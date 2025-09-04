@@ -73,7 +73,7 @@ Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserke
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
-API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell sind PTZ-Steuerung, Presets (auswählen und speichern) und Zoom verfügbar. AKtuelle EInschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27
+API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell ist die LED-, Email- und PTZ-Steuerung verfügbar. In der PTZ-Steuerung integriert sind ebenfalls die Presets (auswählen und speichern) und Zoom-Funktion. Aktuelle Einschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27.
 
 ### 5. Statusvariablen und Profile
 
@@ -103,7 +103,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
-Version 2.7 (02.09.2025)
+Version 2.7 (04.09.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.
 - Konfigurationsformular angepasst, die API-Funktionen haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
 
