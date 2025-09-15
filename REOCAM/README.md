@@ -14,7 +14,7 @@
 ### 1. Funktionsumfang
 
 Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. 
-Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktiort aber auch mit anderen Reolink-Kameras. 
+Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktioniert aber auch mit anderen Reolink-Kameras.
 Daher ist immer die aktuellste Firmware aufzuspielen. Die neuste Firmware muss im Reolink Download-Center gesucht werden, da die App meist keine Neue anzeigt.
 Der Webhook ist nur über das Webinterface der Kamera sichtbar, in der App für Windows ist diese Funktion ausgeblendet.
 Beherrscht die Kamera kein Webhook, kann sie aktiv gepollt werden. Dies bringt aber je nach Polling-Intervall eine kleine Verzögerung mit sich.
@@ -25,18 +25,19 @@ Das Modul kann folgendes:
 - Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
-- Main- oder Substream angezeigen.
-- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers.
+- Main- oder Substream angezeigt.
+- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers und steuern von Mailfunktionen.
 
 Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
 - Reolink Duo 2
 - Reolink RLC-810A
-- Reolink Doorbell (nicht Retail-Version obwohl dieselbe Hardware-Version)
+- Reolink Doorbell
 - Reolink E1 Outdoor (nicht alle Hardware-Versionen)
 - Reolink RLC-520A
 - Reolink E1 ZOOM
+- Reolink E540
 
-Akkubetriebenen Reolink-Kameras unterstützen nach meinem Wissenststand kein Webhook und könnten bestenfalls über ie Pollingfunkion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
+Akkubetriebenen Reolink-Kameras (z.B. Argus Modelle) unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
 
 Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
 Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
@@ -44,7 +45,8 @@ Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls nat�
 ### 2. Voraussetzungen
 
 - IP-Symcon ab Version 7.0
-- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center. Falls die Kamera keinen Webhook unterstützt kann im Konfigurationsformuler die Pollingfunktion aktiviert werden.
+- Bei der Inbetriebnahme sind zwingend alle Protokolle zu aktiviern, insbesonder http und https.
+- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center. Falls die Kamera keinen Webhook unterstützt kann im Konfigurationsformular die Pollingfunktion aktiviert werden.
 
 ### 3. Software-Installation
 
@@ -62,16 +64,16 @@ Name     | Beschreibung
 Webhook                             |	Hier wird der verwendete Webhook angezeigt. Diesen in der Kamerakonfiguration eintragen
 IP-Adresse                          |	IP-Adresse der Kamera
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
-Passwort                            |   Passwort zur Anmeldung im Interface der Kamera
+Passwort                            |   Passwort zur Anmeldung im Interface der Kamera. Es dürfen keine Sonderzeichen wie +, @, :, /, ?, #, [, ] verwendet werden.
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
 Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
 Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
 Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
-API-Funktionen                      |   Aktiviert die API-Funktionen. Diese Funktion ist im Aufbau, vorerst ist die Ansteuerung der Kamera-LED integriert. Die Istwerte werden alle 60 Sekunden von der Kamera abgerufen.
 Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
-Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverabeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
-Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu nicht angezeigt werden, wenn diese separat verlinkt werden.
-Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zuviele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
+Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
+Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell ist die LED-, Email- und PTZ-Steuerung verfügbar. In der PTZ-Steuerung integriert sind ebenfalls die Presets (auswählen und speichern) und Zoom-Funktion. Aktuelle Einschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27.
 
 ### 5. Statusvariablen und Profile
 
@@ -85,7 +87,9 @@ Es werden Variablen/Typen je nach Wahl im Konfigurationsformular erstellt.
 
 Name     | Typ
 -------- | ------------------
-REOCAM.WLED   |	Integer
+REOCAM.WLED              |	Integer
+REOCAM.EmailInterval     |	Integer
+REOCAM.EmailContent      |	Integer
 
 ### 6. WebFront
 
@@ -98,6 +102,18 @@ Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
 Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
+
+Version 2.7 (04.09.2025)
+- Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.
+- Konfigurationsformular angepasst, die API-Funktionen haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
+
+Version 2.6 (25.08.2025)
+- Neue API-Funktion 'Mailversand'. Die SMTP-Konfiguration ist im Kameraintrface vorzunehmen. Im Modul kann der Mailversand de/aktiviert (zb bei Abwesenheit), das Versand-Intervall eingestellt und der Mailinhalt bestimmt werden.
+- Einige Code Modifikationen
+
+Version 2.5 (15.06.2025)
+- Codeoptimierung im Bereich der LED-Parameter.
+- Rechtschreibung korrigiert.
 
 Version 2.4 (14.02.2025)
 - urlencode hinzugefügt, um auch Benutzernamen und Passwörter mit Sonderzeichen zu erlauben.
