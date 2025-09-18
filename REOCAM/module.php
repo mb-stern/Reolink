@@ -1327,8 +1327,6 @@ private function SetEmailContent(int $mode): bool
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
-        $id = $this->GetIDForIdent("PTZ_HTML");
-        if ($id !== false) { @IPS_SetHidden($id, false); }
 
         $hook = $this->ReadAttributeString("CurrentHook");
         if ($hook === "") { $hook = $this->RegisterHook(); }
