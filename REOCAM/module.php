@@ -51,7 +51,7 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        $enabled = $this->ReadPropertyBoolean("InstanceStatus");
+    $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
             $this->SetStatus(104); // IS_INACTIVE
             foreach ([
@@ -60,18 +60,17 @@ class Reolink extends IPSModule
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
-            // Hook austragen, damit gar nicht mehr auf die Instanz geroutet wird
-            $this->UnregisterHook();
+            // Hook NICHT entfernen, Name bleibt bestehen
             return;
         }
 
         $this->SetStatus(102); // IS_ACTIVE
 
-        // --- Hook sicherstellen NUR wenn aktiv ---
+        // Hook nur sicherstellen, wenn aktiv
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
-            $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
+            $this->SendDebug('ApplyChanges', "Hook init: '$hookPath'", 0);
         }
 
         // --- Stream aktualisieren ---
@@ -278,37 +277,20 @@ class Reolink extends IPSModule
         return $hookPath;
     }
 
-    private function UnregisterHook(): void
-    {
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        if ($hookPath === "") return;
-
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-        if (count($ids) === 0) return;
-
-        $hookInstanceID = $ids[0];
-        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true) ?: [];
-
-        $changed = false;
-        $new = [];
-        foreach ($hooks as $h) {
-            if (!isset($h['Hook'], $h['TargetID'])) continue;
-            if ($h['Hook'] === $hookPath && (int)$h['TargetID'] === $this->InstanceID) {
-                $changed = true; // diesen Eintrag entfernen
-                continue;
-            }
-            $new[] = $h;
-        }
-
-        if ($changed) {
-            IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($new));
-            IPS_ApplyChanges($hookInstanceID);
-            $this->SendDebug('UnregisterHook', "Hook '$hookPath' entfernt.", 0);
-        }
-    }
     
     public function ProcessHookData()
     {
+        // wenn Instanz deaktiviert → nichts verarbeiten
+        if (!$this->ReadPropertyBoolean("InstanceStatus") || $this->GetStatus() !== 102) {
+            while (ob_get_level() > 0) { @ob_end_clean(); }
+            // Wähle einen Status je nach Wunsch:
+            // 204 = still OK (keine Fehlermeldung am Client)
+            // 503 = klar „inaktiv“, z.B. fürs Debuggen
+            header('HTTP/1.1 204 No Content');
+            // oder: header('HTTP/1.1 503 Service Unavailable');
+            return;
+        }
+
         while (ob_get_level() > 0) { @ob_end_clean(); }
         $this->SendDebug('Webhook', 'triggered', 0);
 
