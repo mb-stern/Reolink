@@ -1,6 +1,11 @@
 {
   "elements": [
     {
+      "type": "CheckBox",
+      "name": "instanceStatus",
+      "caption": "Instanz aktivieren"
+    },
+    {
       "type": "ValidationTextBox",
       "name": "CameraIP",
       "caption": "Kamera IP"
