@@ -51,11 +51,8 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        // === Instanz-Aktivierung/Deaktivierung ganz am Anfang behandeln ===
         $enabled = $this->ReadPropertyBoolean("InstanceStatus");
-
         if (!$enabled) {
-            // Auf "inaktiv" setzen und alle Timer sicher stoppen
             $this->SetStatus(104); // IS_INACTIVE
             foreach ([
                 "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
@@ -63,14 +60,14 @@ class Reolink extends IPSModule
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
-            // Früh raus: nichts weiter initialisieren/erstellen
+            // Hook austragen, damit gar nicht mehr auf die Instanz geroutet wird
+            $this->UnregisterHook();
             return;
         }
 
-        // Aktiv
         $this->SetStatus(102); // IS_ACTIVE
 
-        // --- Hook sicherstellen ---
+        // --- Hook sicherstellen NUR wenn aktiv ---
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
@@ -281,6 +278,35 @@ class Reolink extends IPSModule
         return $hookPath;
     }
 
+    private function UnregisterHook(): void
+    {
+        $hookPath = $this->ReadAttributeString("CurrentHook");
+        if ($hookPath === "") return;
+
+        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
+        if (count($ids) === 0) return;
+
+        $hookInstanceID = $ids[0];
+        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true) ?: [];
+
+        $changed = false;
+        $new = [];
+        foreach ($hooks as $h) {
+            if (!isset($h['Hook'], $h['TargetID'])) continue;
+            if ($h['Hook'] === $hookPath && (int)$h['TargetID'] === $this->InstanceID) {
+                $changed = true; // diesen Eintrag entfernen
+                continue;
+            }
+            $new[] = $h;
+        }
+
+        if ($changed) {
+            IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($new));
+            IPS_ApplyChanges($hookInstanceID);
+            $this->SendDebug('UnregisterHook', "Hook '$hookPath' entfernt.", 0);
+        }
+    }
+    
     public function ProcessHookData()
     {
         while (ob_get_level() > 0) { @ob_end_clean(); }
