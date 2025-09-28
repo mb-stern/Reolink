@@ -11,6 +11,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
 
+        $this->RegisterPropertyBoolean("InstanceStatus", true);
         $this->RegisterPropertyBoolean("ShowMoveVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);

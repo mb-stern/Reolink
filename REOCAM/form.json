@@ -2,7 +2,7 @@
   "elements": [
     {
       "type": "CheckBox",
-      "name": "instanceStatus",
+      "name": "InstanceStatus",
       "caption": "Instanz aktivieren"
     },
     {
