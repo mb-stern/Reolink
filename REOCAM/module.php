@@ -51,17 +51,24 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-    $enabled = $this->ReadPropertyBoolean("InstanceStatus");
+        $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
             $this->SetStatus(104); // IS_INACTIVE
+
+            // Alle Timer stoppen
             foreach ([
                 "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
                 "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
-            // Hook NICHT entfernen, Name bleibt bestehen
-            return;
+
+            // >>> Token & Flags leeren (nebeneffektfrei, aber sicher)
+            $this->WriteAttributeString("ApiToken", "");
+            $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
+            $this->WriteAttributeBoolean("TokenRefreshing", false);
+
+            return; // nichts weiter initialisieren
         }
 
         $this->SetStatus(102); // IS_ACTIVE
@@ -139,6 +146,11 @@ class Reolink extends IPSModule
         }
     }
 
+    private function isActive(): bool
+    {
+        return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
+    }
+
     private function RemoveApiVariables(): void
     {
         $idents = [
@@ -160,6 +172,11 @@ class Reolink extends IPSModule
 
     public function RequestAction($Ident, $Value)
     {
+        if (!$this->isActive()) {
+        $this->SendDebug("RequestAction", "Instanz inaktiv – Aktion verworfen: $Ident", 0);
+        return;
+        }
+
         switch ($Ident) {
             case "WhiteLed":
                 $ok = $this->SetWhiteLed((bool)$Value);
@@ -745,6 +762,8 @@ class Reolink extends IPSModule
 
     public function Polling()
     {
+        if (!$this->isActive()) { $this->SetTimerInterval("PollingTimer", 0); return; }
+
         if (!$this->ReadPropertyBoolean("EnablePolling")) {
             $this->SetTimerInterval("PollingTimer", 0);
             return;
@@ -854,16 +873,21 @@ class Reolink extends IPSModule
         return is_array($data) ? $data : null;
     }
 
-    private function apiEnsureToken(): bool {
+    private function apiEnsureToken(): bool 
+    {
+        if (!$this->isActive()) return false;
         $token = $this->ReadAttributeString("ApiToken");
         $exp   = (int)$this->ReadAttributeInteger("ApiTokenExpiresAt");
         if ($token === "" || time() >= ($exp - 30)) {
-            $this->GetToken();
+            $this->GetToken(); // ist selbst geschützt
         }
         return $this->ReadAttributeString("ApiToken") !== "";
     }
 
-    private function apiCall(array $cmdPayload, bool $suppressError=false): ?array {
+    private function apiCall(array $cmdPayload, bool $suppressError=false): ?array 
+    {
+        if (!$this->isActive()) return null;
+        
         if (!$this->apiEnsureToken()) return null;
 
         $token = $this->ReadAttributeString("ApiToken");
@@ -901,60 +925,96 @@ class Reolink extends IPSModule
 
     public function GetToken()
     {
+        // Instanz inaktiv? -> nichts tun und Erneuerungs-Timer stoppen
+        if (!$this->isActive()) {
+            $this->SendDebug("GetToken", "Abgebrochen: Instanz inaktiv.", 0);
+            $this->SetTimerInterval("TokenRenewalTimer", 0);
+            return;
+        }
+
+        // Grundkonfiguration prüfen
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
 
-        if (empty($cameraIP) || empty($username) || empty($password)) {
-            $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
+        if ($cameraIP === "" || $username === "" || $password === "") {
+            $this->SendDebug("GetToken", "Abgebrochen: Unvollständige Einstellungen.", 0);
             return;
         }
 
-        $sem = "REOCAM_{$this->InstanceID}_GetToken";
-        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($sem, 5000) : true;
+        // Gegen parallele Logins absichern
+        $semName = "REOCAM_{$this->InstanceID}_GetToken";
+        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($semName, 5000) : true;
         if (!$entered) {
-            $this->SendDebug("GetToken", "Anderer Login läuft – übersprungen.", 0);
+            $this->SendDebug("GetToken", "Übersprungen: Anderer Login-Vorgang aktiv.", 0);
             return;
         }
+
         $this->WriteAttributeBoolean("TokenRefreshing", true);
 
         try {
-            $url = "http://$cameraIP/api.cgi?cmd=Login";
+            $url  = "http://{$cameraIP}/api.cgi?cmd=Login";
             $data = [[
                 "cmd"   => "Login",
-                "param" => ["User" => ["Version"=>"0","userName"=>$username,"password"=>$password]]
+                "param" => [
+                    "User" => [
+                        "Version"  => "0",
+                        "userName" => $username,
+                        "password" => $password
+                    ]
+                ]
             ]];
 
+            // cURL ausführen
             $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            curl_setopt_array($ch, [
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => json_encode($data),
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT        => 8
+            ]);
+
             $response = curl_exec($ch);
             if ($response === false) {
-                $err = curl_error($ch); curl_close($ch);
-                throw new Exception("cURL-Fehler: $err");
+                $err = curl_error($ch);
+                curl_close($ch);
+                $this->SendDebug("GetToken", "cURL-Fehler: $err", 0);
+                $this->LogMessage("Reolink: cURL-Fehler beim Login: $err", KL_ERROR);
+                // bewusster Abbruch (altes Token – falls vorhanden – bleibt bestehen)
+                return;
             }
             curl_close($ch);
 
-            $this->SendDebug("GetToken", "Antwort: $response", 0);
+            $this->SendDebug("GetToken", "Antwort: ".$response, 0);
             $responseData = json_decode($response, true);
 
-            if (isset($responseData[0]['value']['Token']['name'])) {
-                $token = $responseData[0]['value']['Token']['name'];
-                $this->WriteAttributeString("ApiToken", $token);
-                $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5); // ~1h mit Puffer
-                // proaktives Erneuern: ~50min
-                $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
-                $this->SendDebug("GetToken", "Token gespeichert & Ablauf gesetzt.", 0);
-            } else {
-                throw new Exception("Fehler beim Abrufen des Tokens: ".json_encode($responseData));
+            // Token extrahieren
+            $token = $responseData[0]['value']['Token']['name'] ?? null;
+            if (!is_string($token) || $token === "") {
+                $this->SendDebug("GetToken", "Ungueltige Antwort (kein Token).", 0);
+                $this->LogMessage("Reolink: Fehler beim Abrufen des Tokens: ".$response, KL_ERROR);
+                return;
             }
+
+            // Token & Ablauf speichern
+            $this->WriteAttributeString("ApiToken", $token);
+            // Reolink-Login typischerweise ~1h gültig -> 3600s minus kleiner Puffer
+            $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
+
+            // Proaktive Erneuerung nach ~50 Minuten (3000s)
+            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+
+            $this->SendDebug("GetToken", "Token gespeichert, Erneuerungstimer gesetzt.", 0);
+
         } finally {
             $this->WriteAttributeBoolean("TokenRefreshing", false);
-            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
+            if (function_exists('IPS_SemaphoreLeave')) {
+                IPS_SemaphoreLeave($semName);
+            }
         }
     }
 
@@ -1042,6 +1102,8 @@ class Reolink extends IPSModule
 
     public function ExecuteApiRequests()
     {
+        if (!$this->isActive()) return;
+
         if (!$this->apiEnsureToken()) return;
 
         if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
