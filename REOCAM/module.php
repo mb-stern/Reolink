@@ -51,6 +51,25 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
+        // === Instanz-Aktivierung/Deaktivierung ganz am Anfang behandeln ===
+        $enabled = $this->ReadPropertyBoolean("InstanceStatus");
+
+        if (!$enabled) {
+            // Auf "inaktiv" setzen und alle Timer sicher stoppen
+            $this->SetStatus(104); // IS_INACTIVE
+            foreach ([
+                "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
+                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
+            ] as $t) {
+                $this->SetTimerInterval($t, 0);
+            }
+            // Früh raus: nichts weiter initialisieren/erstellen
+            return;
+        }
+
+        // Aktiv
+        $this->SetStatus(102); // IS_ACTIVE
+
         // --- Hook sicherstellen ---
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
