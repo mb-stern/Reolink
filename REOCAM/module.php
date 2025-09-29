@@ -313,22 +313,38 @@ class Reolink extends IPSModule
 
     private function getLocalIPv4(): string
     {
+        // Robust gegen String/Array/leer
         if (function_exists('Sys_GetNetworkInfo')) {
             $info = @Sys_GetNetworkInfo();
+
+            // Manche Builds liefern ein Array von Interfaces...
             if (is_array($info)) {
                 foreach ($info as $if) {
-                    foreach (($if['IP'] ?? []) as $ip) {
+                    $ips = $if['IP'] ?? [];
+                    if (is_string($ips)) {
+                        $ips = [$ips];               // String -> Liste
+                    } elseif (!is_array($ips)) {
+                        $ips = [];                    // sonst -> leere Liste
+                    }
+                    foreach ($ips as $ip) {
                         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $ip !== '127.0.0.1') {
-                            return $ip;
+                            return $ip;               // erste brauchbare IPv4
                         }
                     }
                 }
             }
+            // …ganz selten kommt nur ein String zurück (defensiv):
+            if (is_string($info) && filter_var($info, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                return $info;
+            }
         }
+
+        // Fallback: Hostname auflösen
         $guess = @gethostbyname(@gethostname());
         if (filter_var($guess, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             return $guess;
         }
+
         return '127.0.0.1';
     }
 
