@@ -257,50 +257,78 @@ class Reolink extends IPSModule
     {
         $port   = 3777;
         $scheme = 'http';
-        // WWW-Server
-        $webServerGUID = '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}';
-        $webs = @IPS_GetInstanceListByModuleID($webServerGUID);
-        if (is_array($webs) && count($webs) > 0) {
-            $ws = $webs[0];
-            $p = @IPS_GetProperty($ws, 'Port');
-            if (is_numeric($p)) $port = (int)$p;
-            $ssl = @IPS_GetProperty($ws, 'EnableSSL');
-            if ($ssl === true) $scheme = 'https';
+        $host   = null;
+
+        // WWW-Server (nimmt Bind-IP / IPAddress, Port, SSL)
+        $wwwGUID = '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}';
+        $list = @IPS_GetInstanceListByModuleID($wwwGUID);
+        if (is_array($list) && count($list) > 0) {
+            foreach ($list as $ws) {
+                $active = @IPS_GetProperty($ws, 'Active');
+                if ($active === false) continue; // nur aktive nehmen
+
+                $p = @IPS_GetProperty($ws, 'Port');
+                if (is_numeric($p)) $port = (int)$p;
+
+                $ssl = @IPS_GetProperty($ws, 'EnableSSL');
+                if ($ssl === true) $scheme = 'https';
+
+                // manche Builds: 'IPAddress', andere 'BindIP'
+                $bind = @IPS_GetProperty($ws, 'IPAddress');
+                if (!is_string($bind) || $bind === '') {
+                    $bind = @IPS_GetProperty($ws, 'BindIP');
+                }
+                if (is_string($bind) && $bind !== '' && $bind !== '0.0.0.0') {
+                    $host = $bind;
+                }
+                break; // ersten passenden WWW-Server verwenden
+            }
         }
-        $host = $this->getLocalIPv4();
+
+        if ($host === null) {
+            $host = $this->getServerIPv4PreferLAN();
+        }
+
         return sprintf('%s://%s:%d%s', $scheme, $host, $port, $hookPath);
     }
 
-    private function getLocalIPv4(): string
+    private function getServerIPv4PreferLAN(): string
     {
+        $candidates = [];
+
         if (function_exists('Sys_GetNetworkInfo')) {
             $info = @Sys_GetNetworkInfo();
-
             if (is_array($info)) {
                 foreach ($info as $if) {
                     $ips = $if['IP'] ?? [];
-                    if (is_string($ips)) {
-                        $ips = [$ips];
-                    } elseif (!is_array($ips)) {
-                        $ips = [];
-                    }
+                    if (is_string($ips)) $ips = [$ips];
+                    if (!is_array($ips)) $ips = [];
                     foreach ($ips as $ip) {
                         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && $ip !== '127.0.0.1') {
-                            return $ip;
+                            $candidates[] = $ip;
                         }
                     }
                 }
-            }
-            if (is_string($info) && filter_var($info, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                return $info;
+            } elseif (is_string($info) && filter_var($info, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                $candidates[] = $info;
             }
         }
 
         $guess = @gethostbyname(@gethostname());
         if (filter_var($guess, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            return $guess;
+            $candidates[] = $guess;
         }
-        return '127.0.0.1';
+
+        // Deduplizieren, Reihenfolge beibehalten
+        $candidates = array_values(array_unique($candidates));
+
+        // RFC1918 bevorzugen
+        foreach ($candidates as $ip) {
+            if (preg_match('/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $ip)) {
+                return $ip;
+            }
+        }
+        return $candidates[0] ?? '127.0.0.1';
     }
 
     public function ProcessHookData()
