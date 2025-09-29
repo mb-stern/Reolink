@@ -44,6 +44,8 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("ApiToken", "");
         $this->RegisterAttributeString("EmailApiVersion", "");
         $this->RegisterAttributeString("PtzStyle", "");
+        $this->RegisterAttributeString("PtzPresetsCache", "");
+
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -997,12 +999,12 @@ class Reolink extends IPSModule
             $this->UpdateWhiteLedStatus();
         }
         if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            // EIN Call: lesen und Variablen aktualisieren
             $this->EmailApply(null, null, null);
         }
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->CreateOrUpdatePTZHtml();
-        }
+            $this->CreateOrUpdatePTZHtml(false);
+}
+
     }
 
     // ---------------------------
@@ -1285,7 +1287,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ / Zoom
     // ---------------------------
-    private function CreateOrUpdatePTZHtml(): void
+    private function CreateOrUpdatePTZHtml(bool $reloadPresets = false): void
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
@@ -1295,148 +1297,163 @@ class Reolink extends IPSModule
             $hook = $this->RegisterHook();
         }
 
-        $presets = $this->getPresetList();
+        // ---- Presets: aus Cache, nur bei Bedarf von der Kamera holen ----
+        $presets = [];
+        if (!$reloadPresets) {
+            $cached = $this->ReadAttributeString("PtzPresetsCache");
+            if (is_string($cached) && $cached !== "") {
+                $tmp = @json_decode($cached, true);
+                if (is_array($tmp)) $presets = $tmp;
+            }
+        }
+        if (empty($presets)) {
+            $presets = $this->getPresetList(); // <<< API-CALL NUR HIER (selten)
+            $this->WriteAttributeString("PtzPresetsCache", json_encode($presets, JSON_UNESCAPED_UNICODE));
+        }
+
+        // ---- Zoom-Info: 1 schlanker Call pro Zyklus ----
+        $zInfo = $this->getZoomInfo(); // <<< EIN API-CALL pro Refresh
+        $zMin = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
+        $zMax = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
+        $zPos = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
+
+        // ---- UI rendern (wie zuvor) ----
         $rows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
                 $pid   = (int)$p['id'];
                 $title = htmlspecialchars((string)$p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 $rows .= '<div class="preset-row" data-preset="'.$pid.'">'.
-                         '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
-                         '<div class="icons">'.
-                         '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
-                         '<button class="icon del" data-preset="'.$pid.'" title="Löschen" aria-label="Löschen">🗑</button>'.
-                         '</div>'.
-                         '</div>';
+                        '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
+                        '<div class="icons">'.
+                        '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
+                        '<button class="icon del" data-preset="'.$pid.'" title="Löschen" aria-label="Löschen">🗑</button>'.
+                        '</div>'.
+                        '</div>';
             }
         } else {
             $rows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
         $btn = 42; $gap = 6;
-        $zInfo = $this->getZoomInfo();
-        $zMin = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
-        $zMax = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
-        $zPos = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
-
         $html = <<<HTML
-<div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
-<style>
-#ptz-wrap{ --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px; max-width: 520px; margin:0 auto; user-select:none; }
-#ptz-wrap .grid{ display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn)); gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px; }
-#ptz-wrap button{ height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8; font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06); box-sizing:border-box; padding:6px 10px; }
-#ptz-wrap .dir{ width:var(--btn); padding:0; }
-#ptz-wrap button:hover{ filter:brightness(.98); }
-#ptz-wrap button:active{ transform:translateY(1px); }
-#ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;} #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
-#ptz-wrap .section-title{ font-weight:600; margin:10px 0 6px; }
-#ptz-wrap .presets{ display:block; }
-#ptz-wrap .preset-row{ display:flex; align-items:center; gap:8px; margin-bottom:var(--gap); }
-#ptz-wrap .preset{ flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-#ptz-wrap .icons { display:flex; gap:6px; }
-#ptz-wrap .icon{ width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; padding:0; font-size:18px; }
-#ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
-#ptz-wrap .new{ margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-#ptz-wrap .new input[type="text"]{ flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px; }
-#ptz-wrap .new button{ height:36px; padding:6px 10px; }
-#ptz-wrap .hint{ font-size:14px; opacity:.75; }
-</style>
-<div class="grid">
- <button data-dir="up" class="dir up" title="Hoch" aria-label="Hoch">▲</button>
- <button data-dir="left" class="dir left" title="Links" aria-label="Links">◀</button>
- <button data-dir="right" class="dir right" title="Rechts" aria-label="Rechts">▶</button>
- <button data-dir="down" class="dir down" title="Runter" aria-label="Runter">▼</button>
-</div>
-<div class="section-title">Zoom</div>
-<div class="zoomline" style="margin:6px 0 12px; text-align:center;">
- <input type="range" id="ptz-zoom" min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}" style="width:220px;">
-</div>
-<div class="section-title">Presets</div>
-<div class="presets"> {$rows} </div>
-<div class="section-title">Neues Preset</div>
-<div class="new">
- <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
- <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
-</div>
-<script>
-(function(){
-  var base = "{$hook}";
-  var wrap = document.getElementById("ptz-wrap");
-  var msg  = document.getElementById("ptz-msg");
-  var nameIn   = document.getElementById("ptz-new-name");
+    <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
+    <style>
+    #ptz-wrap{ --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px; max-width: 520px; margin:0 auto; user-select:none; }
+    #ptz-wrap .grid{ display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn)); gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px; }
+    #ptz-wrap button{ height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8; font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06); box-sizing:border-box; padding:6px 10px; }
+    #ptz-wrap .dir{ width:var(--btn); padding:0; }
+    #ptz-wrap button:hover{ filter:brightness(.98); }
+    #ptz-wrap button:active{ transform:translateY(1px); }
+    #ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;} #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
+    #ptz-wrap .section-title{ font-weight:600; margin:10px 0 6px; }
+    #ptz-wrap .presets{ display:block; }
+    #ptz-wrap .preset-row{ display:flex; align-items:center; gap:8px; margin-bottom:var(--gap); }
+    #ptz-wrap .preset{ flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #ptz-wrap .icons { display:flex; gap:6px; }
+    #ptz-wrap .icon{ width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; padding:0; font-size:18px; }
+    #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
+    #ptz-wrap .new{ margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    #ptz-wrap .new input[type="text"]{ flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px; }
+    #ptz-wrap .new button{ height:36px; padding:6px 10px; }
+    #ptz-wrap .hint{ font-size:14px; opacity:.75; }
+    </style>
+    <div class="grid">
+    <button data-dir="up" class="dir up" title="Hoch" aria-label="Hoch">▲</button>
+    <button data-dir="left" class="dir left" title="Links" aria-label="Links">◀</button>
+    <button data-dir="right" class="dir right" title="Rechts" aria-label="Rechts">▶</button>
+    <button data-dir="down" class="dir down" title="Runter" aria-label="Runter">▼</button>
+    </div>
+    <div class="section-title">Zoom</div>
+    <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
+    <input type="range" id="ptz-zoom" min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}" style="width:220px;">
+    </div>
+    <div class="section-title">Presets</div>
+    <div class="presets"> {$rows} </div>
+    <div class="section-title">Neues Preset</div>
+    <div class="new">
+    <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
+    <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
+    </div>
+    <script>
+    (function(){
+    var base = "{$hook}";
+    var wrap = document.getElementById("ptz-wrap");
+    var msg  = document.getElementById("ptz-msg");
+    var nameIn   = document.getElementById("ptz-new-name");
 
-  function show(text, ok){
-    if (!msg) return;
-    msg.className = "status " + (ok ? "ok" : "err");
-    msg.textContent = text;
-  }
-  function call(op, extra){
-    var qs = new URLSearchParams(extra || {});
-    qs.set("ptz", op);
-    var url = base + "?" + qs.toString();
-    return fetch(url, { method: "GET", credentials: "same-origin", cache: "no-store" })
-      .then(function(r){ return r.text().catch(function(){ return ""; }); })
-      .then(function(t){
-        var body = (t || "").trim().toUpperCase();
-        var ok = (body === "OK");
-        if (ok) { show("OK", true); return true; }
-        if ((t || "").trim() === "") { show("Gesendet", true); return true; }
-        show("Fehler: " + (t || ""), false); return false;
-      })
-      .catch(function(){ show("Gesendet", true); return true; });
-  }
-  function calcNextId(){
-    var rows = wrap.querySelectorAll(".preset-row[data-preset]");
-    var max = -1;
-    rows.forEach(function(el){
-      var v = parseInt(el.getAttribute("data-preset") || "-1", 10);
-      if (!isNaN(v) && v > max) max = v;
+    function show(text, ok){
+        if (!msg) return;
+        msg.className = "status " + (ok ? "ok" : "err");
+        msg.textContent = text;
+    }
+    function call(op, extra){
+        var qs = new URLSearchParams(extra || {});
+        qs.set("ptz", op);
+        var url = base + "?" + qs.toString();
+        return fetch(url, { method: "GET", credentials: "same-origin", cache: "no-store" })
+        .then(function(r){ return r.text().catch(function(){ return ""; }); })
+        .then(function(t){
+            var body = (t || "").trim().toUpperCase();
+            var ok = (body === "OK");
+            if (ok) { show("OK", true); return true; }
+            if ((t || "").trim() === "") { show("Gesendet", true); return true; }
+            show("Fehler: " + (t || ""), false); return false;
+        })
+        .catch(function(){ show("Gesendet", true); return true; });
+    }
+    function calcNextId(){
+        var rows = wrap.querySelectorAll(".preset-row[data-preset]");
+        var max = -1;
+        rows.forEach(function(el){
+        var v = parseInt(el.getAttribute("data-preset") || "-1", 10);
+        if (!isNaN(v) && v > max) max = v;
+        });
+        return max + 1;
+    }
+
+    var zoomEl = document.getElementById("ptz-zoom");
+    if (zoomEl) {
+        zoomEl.addEventListener("change", function(){
+        var target = parseInt(zoomEl.value, 10);
+        if (isNaN(target)) return;
+        call("zoompos", { pos: target });
+        });
+    }
+
+    wrap.addEventListener("click", function(ev){
+        var btn = ev.target.closest("button");
+        if (!btn) return;
+
+        if (btn.hasAttribute("data-dir")) {
+        call(btn.getAttribute("data-dir")); return;
+        }
+        if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
+        call("preset:" + btn.getAttribute("data-preset")); return;
+        }
+        if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
+        var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
+        var cur = (btn.parentElement && btn.parentElement.previousElementSibling) ? btn.parentElement.previousElementSibling.textContent.trim() : "";
+        var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
+        if (neu && neu.trim() !== "") { call("rename", { id:id, name:neu.trim() }); }
+        return;
+        }
+        if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
+        var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
+        if (window.confirm("Preset " + idd + " löschen?")) { call("delete", { id: idd }); }
+        return;
+        }
+        if (btn.id === "ptz-new-save") {
+        var nm = (nameIn.value || "").trim();
+        if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
+        var nid = calcNextId();
+        call("save", { id: nid, name: nm }).then(function(ok){ if (ok) { nameIn.value = ""; } });
+        return;
+        }
     });
-    return max + 1;
-  }
-
-  var zoomEl = document.getElementById("ptz-zoom");
-  if (zoomEl) {
-    zoomEl.addEventListener("change", function(){
-      var target = parseInt(zoomEl.value, 10);
-      if (isNaN(target)) return;
-      call("zoompos", { pos: target });
-    });
-  }
-
-  wrap.addEventListener("click", function(ev){
-    var btn = ev.target.closest("button");
-    if (!btn) return;
-
-    if (btn.hasAttribute("data-dir")) {
-      call(btn.getAttribute("data-dir")); return;
-    }
-    if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
-      call("preset:" + btn.getAttribute("data-preset")); return;
-    }
-    if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
-      var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
-      var cur = (btn.parentElement && btn.parentElement.previousElementSibling) ? btn.parentElement.previousElementSibling.textContent.trim() : "";
-      var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
-      if (neu && neu.trim() !== "") { call("rename", { id:id, name:neu.trim() }); }
-      return;
-    }
-    if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
-      var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
-      if (window.confirm("Preset " + idd + " löschen?")) { call("delete", { id: idd }); }
-      return;
-    }
-    if (btn.id === "ptz-new-save") {
-      var nm = (nameIn.value || "").trim();
-      if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
-      var nid = calcNextId();
-      call("save", { id: nid, name: nm }).then(function(ok){ if (ok) { nameIn.value = ""; } });
-      return;
-    }
-  });
-})();
-</script>
-HTML;
+    })();
+    </script>
+    HTML;
 
         $this->setHtmlIfChanged("PTZ_HTML", $html);
     }
@@ -1695,5 +1712,39 @@ HTML;
             if ($i < $step-1) IPS_Sleep($gapMs);
         }
         return $okAny;
+    }
+
+    public function PTZ_SavePreset(int $id, ?string $name=null): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzSetPreset($id);
+        if ($ok && $name) { $this->ptzRenamePreset($id, $name); }
+        if ($ok) {
+            $this->WriteAttributeString("PtzPresetsCache", "");   // Cache leeren
+            $this->CreateOrUpdatePTZHtml(true);                   // Presets neu holen
+        }
+        return $ok;
+    }
+
+    public function PTZ_RenamePreset(int $id, string $name): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzRenamePreset($id, $name);
+        if ($ok) {
+            $this->WriteAttributeString("PtzPresetsCache", "");
+            $this->CreateOrUpdatePTZHtml(true);
+        }
+        return $ok;
+    }
+
+    public function PTZ_DeletePreset(int $id): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzClearPreset($id);
+        if ($ok) {
+            $this->WriteAttributeString("PtzPresetsCache", "");
+            $this->CreateOrUpdatePTZHtml(true);
+        }
+        return $ok;
     }
 }
