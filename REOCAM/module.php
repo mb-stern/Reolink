@@ -255,7 +255,10 @@ class Reolink extends IPSModule
 
     private function BuildWebhookFullUrl(string $hookPath): string
     {
-        $host = filter_var(@gethostbyname(@gethostname()), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ?: '127.0.0.1';
+        $host = trim($this->ReadPropertyString("WebhookHostOverride"));
+        if ($host === '') {
+            $host = filter_var(@gethostbyname(@gethostname()), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ?: '127.0.0.1';
+        }
         return "http://{$host}:3777{$hookPath}";
     }
 
