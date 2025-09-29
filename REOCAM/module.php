@@ -125,6 +125,55 @@ class Reolink extends IPSModule
         }
     }
 
+    public function RequestAction($Ident, $Value)
+    {
+        if (!$this->isActive()) {
+            $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
+            return;
+        }
+
+        switch ($Ident) {
+            case "WhiteLed":
+                $ok = $this->SetWhiteLed((bool)$Value);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                else     { $this->UpdateWhiteLedStatus(); }
+                break;
+
+            case "Mode":
+                $ok = $this->SetMode((int)$Value);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->UpdateWhiteLedStatus(); }
+                break;
+
+            case "Bright":
+                $ok = $this->SetBrightness((int)$Value);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->UpdateWhiteLedStatus(); }
+                break;
+
+            case "EmailNotify":
+                $ok = $this->EmailApply((bool)$Value, null, null);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                else     { $this->EmailApply(null, null, null); } // zurücklesen
+                break;
+
+            case "EmailInterval":
+                $ok = $this->EmailApply(null, (int)$Value, null);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->EmailApply(null, null, null); }
+                break;
+
+            case "EmailContent":
+                $ok = $this->EmailApply(null, null, (int)$Value);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->EmailApply(null, null, null); }
+                break;
+
+            default:
+                throw new Exception("Invalid Ident");
+        }
+    }
+
     private function isActive(): bool
     {
         return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
@@ -948,7 +997,8 @@ class Reolink extends IPSModule
             $this->UpdateWhiteLedStatus();
         }
         if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            $this->UpdateEmailVars();
+            // EIN Call: lesen und Variablen aktualisieren
+            $this->EmailApply(null, null, null);
         }
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->CreateOrUpdatePTZHtml();
@@ -1015,40 +1065,6 @@ class Reolink extends IPSModule
         return $ver;
     }
 
-    private function GetEmailEnabled(): ?bool
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-        if ($apiVer === 'V20') {
-            $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL');
-            if (is_array($res) && isset($res[0]['value']['Email']['enable'])) {
-                return (bool)$res[0]['value']['Email']['enable'];
-            }
-        } else {
-            $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]], 'EMAIL');
-            if (is_array($res) && isset($res[0]['value']['Email']['schedule']['enable'])) {
-                return (bool)$res[0]['value']['Email']['schedule']['enable'];
-            }
-        }
-        $this->dbg("EMAIL", "Konnte Status nicht ermitteln");
-        return null;
-    }
-
-    private function SetEmailEnabled(bool $enable): bool
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-        if ($apiVer === 'V20') {
-            $res = $this->apiCall([[ "cmd" => "SetEmailV20", "param" => [ "Email" => [ "enable" => $enable ? 1 : 0 ] ] ]], 'EMAIL');
-            $ok = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-            if (!$ok) $this->dbg("EMAIL", "Set enable fehlgeschlagen", $res);
-            return $ok;
-        } else {
-            $res = $this->apiCall([[ "cmd" => "SetEmail", "param" => [ "Email" => [ "schedule" => [ "enable" => $enable ? 1 : 0 ] ] ] ]], 'EMAIL');
-            $ok = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-            if (!$ok) $this->dbg("EMAIL", "Set enable fehlgeschlagen", $res);
-            return $ok;
-        }
-    }
-
     private function IntervalSecondsToString(int $sec): ?string
     {
         switch ($sec) {
@@ -1067,141 +1083,8 @@ class Reolink extends IPSModule
         return $map[$s] ?? null;
     }
 
-    private function GetEmailInterval(): ?int
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-        $res = ($apiVer === 'V20')
-            ? $this->apiCall([[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]], 'EMAIL')
-            : $this->apiCall([[ "cmd" => "GetEmail",   "param" => ["channel" => 0] ]], 'EMAIL');
 
-        if (is_array($res) && isset($res[0]['value']['Email'])) {
-            $email = $res[0]['value']['Email'];
-            if (isset($email['intervalSec']) && is_numeric($email['intervalSec'])) return (int)$email['intervalSec'];
-            if (isset($email['interval'])) {
-                $sec = $this->IntervalStringToSeconds((string)$email['interval']);
-                if ($sec !== null) return $sec;
-            }
-        }
-        $this->dbg("EMAIL", "Intervall unbekannt", $res);
-        return null;
-    }
-
-    private function SetEmailInterval(int $sec): bool
-    {
-        $str = $this->IntervalSecondsToString($sec);
-        if ($str === null) {
-            $this->dbg("EMAIL", "Ungueltiger Sekundenwert", $sec);
-            return false;
-        }
-        $apiVer = $this->DetectEmailApiVersion();
-        $res = ($apiVer === 'V20')
-            ? $this->apiCall([[ "cmd"=>"SetEmailV20", "param"=> [ "Email" => [ "interval" => $str ] ] ]], 'EMAIL')
-            : $this->apiCall([[ "cmd"=>"SetEmail",    "param"=> [ "Email" => [ "interval" => $str ] ] ]], 'EMAIL');
-
-        $ok = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-        if (!$ok) $this->dbg("EMAIL", "Set interval fehlgeschlagen", ['value' => $str, 'resp' => $res]);
-        return $ok;
-    }
-
-    private function GetEmailContent(): ?int
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-        if ($apiVer === 'V20') {
-            $res = $this->apiCall([[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]], 'EMAIL');
-            if (is_array($res) && isset($res[0]['value']['Email'])) {
-                $e    = $res[0]['value']['Email'];
-                $text = isset($e['textType']) ? (int)$e['textType'] : 1;
-                $att  = isset($e['attachmentType']) ? (int)$e['attachmentType'] : 0;
-                if (!$text && $att === 1) return 1;  // nur Bild
-                if ( $text && $att === 0) return 0;  // nur Text
-                if ( $text && $att === 1) return 2;  // Text + Bild
-                if ( $text && $att === 2) return 3;  // Text + Video
-                return 0;
-            }
-        } else {
-            $res = $this->apiCall([[ "cmd" => "GetEmail", "param" => ["channel" => 0] ]], 'EMAIL');
-            if (is_array($res) && isset($res[0]['value']['Email']['attachment'])) {
-                switch ($res[0]['value']['Email']['attachment']) {
-                    case 'onlyPicture': return 1;
-                    case 'picture':     return 2;
-                    case 'video':       return 3;
-                    default:            return 0;
-                }
-            }
-            return 0;
-        }
-        return null;
-    }
-
-    private function SetEmailContent(int $mode): bool
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-        if ($apiVer === 'V20') {
-            switch ($mode) {
-                case 0: $payload = ["textType"=>1, "attachmentType"=>0]; break;
-                case 1: $payload = ["textType"=>0, "attachmentType"=>1]; break;
-                case 2: $payload = ["textType"=>1, "attachmentType"=>1]; break;
-                case 3: $payload = ["textType"=>1, "attachmentType"=>2]; break;
-                default: return false;
-            }
-            $res = $this->apiCall([[ "cmd"=>"SetEmailV20", "param"=> [ "Email" => $payload ] ]], 'EMAIL');
-            return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-        } else {
-            switch ($mode) {
-                case 0: $att = "0";            break;
-                case 1: $att = "onlyPicture";  break;
-                case 2: $att = "picture";      break;
-                case 3: $att = "video";        break;
-                default: return false;
-            }
-            $res = $this->apiCall([[ "cmd"=>"SetEmail", "param"=> [ "Email" => [ "attachment" => $att ] ] ]], 'EMAIL');
-            return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-        }
-    }
-
-    private function UpdateEmailVars(): void
-    {
-        $id = @$this->GetIDForIdent("EmailNotify");
-        if ($id !== false) {
-            $new = $this->GetEmailEnabled();
-            if ($new !== null) {
-                $old = (bool)GetValue($id);
-                $new = (bool)$new;
-                if ($old !== $new) {
-                    $this->SetValue("EmailNotify", $new);
-                    $this->dbg("EMAIL", "EmailNotify", ['old' => $old, 'new' => $new]);
-                }
-            }
-        }
-
-        $id = @$this->GetIDForIdent("EmailInterval");
-        if ($id !== false) {
-            $new = $this->GetEmailInterval();
-            if ($new !== null) {
-                $old = (int)GetValue($id);
-                $new = (int)$new;
-                if ($old !== $new) {
-                    $this->SetValue("EmailInterval", $new);
-                    $this->dbg("EMAIL", "EmailInterval", ['old' => $old, 'new' => $new]);
-                }
-            }
-        }
-
-        $id = @$this->GetIDForIdent("EmailContent");
-        if ($id !== false) {
-            $new = $this->GetEmailContent();
-            if ($new !== null) {
-                $old = (int)GetValue($id);
-                $new = (int)$new;
-                if ($old !== $new) {
-                    $this->SetValue("EmailContent", $new);
-                    $this->dbg("EMAIL", "EmailContent", ['old' => $old, 'new' => $new]);
-                }
-            }
-        }
-    }
-
-        // ---------------------------
+    // ---------------------------
     // PTZ / Zoom
     // ---------------------------
     private function CreateOrUpdatePTZHtml(): void
@@ -1614,65 +1497,5 @@ HTML;
             if ($i < $step-1) IPS_Sleep($gapMs);
         }
         return $okAny;
-    }
-
-    // ---------------------------
-    // RequestAction (UI-Steuerung) & E-Mail Hilfssetter
-    // ---------------------------
-    public function RequestAction($Ident, $Value)
-    {
-        if (!$this->isActive()) {
-            $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
-            return;
-        }
-
-        switch ($Ident) {
-            case "WhiteLed":
-                $ok = $this->SetWhiteLed((bool)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "Mode":
-                $ok = $this->SetMode((int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "Bright":
-                $ok = $this->SetBrightness((int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "EmailNotify":
-                $ok = $this->SetEmailEnabled((bool)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
-                else     { $this->UpdateEmailStatusVar(); }
-                break;
-
-            case "EmailInterval":
-                $ok = $this->SetEmailInterval((int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
-                else     { $this->UpdateEmailVars(); }
-                break;
-
-            case "EmailContent":
-                $ok = $this->SetEmailContent((int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
-                else     { $this->UpdateEmailVars(); }
-                break;
-
-            default:
-                throw new Exception("Invalid Ident");
-        }
-    }
-
-    private function UpdateEmailStatusVar(): void
-    {
-        $id = @$this->GetIDForIdent("EmailNotify");
-        if ($id === false) return;
-        $val = $this->GetEmailEnabled();
-        if ($val !== null) $this->SetValue("EmailNotify", $val);
     }
 }
