@@ -211,7 +211,7 @@ class Reolink extends IPSModule
             [
                 "type"    => "Label",
                 "name"    => "WebhookFull",
-                "caption" => "Webhook: " . $full
+                "caption" => "Webhook für Kamerakonfiguration: " . $full
             ]
         ];
 
