@@ -105,8 +105,8 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 Version 2.8 (29.09.2025)
 - Neu ist ein Schalter im Konfigurationsformular zum Deaktivieren der Instanz verfügbar.
-- Debug Ausgabe überarbeitet
-- Anzeige des kompletten Pfad zum Hook im Konfigurationsformular
+- Debug Ausgabe überarbeitet.
+- Der kompletten Pfad zum Hook wird nun im Konfigurationsformular angezeigt.
 
 Version 2.7 (04.09.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.
