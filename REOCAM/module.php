@@ -1085,15 +1085,36 @@ class Reolink extends IPSModule
 
     private function ApplyEmailStateToVars(array $st): void
     {
-        if (($id = @$this->GetIDForIdent("EmailNotify")) !== false) {
-            $this->SetValue("EmailNotify", (bool)$st['enabled']);
-        }
-        if (($id = @$this->GetIDForIdent("EmailInterval")) !== false && $st['intervalSec'] !== null) {
-            $this->SetValue("EmailInterval", (int)$st['intervalSec']);
-        }
-        if (($id = @$this->GetIDForIdent("EmailContent")) !== false && $st['contentMode'] !== null) {
-            // 0=Text, 1=Bild, 2=Text+Bild, 3=Text+Video
-            $this->SetValue("EmailContent", (int)$st['contentMode']);
+        $fields = [
+            ['ident' => 'EmailNotify',   'key' => 'enabled',     'cast' => 'bool'],
+            ['ident' => 'EmailInterval', 'key' => 'intervalSec', 'cast' => 'int'],
+            ['ident' => 'EmailContent',  'key' => 'contentMode', 'cast' => 'int'], // 0..3
+        ];
+
+        foreach ($fields as $f) {
+            $key = $f['key'];
+            if (!array_key_exists($key, $st) || $st[$key] === null) {
+                continue; // nichts zu setzen
+            }
+
+            $id = @$this->GetIDForIdent($f['ident']);
+            if ($id === false) {
+                continue; // Variable existiert (noch) nicht
+            }
+
+            $old = GetValue($id);
+            $new = $st[$key];
+
+            if ($f['cast'] === 'bool') {
+                $new = (bool)$new;
+            } else { // int
+                $new = (int)$new;
+            }
+
+            if ($old !== $new) {
+                $this->SetValue($f['ident'], $new);
+                $this->dbg('EMAIL', 'Var geändert', ['ident' => $f['ident'], 'old' => $old, 'new' => $new]);
+            }
         }
     }
 
