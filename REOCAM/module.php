@@ -1464,8 +1464,6 @@ class Reolink extends IPSModule
         $old = ($id !== false) ? GetValue($id) : null;
         if (!is_string($old) || $old !== $html) {
             $this->SetValue($ident, $html);
-        } else {
-            $this->dbg('PTZ', 'HTML unverändert');
         }
     }
 
