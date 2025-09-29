@@ -116,7 +116,6 @@ class Reolink extends IPSModule
         if ($anyFeatureOn) {
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $this->WriteAttributeBoolean("ApiInitialized", false);
             $this->CreateApiVariables();
             $this->GetToken();
             $this->ExecuteApiRequests();
@@ -1023,33 +1022,45 @@ class Reolink extends IPSModule
     private function SetMode(int $mode): bool         { return $this->SendLedRequest(['mode'  => $mode]); }
     private function SetBrightness(int $b): bool      { return $this->SendLedRequest(['bright'=> $b]); }
 
-    private function UpdateWhiteLedStatus()
+    private function UpdateWhiteLedStatus(): void
     {
         $resp = $this->apiCall([[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]], 'SPOTLIGHT');
-        if (!$resp || !isset($resp[0]['value']['WhiteLed'])) {
-            $this->dbg("SPOTLIGHT", "Ungültige Antwort");
+        if (!is_array($resp) || !isset($resp[0]['value']['WhiteLed'])) {
+            $this->dbg('SPOTLIGHT', 'Ungültige Antwort', $resp ?? null);
             return;
         }
-        $whiteLedData = $resp[0]['value']['WhiteLed'];
-        $initialized  = $this->ReadAttributeBoolean("ApiInitialized");
-        $mapping = ['state'=>'WhiteLed','mode'=>'Mode','bright'=>'Bright'];
-        foreach ($mapping as $jsonKey => $variableIdent) {
-            if (!array_key_exists($jsonKey, $whiteLedData)) continue;
-            $newValue = $whiteLedData[$jsonKey];
-            $variableID = @$this->GetIDForIdent($variableIdent);
-            if ($variableID === false) continue;
+        $wl = $resp[0]['value']['WhiteLed'];
+        $state = [
+            'state'  => isset($wl['state'])  ? (int)$wl['state']  : null,
+            'mode'   => isset($wl['mode'])   ? (int)$wl['mode']   : null,
+            'bright' => isset($wl['bright']) ? (int)$wl['bright'] : null,
+        ];
+        $this->ApplyWhiteLedStateToVars($state);
+    }
 
-            $currentValue = GetValue($variableID);
-            if (is_bool($currentValue)) $newValue = (bool)$newValue;
+    private function ApplyWhiteLedStateToVars(array $led): void
+    {
+        $map = [
+            'WhiteLed' => array_key_exists('state',  $led) ? (bool)$led['state']   : null,
+            'Mode'     => array_key_exists('mode',   $led) ? (int)$led['mode']     : null,
+            'Bright'   => array_key_exists('bright', $led) ? (int)$led['bright']   : null,
+        ];
 
-            if (!$initialized || $currentValue !== $newValue) {
-                $this->SetValue($variableIdent, $newValue);
-                $this->dbg("SPOTLIGHT", "Var aktualisiert", ['ident' => $variableIdent, 'value' => $newValue]);
+        foreach ($map as $ident => $newVal) {
+            if ($newVal === null) {
+                continue;
             }
-        }
-        if (!$initialized) {
-            $this->WriteAttributeBoolean("ApiInitialized", true);
-            $this->dbg("SPOTLIGHT", "Variablen initialisiert");
+            $id = @$this->GetIDForIdent($ident);
+            if ($id === false) {
+                continue;
+            }
+            $oldVal = GetValue($id);
+            if ($oldVal !== $newVal) {
+                $this->SetValue($ident, $newVal);
+                $this->dbg('SPOTLIGHT', 'Var geändert', ['ident' => $ident, 'old' => $oldVal, 'new' => $newVal]);
+            } else {
+                $this->dbg('SPOTLIGHT', 'Unverändert', ['ident' => $ident, 'value' => $newVal], true);
+            }
         }
     }
 
