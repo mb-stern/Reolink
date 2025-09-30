@@ -62,10 +62,12 @@ __Konfigurationsseite__:
 Name     | Beschreibung
 -------- | ------------------
 Webhook                             |	Hier wird der verwendete Webhook angezeigt. Diesen in der Kamerakonfiguration eintragen
+Instanz aktivieren                  |	Hier kann die Instanz temporär deaktiviert werden, um Fehlermeldungen bei Nichtverfügbarkeit der Kamera zu verhindern.
 IP-Adresse                          |	IP-Adresse der Kamera
 Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
 Passwort                            |   Passwort zur Anmeldung im Interface der Kamera. Es dürfen keine Sonderzeichen wie +, @, :, /, ?, #, [, ] verwendet werden.
 Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
+API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell ist die LED-, Email- und PTZ-Steuerung verfügbar. In der PTZ-Steuerung integriert sind ebenfalls die Presets (auswählen und speichern) und Zoom-Funktion. Aktuelle Einschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27.
 Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
 Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
 Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
@@ -73,7 +75,6 @@ Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserke
 Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
 Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
 Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
-API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell ist die LED-, Email- und PTZ-Steuerung verfügbar. In der PTZ-Steuerung integriert sind ebenfalls die Presets (auswählen und speichern) und Zoom-Funktion. Aktuelle Einschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27.
 
 ### 5. Statusvariablen und Profile
 
@@ -102,6 +103,12 @@ Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
 Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
+
+Version 2.8 (30.09.2025)
+- Nun ist ein Schalter zum Deaktivieren der Instanz im Konfigurationsformular verfügbar.
+- Der kompletten Pfad zum Hook wird nun im Konfigurationsformular angezeigt.
+- Die Debug-Ausgabe komplett überarbeitet.
+- Code überarbeitet, insbesondere finden keine reduntanten API-Abfragen mehr statt.
 
 Version 2.7 (04.09.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.

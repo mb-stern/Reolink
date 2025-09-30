@@ -1,303 +1,354 @@
 <?php
+declare(strict_types=1);
 
 class Reolink extends IPSModule
 {
+    // ---------------------------
+    // Lifecycle
+    // ---------------------------
     public function Create()
     {
         parent::Create();
-        
+
+        // Basis
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
+        $this->RegisterPropertyBoolean("InstanceStatus", true);
 
+        // Sichtbarkeit / UI
         $this->RegisterPropertyBoolean("ShowMoveVariables", true);
         $this->RegisterPropertyBoolean("ShowSnapshots", true);
         $this->RegisterPropertyBoolean("ShowArchives", true);
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
+
+        // Polling
         $this->RegisterPropertyBoolean("EnablePolling", false);
-        $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);
+        $this->RegisterPropertyInteger("PollingInterval", 2);
+
+        // API-Feature-Schalter
+        $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);  // Spotlight
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
-        
-        $this->RegisterPropertyInteger("PollingInterval", 2);
+
+        // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
-        
+
+        // Attribute
         $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeBoolean("TokenRefreshing", false);
-        
         $this->RegisterAttributeInteger("ApiTokenExpiresAt", 0);
-        
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
         $this->RegisterAttributeString("EmailApiVersion", "");
         $this->RegisterAttributeString("PtzStyle", "");
+        $this->RegisterAttributeString("PtzPresetsCache", "");
 
 
-        $this->RegisterTimer("Person_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
-        $this->RegisterTimer("Tier_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Tier");');
+        // Timer
+        $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
+        $this->RegisterTimer("Tier_Reset",     0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Tier");');
         $this->RegisterTimer("Fahrzeug_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Fahrzeug");');
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Bewegung");');
-        $this->RegisterTimer("Test_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Test");');
+        $this->RegisterTimer("Test_Reset",     0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Besucher");');
-        $this->RegisterTimer("PollingTimer", 0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
-        $this->RegisterTimer("ApiRequestTimer", 0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
+
+        $this->RegisterTimer("PollingTimer",      0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("ApiRequestTimer",   0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\']);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
     }
-    
+
     public function ApplyChanges()
     {
         parent::ApplyChanges();
 
-        // --- Hook sicherstellen ---
+        $enabled = $this->ReadPropertyBoolean("InstanceStatus");
+        if (!$enabled) {
+            $this->SetStatus(104); // IS_INACTIVE
+            foreach ([
+                "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
+                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
+            ] as $t) {
+                $this->SetTimerInterval($t, 0);
+            }
+            // Token & Flags leeren
+            $this->WriteAttributeString("ApiToken", "");
+            $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
+            $this->WriteAttributeBoolean("TokenRefreshing", false);
+            return;
+        }
+
+        $this->SetStatus(102); // IS_ACTIVE
+
+        // Hook sicherstellen
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
-            $this->SendDebug('ApplyChanges', "Die Initialisierung des Hook-Pfades '$hookPath' gestartet.", 0);
+            $this->dbg('WEBHOOK', 'Hook init', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
         }
 
-        // --- Stream aktualisieren ---
+        // Stream
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
 
-        // --- Bewegungs-/Snapshot-/Archiv-/Test-/Besucher-Elemente ---
-        if ($this->ReadPropertyBoolean("ShowMoveVariables")) {
-            $this->CreateMoveVariables();
-        } else {
-            $this->RemoveMoveVariables();
-        }
+        // UI-Elemente
+        if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
+        if (!$this->ReadPropertyBoolean("ShowSnapshots")) { $this->RemoveSnapshots(); }
+        if ($this->ReadPropertyBoolean("ShowArchives")) { $this->CreateOrUpdateArchives(); } else { $this->RemoveArchives(); }
+        if ($this->ReadPropertyBoolean("ShowTestElements")) { $this->CreateTestElements(); } else { $this->RemoveTestElements(); }
+        if ($this->ReadPropertyBoolean("ShowVisitorElements")) { $this->CreateVisitorElements(); } else { $this->RemoveVisitorElements(); }
 
-        if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
-            $this->RemoveSnapshots();
-        }
-
-        if ($this->ReadPropertyBoolean("ShowArchives")) {
-            $this->CreateOrUpdateArchives();
-        } else {
-            $this->RemoveArchives();
-        }
-
-        if ($this->ReadPropertyBoolean("ShowTestElements")) {
-            $this->CreateTestElements();
-        } else {
-            $this->RemoveTestElements();
-        }
-
-        if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
-            $this->CreateVisitorElements();
-        } else {
-            $this->RemoveVisitorElements();
-        }
-
-        // --- Polling ---
+        // Polling
         if ($this->ReadPropertyBoolean("EnablePolling")) {
-            $interval = $this->ReadPropertyInteger("PollingInterval");
+            $interval = max(1, (int)$this->ReadPropertyInteger("PollingInterval"));
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
         } else {
             $this->SetTimerInterval("PollingTimer", 0);
         }
 
-        // --- Einzelschalter für API-Funktionen ---
+        // API-Schalter
         $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
-
         $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ);
 
         if ($anyFeatureOn) {
-            // Timer für periodische API-Abfragen / Token
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
-            // optional schöner: hier 0 lassen, GetToken setzt später ~50min
             $this->SetTimerInterval("TokenRenewalTimer", 0);
-
-            // Initialzustand zurücksetzen, Variablen anlegen, Token holen, erste Abfragen
-            $this->WriteAttributeBoolean("ApiInitialized", false);
-            $this->CreateApiVariables();   // legt nur an, was per Schalter aktiv ist
+            $this->CreateApiVariables();
             $this->GetToken();
-            $this->ExecuteApiRequests();   // aktualisiert nur aktive Feature-Gruppen
+            $this->ExecuteApiRequests();
         } else {
-            // Alles aus: Timer stoppen, Variablen entfernen (inkl. PTZ_HTML)
-            $this->SetTimerInterval("ApiRequestTimer",   0);
+            $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->RemoveApiVariables();
         }
     }
 
-    private function RemoveApiVariables(): void
-    {
-        $idents = [
-            // White LED
-            "WhiteLed", "Mode", "Bright",
-            // Email
-            "EmailNotify", "EmailInterval", "EmailContent",
-            // PTZ
-            "PTZ_HTML"
-        ];
-
-        foreach ($idents as $ident) {
-            $id = @$this->GetIDForIdent($ident);
-            if ($id !== false) {
-                $this->UnregisterVariable($ident);
-            }
-        }
-    }
-
     public function RequestAction($Ident, $Value)
     {
+        if (!$this->isActive()) {
+            $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
+            return;
+        }
+
         switch ($Ident) {
             case "WhiteLed":
                 $ok = $this->SetWhiteLed((bool)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (bool)$Value);
-                } else {
-                    $this->UpdateWhiteLedStatus(); // zurücklesen
-                }
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
             case "Mode":
                 $ok = $this->SetMode((int)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
-                } else {
-                    $this->UpdateWhiteLedStatus();
-                }
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
             case "Bright":
                 $ok = $this->SetBrightness((int)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
-                } else {
-                    $this->UpdateWhiteLedStatus();
-                }
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
             case "EmailNotify":
-                $ok = $this->SetEmailEnabled((bool)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (bool)$Value);
-                } else {
-                    $this->UpdateEmailStatusVar();
-                }
+                $ok = $this->EmailApply((bool)$Value, null, null);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                else     { $this->EmailApply(null, null, null); } // zurücklesen
                 break;
 
             case "EmailInterval":
-                $ok = $this->SetEmailInterval((int)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
-                } else {
-                    $this->UpdateEmailVars(); // zurücklesen
-                }
+                $ok = $this->EmailApply(null, (int)$Value, null);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->EmailApply(null, null, null); }
                 break;
 
             case "EmailContent":
-                $ok = $this->SetEmailContent((int)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (int)$Value);
-                } else {
-                    $this->UpdateEmailVars();
-                }
+                $ok = $this->EmailApply(null, null, (int)$Value);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                else     { $this->EmailApply(null, null, null); }
                 break;
 
             default:
                 throw new Exception("Invalid Ident");
         }
     }
-        
+
+    private function isActive(): bool
+    {
+        return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
+    }
+
+    // ---------------------------
+    // DEBUG / LOGGING (immer aktiv, mit Redaction)
+    // ---------------------------
+    private function dbg(string $topic, string $message, $data = null, bool $ignored = false): void
+    {
+        // $ignored ist nur für API-Kompatibilität zu älterem Code; Debug ist immer aktiv.
+        $label = strtoupper($topic);
+        $text  = $message;
+        if ($data !== null) {
+            $text .= ' | ' . $this->toStr($this->redactDeep($data));
+        }
+        // 0 => "string"
+        $this->SendDebug($label, $text, 0);
+    }
+
+    private function toStr($v): string
+    {
+        if (is_string($v)) return $v;
+        return json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    private function redactDeep($value)
+    {
+        // Schwärzt häufige Schlüssel und URL-Query-Parameter
+        if (is_array($value)) {
+            $out = [];
+            foreach ($value as $k => $v) {
+                $lk = strtolower((string)$k);
+                if (in_array($lk, ['password','pass','pwd','token','apikey','authorization','auth','bearer','secret'], true)) {
+                    $out[$k] = '***';
+                } elseif (in_array($lk, ['user','username'], true)) {
+                    $out[$k] = $this->maskMiddle((string)$v);
+                } else {
+                    $out[$k] = $this->redactDeep($v);
+                }
+            }
+            return $out;
+        }
+        if (is_string($value)) {
+            $s = $value;
+            // URL-Parameter
+            $s = preg_replace('/([?&])(user|username)=([^&#\s]*)/i', '$1$2=***', $s);
+            $s = preg_replace('/([?&])(password|pass|pwd)=([^&#\s]*)/i', '$1$2=***', $s);
+            $s = preg_replace('/([?&])(token|apikey)=([^&#\s]*)/i', '$1$2=***', $s);
+            // Header-ähnlich
+            $s = preg_replace('/(Authorization:\s*Bearer\s+)[^\s"]+/i', '$1***', $s);
+            $s = preg_replace('/(Authorization:\s*Basic\s+)[A-Za-z0-9+\/=]+/i', '$1***', $s);
+            return $s;
+        }
+        return $value;
+    }
+
+    private function maskMiddle(string $s): string
+    {
+        if ($s === '') return '';
+        if (mb_strlen($s) <= 2) return '*';
+        $first = mb_substr($s, 0, 1);
+        $last  = mb_substr($s, -1);
+        return $first . '***' . $last;
+    }
+
+    // ---------------------------
+    // Webhook + Formular
+    // ---------------------------
     public function GetConfigurationForm()
     {
-        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
+        $formPath = __DIR__ . '/form.json';
+        $form = file_exists($formPath) ? json_decode(file_get_contents($formPath), true) : ['elements' => []];
 
         $hookPath = $this->ReadAttributeString("CurrentHook");
-        $webhookElement = [
-            "type"    => "Label",
-            "name"    => "WebhookPath",
-            "caption" => "Webhook: " . $hookPath
+        if ($hookPath === '') {
+            $hookPath = $this->RegisterHook();
+        }
+
+        $full = $this->BuildWebhookFullUrl($hookPath);
+
+        // Nur der vollständige Pfad, nicht als klickbare URL – reine Anzeige
+        $head = [
+            [
+                "type"    => "Label",
+                "name"    => "WebhookFull",
+                "caption" => "Webhook für Kamerakonfiguration: " . $full
+            ]
         ];
 
-        array_splice($form['elements'], 0, 0, [$webhookElement]);
-
+        array_splice($form['elements'], 0, 0, $head);
         return json_encode($form);
     }
 
-    private function RegisterHook()
+    private function RegisterHook(): string
     {
-
         $hookBase = '/hook/reolink_';
         $hookPath = $this->ReadAttributeString("CurrentHook");
-    
-        // Wenn kein Hook registriert ist, einen neuen erstellen
         if ($hookPath === "") {
             $hookPath = $hookBase . $this->InstanceID;
             $this->WriteAttributeString("CurrentHook", $hookPath);
         }
-        
+
         $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
         if (count($ids) === 0) {
-            $this->SendDebug('RegisterHook', 'Keine WebHook-Control-Instanz gefunden.', 0);
+            $this->dbg('WEBHOOK', 'Keine WebHook-Control-Instanz gefunden');
             return $hookPath;
         }
-    
         $hookInstanceID = $ids[0];
+
         $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-    
-        if (!is_array($hooks)) {
-            $hooks = [];
-        }
-    
-        // Prüfen, ob der Hook bereits existiert
+        if (!is_array($hooks)) $hooks = [];
+
         foreach ($hooks as $hook) {
-            if ($hook['Hook'] === $hookPath && $hook['TargetID'] === $this->InstanceID) {
-                $this->SendDebug('RegisterHook', "Hook '$hookPath' ist bereits registriert.", 0);
+            if (($hook['Hook'] ?? '') === $hookPath && ($hook['TargetID'] ?? 0) === $this->InstanceID) {
+                $this->dbg('WEBHOOK', 'Bereits registriert', ['path' => $hookPath]);
                 return $hookPath;
             }
         }
-    
-        // Neuen Hook hinzufügen
+
         $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
         IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
         IPS_ApplyChanges($hookInstanceID);
-        $this->SendDebug('RegisterHook', "Hook '$hookPath' wurde registriert.", 0);
+
+        $this->dbg('WEBHOOK', 'Registriert', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
         return $hookPath;
+    }
+
+    private function BuildWebhookFullUrl(string $hookPath): string
+    {
+        $host = filter_var(@gethostbyname(@gethostname()), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ?: '127.0.0.1';
+        return "http://{$host}:3777{$hookPath}";
     }
 
     public function ProcessHookData()
     {
+        if (!$this->ReadPropertyBoolean("InstanceStatus") || $this->GetStatus() !== 102) {
+            while (ob_get_level() > 0) { @ob_end_clean(); }
+            header('HTTP/1.1 204 No Content');
+            return;
+        }
         while (ob_get_level() > 0) { @ob_end_clean(); }
-        $this->SendDebug('Webhook', 'triggered', 0);
 
         $ptz = null;
-        $raw = file_get_contents('php://input');
+        $raw = @file_get_contents('php://input');
+
+        // JSON-Payload
         if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data) && isset($data['ptz'])) {
                 $ptz = (string)$data['ptz'];
-                // <<< Parameter aus JSON verfügbar machen
-                if (isset($data['id']))   $_REQUEST['id']   = $data['id'];
+                if (isset($data['id']))   $_REQUEST['id'] = $data['id'];
                 if (isset($data['name'])) $_REQUEST['name'] = $data['name'];
             }
         }
-
+        // Query / Form
         if ($ptz === null) {
-            if (isset($_POST['ptz'])) {
-                $ptz = (string)$_POST['ptz'];
-            } elseif (isset($_GET['ptz'])) {
-                $ptz = (string)$_GET['ptz'];
-            }
+            if (isset($_POST['ptz'])) { $ptz = (string)$_POST['ptz']; }
+            elseif (isset($_GET['ptz'])) { $ptz = (string)$_GET['ptz']; }
         }
 
         if ($ptz !== null) {
-            $this->SendDebug('Webhook', 'PTZ='.$ptz.'; id='.($_REQUEST['id']??'').'; name='.($_REQUEST['name']??''), 0);
+            $this->dbg('WEBHOOK', 'PTZ-Call', ['ptz' => $ptz, 'id' => $_REQUEST['id'] ?? '', 'name' => $_REQUEST['name'] ?? '']);
             $ok = $this->HandlePtzCommand($ptz);
             header('Content-Type: text/plain; charset=utf-8');
             echo $ok ? "OK" : "ERROR";
             return;
         }
 
-        // ... (der Rest deiner Alarm-Verarbeitung bleibt unverändert)
+        // Alarm/AI-Daten
         if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data)) {
+                $this->dbg('WEBHOOK', 'Alarmdaten empfangen', $data);
                 $this->ProcessAllData($data);
                 header('Content-Type: text/plain; charset=utf-8');
                 echo "OK";
@@ -305,125 +356,94 @@ class Reolink extends IPSModule
             }
         }
 
-        $this->SendDebug('Webhook', 'No PTZ / no usable payload', 0);
+        $this->dbg('WEBHOOK', 'No PTZ / no usable payload');
         header('HTTP/1.1 400 Bad Request');
         header('Content-Type: text/plain; charset=utf-8');
         echo "ERROR";
     }
 
-    // ====== POLLING / SNAPSHOTS / ARCHIV ========================================
-    
+    // ---------------------------
+    // Bewegungen / Snapshots / Archiv
+    // ---------------------------
     private function ProcessAllData($data)
     {
-        if (isset($data['alarm']['type'])) {
-            $type = $data['alarm']['type'];
+        if (!isset($data['alarm']['type'])) return;
+        $type = $data['alarm']['type'];
 
-            switch ($type) {
-                case "PEOPLE":
-                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Person", 21);
-                    }
-                    $this->SetMoveTimer("Person");
-                    break;
-                
-                case "ANIMAL":
-                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Tier", 26);
-                    }
-                    $this->SetMoveTimer("Tier");
-                    break;
-                
-                case "VEHICLE":
-                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Fahrzeug", 31);
-                    }
-                    $this->SetMoveTimer("Fahrzeug");
-                    break;
-                
-                case "MD":
-                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Bewegung", 36);
-                    }
-                    $this->SetMoveTimer("Bewegung");
-                    break;
-                
-                case "VISITOR":
-                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Besucher", 41);
-                }
-                    $this->SetMoveTimer("Besucher");
-                    break;    
-                
-                case "TEST":
-                    if ($this->ReadPropertyBoolean("ShowSnapshots")) {
-                    $this->CreateSnapshotAtPosition("Test", 46);   
-                }     
-                    if ($this->ReadPropertyBoolean("ShowTestElements")) {
-                    $this->SetMoveTimer("Test");  
-                    }      
-                    break;
-            }
+        switch ($type) {
+            case "PEOPLE":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Person", 21);
+                $this->SetMoveTimer("Person");
+                break;
+            case "ANIMAL":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Tier", 26);
+                $this->SetMoveTimer("Tier");
+                break;
+            case "VEHICLE":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Fahrzeug", 31);
+                $this->SetMoveTimer("Fahrzeug");
+                break;
+            case "MD":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Bewegung", 36);
+                $this->SetMoveTimer("Bewegung");
+                break;
+            case "VISITOR":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Besucher", 41);
+                $this->SetMoveTimer("Besucher");
+                break;
+            case "TEST":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Test", 46);
+                if ($this->ReadPropertyBoolean("ShowTestElements")) $this->SetMoveTimer("Test");
+                break;
         }
     }
 
-    private function SetMoveTimer($ident)
+    private function SetMoveTimer(string $ident)
     {
         $timerName = $ident . "_Reset";
-    
-        $this->SendDebug('SetMoveTimer', "Setze Variable '$ident' auf true.", 0);
+        $this->dbg('POLLING', "Setze '$ident' auf true");
         $this->SetValue($ident, true);
-    
-        $this->SendDebug('SetMoveTimer', "Setze Timer für '$timerName' auf 5 Sekunden.", 0);
         $this->SetTimerInterval($timerName, 5000);
     }
 
     public function ResetMoveTimer(string $ident)
     {
         $timerName = $ident . "_Reset";
-
-        // Debugging hinzufügen
-        $this->SendDebug('ResetMoveTimer', "Setze Variable '$ident' auf false.", 0);
-
+        $this->dbg('POLLING', "Reset '$ident' → false");
         $this->SetValue($ident, false);
         $this->SetTimerInterval($timerName, 0);
     }
 
     private function CreateMoveVariables()
     {
-        $this->RegisterVariableBoolean("Person", "Person", "~Motion", 20);
-        $this->RegisterVariableBoolean("Tier", "Tier", "~Motion", 25);
-        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug", "~Motion", 30);
+        $this->RegisterVariableBoolean("Person",   "Person",             "~Motion", 20);
+        $this->RegisterVariableBoolean("Tier",     "Tier",               "~Motion", 25);
+        $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug",           "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-        $this->RegisterVariableBoolean("Besucher", "Besucher", "~Motion", 40);
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
+        $this->RegisterVariableBoolean("Besucher", "Besucher",           "~Motion", 40);
+        $this->RegisterVariableBoolean("Test",     "Test",               "~Motion", 45);
     }
 
     private function RemoveMoveVariables()
     {
-        $booleans = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"];
-        foreach ($booleans as $booleanIdent) {
-            $varID = @$this->GetIDForIdent($booleanIdent);
-            if ($varID !== false) {
-                $this->UnregisterVariable($booleanIdent);
-            }
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $ident) {
+            $id = @$this->GetIDForIdent($ident);
+            if ($id !== false) $this->UnregisterVariable($ident);
         }
     }
 
     private function CreateTestElements()
     {
-        // Test-Boolean-Variable
         $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
-        // Test-Snapshot
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
-            $mediaID = IPS_CreateMedia(1); // 1 = Bild
+            $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, "Snapshot_Test");
             IPS_SetName($mediaID, "Snapshot Test");
             IPS_SetMediaCached($mediaID, false);
         }
 
-        // Test-Bildarchiv
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Archive_Test"))) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
@@ -434,44 +454,33 @@ class Reolink extends IPSModule
 
     private function RemoveTestElements()
     {
-        // Entfernen der Test-Boolean-Variable
-        $varID = @$this->GetIDForIdent("Test");
-        if ($varID) {
-            $this->UnregisterVariable("Test");
-        }
+        $id = @$this->GetIDForIdent("Test");
+        if ($id) $this->UnregisterVariable("Test");
 
-        // Entfernen des Test-Snapshots
-        $mediaID = @$this->GetIDForIdent("Snapshot_Test");
-        if ($mediaID) {
-            IPS_DeleteMedia($mediaID, true);
-        }
+        $mid = @$this->GetIDForIdent("Snapshot_Test");
+        if ($mid) IPS_DeleteMedia($mid, true);
 
-        // Entfernen des Test-Bildarchivs
-        $categoryID = @$this->GetIDForIdent("Archive_Test");
-        if ($categoryID) {
-            $children = IPS_GetChildrenIDs($categoryID);
-            foreach ($children as $childID) {
+        $cid = @$this->GetIDForIdent("Archive_Test");
+        if ($cid) {
+            foreach (IPS_GetChildrenIDs($cid) as $childID) {
                 IPS_DeleteMedia($childID, true);
             }
-            IPS_DeleteCategory($categoryID);
+            IPS_DeleteCategory($cid);
         }
     }
 
     private function CreateVisitorElements()
     {
-        // Besucher-Boolean-Variable
         $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
 
-        // Besucher-Snapshot
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
-            $mediaID = IPS_CreateMedia(1); // 1 = Bild
+            $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, "Snapshot_Besucher");
             IPS_SetName($mediaID, "Snapshot Besucher");
             IPS_SetMediaCached($mediaID, false);
         }
 
-        // Besucher-Bildarchiv
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Archive_Besucher"))) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
@@ -482,85 +491,66 @@ class Reolink extends IPSModule
 
     private function RemoveVisitorElements()
     {
-        // Entfernen der Besucher-Boolean-Variable
-        $varID = @$this->GetIDForIdent("Besucher");
-        if ($varID) {
-            $this->UnregisterVariable("Besucher");
-        }
+        $id = @$this->GetIDForIdent("Besucher");
+        if ($id) $this->UnregisterVariable("Besucher");
 
-        // Entfernen des Besucher-Snapshots
-        $mediaID = @$this->GetIDForIdent("Snapshot_Besucher");
-        if ($mediaID) {
-            IPS_DeleteMedia($mediaID, true);
-        }
+        $mid = @$this->GetIDForIdent("Snapshot_Besucher");
+        if ($mid) IPS_DeleteMedia($mid, true);
 
-        // Entfernen des Besucher-Bildarchivs
-        $categoryID = @$this->GetIDForIdent("Archive_Besucher");
-        if ($categoryID) {
-            $children = IPS_GetChildrenIDs($categoryID);
-            foreach ($children as $childID) {
+        $cid = @$this->GetIDForIdent("Archive_Besucher");
+        if ($cid) {
+            foreach (IPS_GetChildrenIDs($cid) as $childID) {
                 IPS_DeleteMedia($childID, true);
             }
-            IPS_DeleteCategory($categoryID);
+            IPS_DeleteCategory($cid);
         }
     }
 
-    private function CreateSnapshotAtPosition($booleanIdent, $position)
+    private function CreateSnapshotAtPosition(string $booleanIdent, int $position)
     {
-        if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") {
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Test übersprungen, da Test-Elemente deaktiviert sind.", 0);
-            return;
-        }
-        if (!$this->ReadPropertyBoolean("ShowVisitorElements") && $booleanIdent === "Besucher") {
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für Besucher übersprungen, da Besucher-Elemente deaktiviert sind.", 0);
-            return;
-        }
-    
+        if (!$this->ReadPropertyBoolean("ShowTestElements") && $booleanIdent === "Test") return;
+        if (!$this->ReadPropertyBoolean("ShowVisitorElements") && $booleanIdent === "Besucher") return;
+
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @$this->GetIDForIdent($snapshotIdent);
-    
+
         if ($mediaID === false) {
-            $mediaID = IPS_CreateMedia(1); // 1 = Bild
+            $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $snapshotIdent);
             IPS_SetPosition($mediaID, $position);
             IPS_SetName($mediaID, "Snapshot von " . $booleanIdent);
-            IPS_SetMediaCached($mediaID, false); // Kein Caching
-    
-            $this->SendDebug('CreateSnapshotAtPosition', "Neues Medienobjekt für Snapshot von $booleanIdent erstellt.", 0);
-        } else {
-            $this->SendDebug('CreateSnapshotAtPosition', "Vorhandenes Medienobjekt für Snapshot von $booleanIdent gefunden.", 0);
+            IPS_SetMediaCached($mediaID, false);
+            $this->dbg('SNAPSHOT', "Neues Medienobjekt", ['ident' => $snapshotIdent, 'mediaID' => $mediaID]);
         }
-    
-        $snapshotUrl = $this->GetSnapshotURL();
+
+        $snapshotUrl = $this->GetSnapshotURL(); // enthält user/pass → wird geschwärzt
         $fileName = $booleanIdent . "_" . $mediaID . ".jpg";
         $filePath = IPS_GetKernelDir() . "media/" . $fileName;
+
+        $this->dbg('SNAPSHOT', 'Abrufen', ['url' => $snapshotUrl]);
         $imageData = @file_get_contents($snapshotUrl);
-    
         if ($imageData !== false) {
-            IPS_SetMediaFile($mediaID, $filePath, false); // Medienobjekt mit Datei verbinden
-            IPS_SetMediaContent($mediaID,base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID); // Medienobjekt aktualisieren
-    
-            $this->SendDebug('CreateSnapshotAtPosition', "Snapshot für $booleanIdent erfolgreich erstellt mit Dateinamen: $fileName.", 0);
-    
+            IPS_SetMediaFile($mediaID, $filePath, false);
+            IPS_SetMediaContent($mediaID, base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID);
+
+            $this->dbg('SNAPSHOT', "Erstellt", ['boolean' => $booleanIdent, 'file' => $fileName]);
+
             if ($this->ReadPropertyBoolean("ShowSnapshots")) {
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
-                $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID); // Archivbild erstellen
+                $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID);
             }
         } else {
-            $this->SendDebug('CreateSnapshotAtPosition', "Fehler beim Abrufen des Snapshots für $booleanIdent.", 0);
+            $this->dbg('SNAPSHOT', "Fehler beim Abrufen", ['boolean' => $booleanIdent]);
         }
     }
 
     private function RemoveSnapshots()
     {
-        $snapshots = ["Snapshot_Person", "Snapshot_Tier", "Snapshot_Fahrzeug", "Snapshot_Test", "Snapshot_Besucher","Snapshot_Bewegung"];
-        foreach ($snapshots as $snapshotIdent) {
-            $mediaID = @$this->GetIDForIdent($snapshotIdent);
-            if ($mediaID) {
-                IPS_DeleteMedia($mediaID, true);
-            }
+        foreach (["Snapshot_Person","Snapshot_Tier","Snapshot_Fahrzeug","Snapshot_Test","Snapshot_Besucher","Snapshot_Bewegung"] as $ident) {
+            $mid = @$this->GetIDForIdent($ident);
+            if ($mid) IPS_DeleteMedia($mid, true);
         }
     }
 
@@ -575,113 +565,71 @@ class Reolink extends IPSModule
     {
         $archiveIdent = "Archive_" . $booleanIdent;
         $categoryID = @$this->GetIDForIdent($archiveIdent);
-
         if ($categoryID === false) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
             IPS_SetIdent($categoryID, $archiveIdent);
             IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-
-            // Positionen konsistent setzen
             $pos = [
-                "Person"   => 22,
-                "Tier"     => 27,
-                "Fahrzeug" => 32,
-                "Bewegung" => 37,
-                "Besucher" => 42,
-                "Test"     => 47
+                "Person" => 22, "Tier" => 27, "Fahrzeug" => 32,
+                "Bewegung" => 37, "Besucher" => 42, "Test" => 47
             ][$booleanIdent] ?? 99;
-
             IPS_SetPosition($categoryID, $pos);
         }
-
         return $categoryID;
     }
-    
-    private function PruneArchive($categoryID, $booleanIdent)
-    {
-        $maxImages = $this->ReadPropertyInteger("MaxArchiveImages"); // Max-Bilder aus Einstellungen
-        $children = IPS_GetChildrenIDs($categoryID); // Bilder im Archiv abrufen
 
-        // Debug-Ausgaben zur Überprüfung
-        $this->SendDebug('PruneArchive', "Anzahl der Bilder im Archiv '$booleanIdent': " . count($children), 0);
-        $this->SendDebug('PruneArchive', "Maximale Anzahl erlaubter Bilder im Archiv '$booleanIdent': $maxImages", 0);
+    private function PruneArchive(int $categoryID, string $booleanIdent)
+    {
+        $maxImages = max(0, (int)$this->ReadPropertyInteger("MaxArchiveImages"));
+        $children  = IPS_GetChildrenIDs($categoryID);
+
+        $this->dbg('SNAPSHOT', 'Archiv prüfen', ['cat' => $booleanIdent, 'anzahl' => count($children), 'max' => $maxImages]);
 
         if (count($children) > $maxImages) {
-            // Sortiere die Bilder nach Position (höher = älter)
             usort($children, function ($a, $b) {
-                $objectA = @IPS_GetObject($a); // Hole das Objekt sicher
-                $objectB = @IPS_GetObject($b); // Hole das Objekt sicher
-                if ($objectA === false || $objectB === false) {
-                    return 0; // Wenn eines der Objekte fehlt, bleibt die Reihenfolge unverändert
-                }
-                return $objectB['ObjectPosition'] <=> $objectA['ObjectPosition'];
+                $A = @IPS_GetObject($a) ?: ['ObjectPosition' => 0];
+                $B = @IPS_GetObject($b) ?: ['ObjectPosition' => 0];
+                return $B['ObjectPosition'] <=> $A['ObjectPosition'];
             });
 
-            // Entferne überschüssige Bilder
             while (count($children) > $maxImages) {
-                $oldestID = array_shift($children); // Nimm das erste Element (höchste Position = ältestes)
-                
-                // Überprüfe, ob das Objekt existiert
+                $oldestID = array_shift($children);
                 if (@IPS_ObjectExists($oldestID) && IPS_MediaExists($oldestID)) {
-                    IPS_DeleteMedia($oldestID, true); // Lösche das Medienobjekt
-                    $this->SendDebug('PruneArchive', "Entferne das Bild mit der ID: $oldestID", 0);
-                } else {
-                    $this->SendDebug('PruneArchive', "Bild mit ID $oldestID existiert nicht mehr, übersprungen.", 0);
+                    IPS_DeleteMedia($oldestID, true);
+                    $this->dbg('SNAPSHOT', 'Archiv: entfernt', ['id' => $oldestID]);
                 }
             }
         }
     }
 
-    private function CreateArchiveSnapshot($booleanIdent, $categoryID)
+    private function CreateArchiveSnapshot(string $booleanIdent, int $categoryID)
     {
         $archiveIdent = "Archive_" . $booleanIdent . "_" . time();
-        $mediaID = IPS_CreateMedia(1); // Neues Medienobjekt für das Archiv-Bild
-        IPS_SetParent($mediaID, $categoryID); // In der Archiv-Kategorie speichern
+        $mediaID = IPS_CreateMedia(1);
+        IPS_SetParent($mediaID, $categoryID);
         IPS_SetIdent($mediaID, $archiveIdent);
-        IPS_SetPosition($mediaID, -time()); // Negative Zeit für neueste zuerst
-        IPS_SetName($mediaID, "" . $booleanIdent . " " . date("Y-m-d H:i:s"));
-        IPS_SetMediaCached($mediaID, false); // Kein Caching
+        IPS_SetPosition($mediaID, -time());
+        IPS_SetName($mediaID, $booleanIdent . " " . date("Y-m-d H:i:s"));
+        IPS_SetMediaCached($mediaID, false);
 
         $snapshotUrl = $this->GetSnapshotURL();
         $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . $mediaID . ".jpg";
         $imageData = @file_get_contents($snapshotUrl);
-
         if ($imageData !== false) {
-            IPS_SetMediaFile($mediaID, $archiveImagePath, false); // Datei dem Medienobjekt zuweisen
-            IPS_SetMediaContent($mediaID,base64_encode($imageData));
-            IPS_SendMediaEvent($mediaID); // Aktualisieren des Medienobjekts
-
-            $this->SendDebug('CreateArchiveSnapshot', "Bild im Archiv '$booleanIdent' erfolgreich erstellt.", 0);
-            $this->PruneArchive($categoryID, $booleanIdent); // Maximale Anzahl der Bilder überprüfen
+            IPS_SetMediaFile($mediaID, $archiveImagePath, false);
+            IPS_SetMediaContent($mediaID, base64_encode($imageData));
+            IPS_SendMediaEvent($mediaID);
+            $this->dbg('SNAPSHOT', 'Archivbild erstellt', ['boolean' => $booleanIdent, 'mediaID' => $mediaID]);
+            $this->PruneArchive($categoryID, $booleanIdent);
         } else {
-            $this->SendDebug('CreateArchiveSnapshot', "Fehler beim Abrufen des Archivbilds für '$booleanIdent'.", 0);
+            $this->dbg('SNAPSHOT', "Archivbild fehlgeschlagen", ['boolean' => $booleanIdent]);
         }
     }
 
-    private function RemoveArchives()
-    {
-        $categories = ["Person", "Tier", "Fahrzeug", "Bewegung", "Besucher", "Test"]; // Alle möglichen Archiv-Kategorien
-        foreach ($categories as $category) {
-            $archiveIdent = "Archive_" . $category;
-            $categoryID = @$this->GetIDForIdent($archiveIdent);
-            if ($categoryID !== false) {
-                $children = IPS_GetChildrenIDs($categoryID);
-                foreach ($children as $childID) {
-                    if (IPS_MediaExists($childID)) {
-                        IPS_DeleteMedia($childID, true); // Löscht das Medienobjekt
-                    }
-                }
-                IPS_DeleteCategory($categoryID); // Löscht die Kategorie
-                $this->SendDebug('RemoveArchives', "Archivkategorie $categoryID wurde entfernt.", 0);
-            }
-        }
-    }
-
-    private function CreateOrUpdateStream($ident, $name)
+    private function CreateOrUpdateStream(string $ident, string $name)
     {
         $mediaID = @$this->GetIDForIdent($ident);
-
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -690,117 +638,107 @@ class Reolink extends IPSModule
             IPS_SetPosition($mediaID, 10);
             IPS_SetMediaCached($mediaID, true);
         }
-
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
-    private function GetStreamURL()
+    private function GetStreamURL(): string
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
         $streamType = $this->ReadPropertyString("StreamType");
-
-        return $streamType === "main" ? 
-               "rtsp://$username:$password@$cameraIP:554" :
-               "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
+        return $streamType === "main"
+            ? "rtsp://$username:$password@$cameraIP:554"
+            : "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
-    private function GetSnapshotURL()
+    private function GetSnapshotURL(): string
     {
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
-
         return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
+    // ---------------------------
+    // Polling (AI State)
+    // ---------------------------
     public function Polling()
     {
-        if (!$this->ReadPropertyBoolean("EnablePolling")) {
+        if (!$this->isActive() || !$this->ReadPropertyBoolean("EnablePolling")) {
             $this->SetTimerInterval("PollingTimer", 0);
             return;
         }
-
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
 
         $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
+        $this->dbg('POLLING', 'Abruf', ['url' => $url]);
 
         $response = @file_get_contents($url);
         if ($response === false) {
-            $this->SendDebug("Polling", "Fehler beim Abrufen der Daten von der Kamera.", 0);
+            $this->dbg("POLLING", "Fehler beim Abrufen der Daten");
             return;
         }
 
-        $this->SendDebug("Polling", "Rohdaten: $response", 0);
+        $this->dbg("POLLING", "Rohdaten", $this->redactDeep($response));
 
         $data = json_decode($response, true);
         if ($data === null || !isset($data[0]['value'])) {
-            $this->SendDebug("Polling", "Ungültige Daten empfangen: $response", 0);
+            $this->dbg("POLLING", "Ungueltige Daten", $response);
             return;
         }
 
         $aiState = $data[0]['value'];
-
         $this->PollingUpdateState("dog_cat", $aiState['dog_cat']['alarm_state'] ?? 0);
-        $this->PollingUpdateState("people", $aiState['people']['alarm_state'] ?? 0);
+        $this->PollingUpdateState("people",  $aiState['people']['alarm_state']  ?? 0);
         $this->PollingUpdateState("vehicle", $aiState['vehicle']['alarm_state'] ?? 0);
     }
 
     private function PollingUpdateState(string $type, int $state)
     {
-        // Mapping der AI-Typen zu den Variablen
-        $mapping = [
-            "dog_cat" => "Tier",
-            "people"  => "Person",
-            "vehicle" => "Fahrzeug"
-        ];
-
-        if (!isset($mapping[$type])) {
-            $this->SendDebug("PollingUpdateState", "Unbekannter Typ: $type", 0);
-            return;
-        }
+        $mapping = [ "dog_cat" => "Tier", "people" => "Person", "vehicle" => "Fahrzeug" ];
+        if (!isset($mapping[$type])) return;
 
         $ident = $mapping[$type];
         $variableID = @$this->GetIDForIdent($ident);
+        if ($variableID === false) return;
 
-        if ($variableID !== false) {
-            $currentValue = GetValue($variableID);
+        $currentValue = (bool)GetValue($variableID);
+        $newValue     = ($state == 1);
 
-            // Aktualisiere die Variable nur, wenn sich der Zustand geändert hat
-            if ($currentValue != ($state == 1)) {
-                $this->SetValue($ident, $state == 1);
-                $this->SendDebug("PollingUpdateState", "Variable '$ident' auf " . ($state == 1 ? "true" : "false") . " gesetzt.", 0);
-
-                // Timer setzen, um die Variable nach 5 Sekunden zurückzusetzen
-                $timerName = $ident . "_Reset";
-                if ($state == 1) {
-                    $this->SetTimerInterval($timerName, 5000);
-                    // Schnappschuss auslösen
-                    $this->SendDebug("PollingUpdateState", "Löse Schnappschuss für '$ident' aus.", 0);
-                    $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
-                } else {
-                    $this->SetTimerInterval($timerName, 0); // Timer stoppen
-                }
+        if ($currentValue !== $newValue) {
+            $this->SetValue($ident, $newValue);
+            $this->dbg('POLLING', "Setze '$ident'", ['value' => $newValue]);
+            $timerName = $ident . "_Reset";
+            if ($newValue) {
+                $this->SetTimerInterval($timerName, 5000);
+                $this->dbg("POLLING", "Snapshot trigger fuer '$ident'");
+                $this->CreateSnapshotAtPosition($ident, IPS_GetObject($variableID)['ObjectPosition'] + 1);
             } else {
-                $this->SendDebug("PollingUpdateState", "Keine Änderung für '$ident', kein Schnappschuss ausgelöst.", 0);
+                $this->SetTimerInterval($timerName, 0);
             }
-        } else {
-            $this->SendDebug("PollingUpdateState", "Variable '$ident' nicht gefunden.", 0);
         }
     }
-    
-    // ====== API / TOKEN ==========================================================
 
-    private function apiBase(): string {
+    // ---------------------------
+    // API / HTTP / Token
+    // ---------------------------
+    private function apiBase(): string
+    {
         $ip = $this->ReadPropertyString("CameraIP");
         return "http://{$ip}/api.cgi";
     }
 
-    private function apiHttpPostJson(string $url, array $payload, bool $suppressError=false): ?array {
-        $this->SendDebug("HTTP", "POST $url :: ".json_encode($payload), 0);
+    private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
+    {
+        // Kurzinfo
+        $this->dbg($topic, "HTTP POST", ['url' => $url]);
+
+        // Request/Response (bereits geschwärzt über dbg)
+        $this->dbg($topic, "REQUEST", $payload);
+
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_SSL_VERIFYPEER => false,
@@ -815,18 +753,22 @@ class Reolink extends IPSModule
             $err = curl_error($ch);
             curl_close($ch);
             if (!$suppressError) {
-                $this->SendDebug("HTTP", "cURL error: $err", 0);
-                $this->LogMessage("Reolink: cURL-Fehler: $err", KL_ERROR);
+                $this->dbg($topic, "cURL error", $err);
+                $this->LogMessage("Reolink/$topic: cURL-Fehler: $err", KL_ERROR);
             }
             return null;
         }
         curl_close($ch);
-        $this->SendDebug("HTTP", "RAW ".$raw, 0);
+
+        $this->dbg($topic, "RAW", $this->redactDeep($raw));
+
         $data = json_decode($raw, true);
         return is_array($data) ? $data : null;
     }
 
-    private function apiEnsureToken(): bool {
+    private function apiEnsureToken(): bool
+    {
+        if (!$this->isActive()) return false;
         $token = $this->ReadAttributeString("ApiToken");
         $exp   = (int)$this->ReadAttributeInteger("ApiTokenExpiresAt");
         if ($token === "" || time() >= ($exp - 30)) {
@@ -835,13 +777,14 @@ class Reolink extends IPSModule
         return $this->ReadAttributeString("ApiToken") !== "";
     }
 
-    private function apiCall(array $cmdPayload, bool $suppressError=false): ?array {
+    private function apiCall(array $cmdPayload, string $topic = 'API', bool $suppressError = false): ?array
+    {
+        if (!$this->isActive()) return null;
         if (!$this->apiEnsureToken()) return null;
 
         $token = $this->ReadAttributeString("ApiToken");
         $url   = $this->apiBase() . "?token={$token}";
-
-        $resp  = $this->apiHttpPostJson($url, $cmdPayload, $suppressError);
+        $resp  = $this->apiHttpPostJson($url, $cmdPayload, $topic, $suppressError);
         if (!$resp) return null;
 
         if (isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) {
@@ -850,92 +793,126 @@ class Reolink extends IPSModule
 
         $rsp = $resp[0]['error']['rspCode'] ?? null;
         if ((int)$rsp === -6) {
-            $this->SendDebug("API", "Auth -6 -> Token Refresh + Retry", 0);
+            $this->dbg($topic, "Auth -6 → Token Refresh + Retry");
             $this->GetToken();
             $token2 = $this->ReadAttributeString("ApiToken");
             if ($token2) {
-                $url2  = $this->apiBase() . "?token={$token2}";
-                $resp2 = $this->apiHttpPostJson($url2, $cmdPayload, $suppressError);
+                $url2 = $this->apiBase() . "?token={$token2}";
+                $resp2 = $this->apiHttpPostJson($url2, $cmdPayload, $topic, $suppressError);
                 if (is_array($resp2) && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) {
                     return $resp2;
                 }
-                // Falls wieder Fehler: unten in den generischen Fehlerpfad fallen
                 $resp = $resp2;
             }
         }
 
         if (!$suppressError) {
-            $this->SendDebug("API", "FAIL ".json_encode($resp), 0);
-            $this->LogMessage("Reolink: API-Befehl fehlgeschlagen: ".json_encode($resp), KL_ERROR);
+            $this->dbg($topic, "API FAIL", $resp);
+            $this->LogMessage("Reolink/$topic: API-Befehl fehlgeschlagen: ".json_encode($resp), KL_ERROR);
         }
         return null;
     }
 
     public function GetToken()
     {
+        if (!$this->isActive()) {
+            $this->dbg('TOKEN', 'Abgebrochen: Instanz inaktiv');
+            $this->SetTimerInterval("TokenRenewalTimer", 0);
+            return;
+        }
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
-
-        if (empty($cameraIP) || empty($username) || empty($password)) {
-            $this->SendDebug("GetToken", "Die Moduleinstellungen sind unvollständig.", 0);
+        if ($cameraIP === "" || $username === "" || $password === "") {
+            $this->dbg('TOKEN', 'Abgebrochen: Unvollständige Einstellungen');
             return;
         }
 
-        $sem = "REOCAM_{$this->InstanceID}_GetToken";
-        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($sem, 5000) : true;
+        $semName = "REOCAM_{$this->InstanceID}_GetToken";
+        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($semName, 5000) : true;
         if (!$entered) {
-            $this->SendDebug("GetToken", "Anderer Login läuft – übersprungen.", 0);
+            $this->dbg('TOKEN', 'Übersprungen: anderer Login aktiv');
             return;
         }
-        $this->WriteAttributeBoolean("TokenRefreshing", true);
 
+        $this->WriteAttributeBoolean("TokenRefreshing", true);
         try {
-            $url = "http://$cameraIP/api.cgi?cmd=Login";
-            $data = [[
+            $url = "http://{$cameraIP}/api.cgi?cmd=Login";
+            $payload = [[
                 "cmd"   => "Login",
-                "param" => ["User" => ["Version"=>"0","userName"=>$username,"password"=>$password]]
+                "param" => ["User" => [
+                    "Version"  => "0",
+                    "userName" => $username,
+                    "password" => $password
+                ]]
             ]];
 
+            $this->dbg('TOKEN', 'Login', ['url' => $url]);
             $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            curl_setopt_array($ch, [
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => json_encode($payload),
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT        => 8
+            ]);
             $response = curl_exec($ch);
             if ($response === false) {
-                $err = curl_error($ch); curl_close($ch);
-                throw new Exception("cURL-Fehler: $err");
+                $err = curl_error($ch);
+                curl_close($ch);
+                $this->dbg('TOKEN', 'cURL-Fehler', $err);
+                $this->LogMessage("Reolink/TOKEN: cURL-Fehler beim Login: $err", KL_ERROR);
+                return;
             }
             curl_close($ch);
 
-            $this->SendDebug("GetToken", "Antwort: $response", 0);
-            $responseData = json_decode($response, true);
+            $this->dbg('TOKEN', 'RAW', $this->redactDeep($response));
 
-            if (isset($responseData[0]['value']['Token']['name'])) {
-                $token = $responseData[0]['value']['Token']['name'];
-                $this->WriteAttributeString("ApiToken", $token);
-                $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5); // ~1h mit Puffer
-                // proaktives Erneuern: ~50min
-                $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
-                $this->SendDebug("GetToken", "Token gespeichert & Ablauf gesetzt.", 0);
-            } else {
-                throw new Exception("Fehler beim Abrufen des Tokens: ".json_encode($responseData));
+            $responseData = json_decode($response, true);
+            $token = $responseData[0]['value']['Token']['name'] ?? null;
+            if (!is_string($token) || $token === "") {
+                $this->dbg('TOKEN', 'Ungueltige Antwort (kein Token)', $responseData);
+                $this->LogMessage("Reolink/TOKEN: Fehler beim Abrufen des Tokens: ".$response, KL_ERROR);
+                return;
             }
+
+            $this->WriteAttributeString("ApiToken", $token);
+            $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
+            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+            $this->dbg('TOKEN', 'Token gespeichert; Erneuerungstimer gesetzt');
         } finally {
             $this->WriteAttributeBoolean("TokenRefreshing", false);
-            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
+            if (function_exists('IPS_SemaphoreLeave')) {
+                IPS_SemaphoreLeave($semName);
+            }
         }
     }
 
-    private function CreateApiVariables()
+    // ---------------------------
+    // Variablen an/abbauen (API)
+    // ---------------------------
+    private function RemoveApiVariables(): void
+    {
+        foreach ([
+            "WhiteLed", "Mode", "Bright",
+            "EmailNotify", "EmailInterval", "EmailContent",
+            "PTZ_HTML"
+        ] as $ident) {
+            $id = @$this->GetIDForIdent($ident);
+            if ($id !== false) $this->UnregisterVariable($ident);
+        }
+    }
+
+    private function CreateApiVariables(): void
     {
         $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
 
+        // Spotlight
         if ($enableWhiteLed) {
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
                 IPS_CreateVariableProfile("REOCAM.WLED", 1);
@@ -964,14 +941,15 @@ class Reolink extends IPSModule
             }
         }
 
+        // Email
         if ($enableEmail) {
             if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
                 IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
-                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,  "30 Sek.", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,  "1 Minute", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300, "5 Minuten", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600, "10 Minuten", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800,"30 Minuten", "", -1);
             }
             if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
                 IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
@@ -999,6 +977,7 @@ class Reolink extends IPSModule
             }
         }
 
+        // PTZ
         if ($enablePTZ) {
             if (!@$this->GetIDForIdent("PTZ_HTML")) {
                 $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
@@ -1006,445 +985,422 @@ class Reolink extends IPSModule
             $this->CreateOrUpdatePTZHtml();
         } else {
             $id = @$this->GetIDForIdent("PTZ_HTML");
-            if ($id !== false) {
-                $this->UnregisterVariable("PTZ_HTML");
-            }
+            if ($id !== false) $this->UnregisterVariable("PTZ_HTML");
         }
     }
 
     public function ExecuteApiRequests()
     {
+        if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
 
         if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
             $this->UpdateWhiteLedStatus();
         }
         if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            $this->UpdateEmailVars();
+            $this->EmailApply(null, null, null);
         }
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->CreateOrUpdatePTZHtml();
-        }
+            $this->CreateOrUpdatePTZHtml(false);
+}
+
     }
 
-
-    // ====== LED ==================================================================
-
-        private function SendLedRequest(array $ledParams): bool
+    // ---------------------------
+    // Spotlight (White LED)
+    // ---------------------------
+    private function SendLedRequest(array $ledParams): bool
     {
         $payload = [[
             "cmd"   => "SetWhiteLed",
             "param" => [ "WhiteLed" => array_merge($ledParams, ["channel" => 0]) ]
         ]];
-        $res = $this->apiCall($payload);
+        $res = $this->apiCall($payload, 'SPOTLIGHT');
         return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
     }
+    private function SetWhiteLed(bool $state): bool   { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
+    private function SetMode(int $mode): bool         { return $this->SendLedRequest(['mode'  => $mode]); }
+    private function SetBrightness(int $b): bool      { return $this->SendLedRequest(['bright'=> $b]); }
 
-    private function SetWhiteLed(bool $state): bool { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
-    
-    private function SetMode(int $mode): bool      { return $this->SendLedRequest(['mode'  => $mode]); }
-    
-    private function SetBrightness(int $b): bool   { return $this->SendLedRequest(['bright'=> $b]); }
-    
-    private function UpdateWhiteLedStatus()
+    private function UpdateWhiteLedStatus(): void
     {
-        $resp = $this->apiCall([[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]]);
-        if (!$resp || !isset($resp[0]['value']['WhiteLed'])) {
-            $this->SendDebug("UpdateWhiteLedStatus", "Ungültige Antwort", 0);
+        $resp = $this->apiCall([[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]], 'SPOTLIGHT');
+        if (!is_array($resp) || !isset($resp[0]['value']['WhiteLed'])) {
+            $this->dbg('SPOTLIGHT', 'Ungültige Antwort', $resp ?? null);
             return;
         }
+        $wl = $resp[0]['value']['WhiteLed'];
+        $state = [
+            'state'  => isset($wl['state'])  ? (int)$wl['state']  : null,
+            'mode'   => isset($wl['mode'])   ? (int)$wl['mode']   : null,
+            'bright' => isset($wl['bright']) ? (int)$wl['bright'] : null,
+        ];
+        $this->ApplyWhiteLedStateToVars($state);
+    }
 
-        $whiteLedData = $resp[0]['value']['WhiteLed'];
-        $initialized  = $this->ReadAttributeBoolean("ApiInitialized");
+    private function ApplyWhiteLedStateToVars(array $led): void
+    {
+        $map = [
+            'WhiteLed' => array_key_exists('state',  $led) ? (bool)$led['state']   : null,
+            'Mode'     => array_key_exists('mode',   $led) ? (int)$led['mode']     : null,
+            'Bright'   => array_key_exists('bright', $led) ? (int)$led['bright']   : null,
+        ];
 
-        $mapping = ['state'=>'WhiteLed','mode'=>'Mode','bright'=>'Bright'];
-        foreach ($mapping as $jsonKey => $variableIdent) {
-            if (!array_key_exists($jsonKey, $whiteLedData)) continue;
-            $newValue = $whiteLedData[$jsonKey];
-            $variableID = @$this->GetIDForIdent($variableIdent);
-            if ($variableID === false) continue;
-
-            $currentValue = GetValue($variableID);
-            if (is_bool($currentValue)) $newValue = (bool)$newValue;
-
-            if (!$initialized || $currentValue !== $newValue) {
-                $this->SetValue($variableIdent, $newValue);
-                $this->SendDebug("UpdateWhiteLedStatus", "Variable '$variableIdent' aktualisiert.", 0);
+        foreach ($map as $ident => $newVal) {
+            if ($newVal === null) {
+                continue;
             }
-        }
-
-        if (!$initialized) {
-            $this->WriteAttributeBoolean("ApiInitialized", true);
-            $this->SendDebug("UpdateWhiteLedStatus", "Variablen initialisiert", 0);
+            $id = @$this->GetIDForIdent($ident);
+            if ($id === false) {
+                continue;
+            }
+            $oldVal = GetValue($id);
+            if ($oldVal !== $newVal) {
+                $this->SetValue($ident, $newVal);
+                $this->dbg('SPOTLIGHT', 'Var geändert', ['ident' => $ident, 'old' => $oldVal, 'new' => $newVal]);
+            } else {
+                $this->dbg('SPOTLIGHT', 'Unverändert', ['ident' => $ident, 'value' => $newVal], true);
+            }
         }
     }
 
-
-    // ====== MAIL =================================================================
-
-
+    // ---------------------------
+    // E-Mail (V20 / Legacy)
+    // ---------------------------
     private function DetectEmailApiVersion(): string
     {
         $cached = $this->ReadAttributeString("EmailApiVersion");
         if ($cached === "V20" || $cached === "LEGACY") return $cached;
 
-        $test = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], /*suppressError*/ true);
+        $test = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
         $ver  = (is_array($test) && isset($test[0]['code']) && $test[0]['code']===0) ? "V20" : "LEGACY";
         $this->WriteAttributeString("EmailApiVersion", $ver);
         return $ver;
     }
 
-    private function GetEmailEnabled(): ?bool
+    private function IntervalSecondsToString(int $sec): ?string
     {
-        $apiVer = $this->DetectEmailApiVersion();
-
-        if ($apiVer === 'V20') {
-            $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]]);
-            if (is_array($res) && isset($res[0]['value']['Email']['enable'])) {
-                return (bool)$res[0]['value']['Email']['enable'];
-            }
-        } else {
-            $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]]);
-            if (is_array($res) && isset($res[0]['value']['Email']['schedule']['enable'])) {
-                return (bool)$res[0]['value']['Email']['schedule']['enable'];
-            }
-        }
-        $this->SendDebug("GetEmailEnabled", "Konnte Status nicht ermitteln.", 0);
-        return null;
-    }
-
-    private function SetEmailEnabled(bool $enable): bool
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-
-        if ($apiVer === 'V20') {
-            $res = $this->apiCall([[
-                "cmd"   => "SetEmailV20",
-                "param" => [ "Email" => [ "enable" => $enable ? 1 : 0 ] ]
-            ]]);
-            $ok = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-            if (!$ok) $this->SendDebug("SetEmailEnabled", "Fehlgeschlagen: ".json_encode($res), 0);
-            return $ok;
-        } else {
-            $res = $this->apiCall([[
-                "cmd"   => "SetEmail",
-                "param" => [ "Email" => [ "schedule" => [ "enable" => $enable ? 1 : 0 ] ] ]
-            ]]);
-            $ok = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-            if (!$ok) $this->SendDebug("SetEmailEnabled", "Fehlgeschlagen: ".json_encode($res), 0);
-            return $ok;
-        }
-    }
-
-    private function UpdateEmailStatusVar(): void
-    {
-        $id = @$this->GetIDForIdent("EmailNotify");
-        if ($id === false) {
-            return; // Variable existiert nicht (Feature deaktiviert?)
-        }
-        $val = $this->GetEmailEnabled();
-        if ($val !== null) {
-            $this->SetValue("EmailNotify", $val);
-        }
-    }
-
-    private function IntervalSecondsToString(int $sec): ?string {
         switch ($sec) {
-            case 30:   return "30 Seconds";
-            case 60:   return "1 Minute";
-            case 300:  return "5 Minutes";
-            case 600:  return "10 Minutes";
+            case 30: return "30 Seconds";
+            case 60: return "1 Minute";
+            case 300: return "5 Minutes";
+            case 600: return "10 Minutes";
             case 1800: return "30 Minutes";
         }
         return null;
     }
-
-    private function IntervalStringToSeconds(string $s): ?int {
+    private function IntervalStringToSeconds(string $s): ?int
+    {
         $s = trim($s);
-        $map = [
-            "30 Seconds" => 30,
-            "1 Minute"   => 60,
-            "5 Minutes"  => 300,
-            "10 Minutes" => 600,
-            "30 Minutes" => 1800
-        ];
+        $map = [ "30 Seconds" => 30, "1 Minute" => 60, "5 Minutes" => 300, "10 Minutes" => 600, "30 Minutes" => 1800 ];
         return $map[$s] ?? null;
     }
 
-    private function GetEmailInterval(): ?int 
+    private function ApplyEmailStateToVars(array $st): void
     {
-        $apiVer = $this->DetectEmailApiVersion();
-        $res = ($apiVer === 'V20')
-            ? $this->apiCall([[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]])
-            : $this->apiCall([[ "cmd" => "GetEmail",    "param" => ["channel" => 0] ]]);
+        $fields = [
+            ['ident' => 'EmailNotify',   'key' => 'enabled',     'cast' => 'bool'],
+            ['ident' => 'EmailInterval', 'key' => 'intervalSec', 'cast' => 'int'],
+            ['ident' => 'EmailContent',  'key' => 'contentMode', 'cast' => 'int'], // 0..3
+        ];
 
-        if (is_array($res) && isset($res[0]['value']['Email'])) {
-            $email = $res[0]['value']['Email'];
-            if (isset($email['intervalSec']) && is_numeric($email['intervalSec'])) return (int)$email['intervalSec'];
-            if (isset($email['interval'])) {
-                $sec = $this->IntervalStringToSeconds((string)$email['interval']);
-                if ($sec !== null) return $sec;
+        foreach ($fields as $f) {
+            $key = $f['key'];
+            if (!array_key_exists($key, $st) || $st[$key] === null) {
+                continue; // nichts zu setzen
             }
-        }
-        $this->SendDebug("GetEmailInterval", "Intervall unbekannt: ".json_encode($res), 0);
-        return null;
-    }
 
-    private function SetEmailInterval(int $sec): bool 
-    {
-        $str = $this->IntervalSecondsToString($sec);
-        if ($str === null) {
-            $this->SendDebug("SetEmailInterval", "Ungültiger Sekundenwert: $sec", 0);
-            return false;
-        }
+            $id = @$this->GetIDForIdent($f['ident']);
+            if ($id === false) {
+                continue; // Variable existiert (noch) nicht
+            }
 
-        $apiVer = $this->DetectEmailApiVersion();
-        $res = ($apiVer === 'V20')
-            ? $this->apiCall([[ "cmd"=>"SetEmailV20", "param"=> [ "Email" => [ "interval" => $str ] ] ]])
-            : $this->apiCall([[ "cmd"=>"SetEmail",    "param"=> [ "Email" => [ "interval" => $str ] ] ]]);
+            $old = GetValue($id);
+            $new = $st[$key];
 
-        $ok  = is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-        if (!$ok) $this->SendDebug("SetEmailInterval", "Fehlgeschlagen für '$str': " . json_encode($res), 0);
-        return $ok;
-    }
-
-    private function UpdateEmailVars(): void
-    {
-        // EmailNotify (bool)
-        $id = @$this->GetIDForIdent("EmailNotify");
-        if ($id !== false) {
-            $new = $this->GetEmailEnabled();
-            if ($new !== null) {
-                $old = GetValue($id);
+            if ($f['cast'] === 'bool') {
                 $new = (bool)$new;
-                if ($old !== $new) {
-                    $this->SetValue("EmailNotify", $new);
-                    $this->SendDebug("UpdateEmailVars", "EmailNotify: $old -> $new", 0);
-                } else {
-                    $this->SendDebug("UpdateEmailVars", "EmailNotify unverändert ($old)", 0);
-                }
-            }
-        }
-
-        // EmailInterval (int, Sekunden)
-        $id = @$this->GetIDForIdent("EmailInterval");
-        if ($id !== false) {
-            $new = $this->GetEmailInterval();
-            if ($new !== null) {
-                $old = GetValue($id);
+            } else { // int
                 $new = (int)$new;
-                if ($old !== $new) {
-                    $this->SetValue("EmailInterval", $new);
-                    $this->SendDebug("UpdateEmailVars", "EmailInterval: $old -> $new", 0);
-                } else {
-                    $this->SendDebug("UpdateEmailVars", "EmailInterval unverändert ($old)", 0);
-                }
             }
-        }
 
-        // EmailContent (int: 0=Text, 1=Bild, 2=Text+Bild, 3=Text+Video)
-        $id = @$this->GetIDForIdent("EmailContent");
-        if ($id !== false) {
-            $new = $this->GetEmailContent();
-            if ($new !== null) {
-                $old = GetValue($id);
-                $new = (int)$new;
-                if ($old !== $new) {
-                    $this->SetValue("EmailContent", $new);
-                    $this->SendDebug("UpdateEmailVars", "EmailContent: $old -> $new", 0);
-                } else {
-                    $this->SendDebug("UpdateEmailVars", "EmailContent unverändert ($old)", 0);
-                }
+            if ($old !== $new) {
+                $this->SetValue($f['ident'], $new);
+                $this->dbg('EMAIL', 'Var geändert', ['ident' => $f['ident'], 'old' => $old, 'new' => $new]);
+            }
+            else {
+                $this->dbg('EMAIL', 'Unverändert', ['ident' => $f, 'value' => $new], true);
             }
         }
     }
 
-    private function GetEmailContent(): ?int 
+    // Liest den Email-Zustand GENAU EINMAL und normalisiert ihn
+    private function GetEmailState(): ?array
     {
-        $apiVer = $this->DetectEmailApiVersion();
+        $ver = $this->DetectEmailApiVersion();
 
-        if ($apiVer === 'V20') {
-            $res  = $this->apiCall([[ "cmd" => "GetEmailV20", "param" => ["channel" => 0] ]]);
-            if (is_array($res) && isset($res[0]['value']['Email'])) {
-                $e    = $res[0]['value']['Email'];
+        if ($ver === 'V20') {
+            $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL');
+            if (!is_array($res) || !isset($res[0]['value']['Email'])) {
+                $this->dbg('EMAIL', 'GetEmailV20: ungültige Antwort', $res);
+                return null;
+            }
+            $e = $res[0]['value']['Email'];
+
+            $enabled = isset($e['enable']) ? ((int)$e['enable'] === 1) : null;
+
+            // Intervall: bevorzugt Sekunden, sonst String → Sekunden
+            $intervalSec = null;
+            if (isset($e['intervalSec']) && is_numeric($e['intervalSec'])) {
+                $intervalSec = (int)$e['intervalSec'];
+            } elseif (isset($e['interval'])) {
+                $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
+            }
+
+            // Content-Mode aus textType/attachmentType ableiten
+            $contentMode = null;
+            if (isset($e['textType']) || isset($e['attachmentType'])) {
                 $text = isset($e['textType']) ? (int)$e['textType'] : 1;
                 $att  = isset($e['attachmentType']) ? (int)$e['attachmentType'] : 0;
-
-                if (!$text && $att === 1) return 1; // nur Bild
-                if ( $text && $att === 0) return 0; // nur Text
-                if ( $text && $att === 1) return 2; // Text + Bild
-                if ( $text && $att === 2) return 3; // Text + Video
-                return 0;
+                if (!$text && $att === 1) $contentMode = 1;      // nur Bild
+                elseif ($text && $att === 0) $contentMode = 0;   // nur Text
+                elseif ($text && $att === 1) $contentMode = 2;   // Text+Bild
+                elseif ($text && $att === 2) $contentMode = 3;   // Text+Video
+                else $contentMode = 0;
             }
-        } else {
-            $res  = $this->apiCall([[ "cmd" => "GetEmail", "param" => ["channel" => 0] ]]);
-            if (is_array($res) && isset($res[0]['value']['Email']['attachment'])) {
-                switch ($res[0]['value']['Email']['attachment']) {
-                    case 'onlyPicture': return 1;
-                    case 'picture':     return 2;
-                    case 'video':       return 3;
-                    default:            return 0;
+
+            return ['enabled'=>$enabled, 'intervalSec'=>$intervalSec, 'contentMode'=>$contentMode];
+        }
+
+        // LEGACY
+        $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]], 'EMAIL');
+        if (!is_array($res) || !isset($res[0]['value']['Email'])) {
+            $this->dbg('EMAIL', 'GetEmail: ungültige Antwort', $res);
+            return null;
+        }
+        $e = $res[0]['value']['Email'];
+
+        // enable
+        $enabled = null;
+        if (isset($e['schedule']['enable'])) {
+            $enabled = ((int)$e['schedule']['enable'] === 1);
+        }
+
+        // interval (String → Sekunden)
+        $intervalSec = null;
+        if (isset($e['interval'])) {
+            $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
+        }
+
+        // attachment → contentMode
+        $contentMode = null;
+        if (isset($e['attachment'])) {
+            switch ((string)$e['attachment']) {
+                case 'onlyPicture': $contentMode = 1; break;
+                case 'picture':     $contentMode = 2; break;
+                case 'video':       $contentMode = 3; break;
+                default:            $contentMode = 0; break;
+            }
+        }
+
+        return ['enabled'=>$enabled, 'intervalSec'=>$intervalSec, 'contentMode'=>$contentMode];
+    }
+
+    /**
+     * Einheits-Funktion für E-Mail:
+     * - Setzt Änderungen (wenn angegeben) möglichst in EINEM Call (V20 sicher; Legacy: All-in-one, sonst Fallback).
+     * - Holt danach GENAU EINMAL den Zustand und aktualisiert die drei Variablen.
+     *
+     * @param ?bool $enabled      true/false zum Setzen, null = nicht ändern
+     * @param ?int  $intervalSec  30|60|300|600|1800, null = nicht ändern
+     * @param ?int  $contentMode  0=Text,1=Bild,2=Text+Bild,3=Text+Video, null = nicht ändern
+     */
+    private function EmailApply(?bool $enabled=null, ?int $intervalSec=null, ?int $contentMode=null): bool
+    {
+        $ver = $this->DetectEmailApiVersion();
+        $okSet = true;
+
+        $wantSet = ($enabled !== null || $intervalSec !== null || $contentMode !== null);
+
+        // --- SET ---
+        if ($wantSet) {
+            if ($ver === 'V20') {
+                // Alles in EINEM SetEmailV20
+                $email = [];
+                if ($enabled !== null)      $email['enable'] = $enabled ? 1 : 0;
+                if ($intervalSec !== null) {
+                    $str = $this->IntervalSecondsToString($intervalSec);
+                    if ($str !== null)      $email['interval'] = $str;
+                }
+                if ($contentMode !== null) {
+                    switch ($contentMode) {
+                        case 0: $email += ["textType"=>1, "attachmentType"=>0]; break;
+                        case 1: $email += ["textType"=>0, "attachmentType"=>1]; break;
+                        case 2: $email += ["textType"=>1, "attachmentType"=>1]; break;
+                        case 3: $email += ["textType"=>1, "attachmentType"=>2]; break;
+                    }
+                }
+                if (!empty($email)) {
+                    $res = $this->apiCall([[ "cmd"=>"SetEmailV20", "param"=>["Email"=>$email] ]], 'EMAIL');
+                    $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+                    if (!$okSet) $this->dbg('EMAIL', 'SetEmailV20 FAIL', $res);
+                }
+            } else {
+                // LEGACY: Versuch alles in einem Rutsch, sonst Fallback einzeln
+                $email = [];
+                if ($enabled !== null)      $email['schedule']['enable'] = $enabled ? 1 : 0;
+                if ($intervalSec !== null) {
+                    $str = $this->IntervalSecondsToString($intervalSec);
+                    if ($str !== null)      $email['interval'] = $str;
+                }
+                if ($contentMode !== null) {
+                    $att = ['0','onlyPicture','picture','video'][$contentMode] ?? '0';
+                    $email['attachment'] = $att;
+                }
+
+                if (!empty($email)) {
+                    $res = $this->apiCall([[ "cmd"=>"SetEmail", "param"=>["Email"=>$email] ]], 'EMAIL', true);
+                    $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+                    if (!$okSet) {
+                        // Fallback: Feld für Feld
+                        $okSet = true;
+                        if ($enabled !== null) {
+                            $r = $this->apiCall([[ "cmd"=>"SetEmail", "param"=>["Email"=>["schedule"=>["enable"=>$enabled?1:0]]] ]], 'EMAIL', true);
+                            $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
+                        }
+                        if ($intervalSec !== null) {
+                            $str = $this->IntervalSecondsToString($intervalSec);
+                            if ($str !== null) {
+                                $r = $this->apiCall([[ "cmd"=>"SetEmail", "param"=>["Email"=>["interval"=>$str]] ]], 'EMAIL', true);
+                                $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
+                            }
+                        }
+                        if ($contentMode !== null) {
+                            $att = ['0','onlyPicture','picture','video'][$contentMode] ?? '0';
+                            $r = $this->apiCall([[ "cmd"=>"SetEmail", "param"=>["Email"=>["attachment"=>$att]] ]], 'EMAIL', true);
+                            $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
+                        }
+                        if (!$okSet) $this->dbg('EMAIL', 'SetEmail (fallback) FAIL');
+                    }
                 }
             }
-            return 0;
         }
-        return null;
-    }
 
-private function SetEmailContent(int $mode): bool 
-    {
-        $apiVer = $this->DetectEmailApiVersion();
-
-        if ($apiVer === 'V20') {
-            switch ($mode) {
-                case 0: $payload = ["textType"=>1, "attachmentType"=>0]; break;
-                case 1: $payload = ["textType"=>0, "attachmentType"=>1]; break;
-                case 2: $payload = ["textType"=>1, "attachmentType"=>1]; break;
-                case 3: $payload = ["textType"=>1, "attachmentType"=>2]; break;
-                default: return false;
-            }
-            $res  = $this->apiCall([[ "cmd"=>"SetEmailV20", "param"=> [ "Email" => $payload ] ]]);
-            return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
-
+        // --- GET (einmal) + Variablen setzen ---
+        $state = $this->GetEmailState();
+        if (is_array($state)) {
+            $this->ApplyEmailStateToVars($state);
         } else {
-            switch ($mode) {
-                case 0: $att = "0";            break;
-                case 1: $att = "onlyPicture";  break;
-                case 2: $att = "picture";      break;
-                case 3: $att = "video";        break;
-                default: return false;
-            }
-            $res  = $this->apiCall([[ "cmd"=>"SetEmail", "param"=> [ "Email" => [ "attachment" => $att ] ] ]]);
-            return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
+            $this->dbg('EMAIL', 'GetEmailState FAIL (no data)');
         }
+
+        // true = Set hat (insgesamt) funktioniert; bei reinem GET ist $okSet ohnehin true
+        return $okSet;
     }
 
- 
-    // ====== PTZ/Zoom ==================================================================
- 
-    private function CreateOrUpdatePTZHtml(): void
+    // ---------------------------
+    // PTZ / Zoom
+    // ---------------------------
+    private function CreateOrUpdatePTZHtml(bool $reloadPresets = false): void
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
-
         $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") { $hook = $this->RegisterHook(); }
+        if ($hook === "") {
+            $hook = $this->RegisterHook();
+        }
 
-        $presets = $this->getPresetList();
+        // ---- Presets: aus Cache, nur bei Bedarf von der Kamera holen ----
+        $presets = [];
+        if (!$reloadPresets) {
+            $cached = $this->ReadAttributeString("PtzPresetsCache");
+            if (is_string($cached) && $cached !== "") {
+                $tmp = @json_decode($cached, true);
+                if (is_array($tmp)) $presets = $tmp;
+            }
+        }
+        if (empty($presets)) {
+            $presets = $this->getPresetList(); // <<< API-CALL NUR HIER (selten)
+            $this->WriteAttributeString("PtzPresetsCache", json_encode($presets, JSON_UNESCAPED_UNICODE));
+        }
 
+        // ---- Zoom-Info: 1 schlanker Call pro Zyklus ----
+        $zInfo = $this->getZoomInfo(); // <<< EIN API-CALL pro Refresh
+        $zMin = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
+        $zMax = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
+        $zPos = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
+
+        // ---- UI rendern (wie zuvor) ----
         $rows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
                 $pid   = (int)$p['id'];
                 $title = htmlspecialchars((string)$p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $rows .=
-                    '<div class="preset-row" data-preset="'.$pid.'">'.
+                $rows .= '<div class="preset-row" data-preset="'.$pid.'">'.
                         '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
                         '<div class="icons">'.
-                            '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
-                            '<button class="icon del"     data-preset="'.$pid.'" title="Löschen"    aria-label="Löschen">🗑</button>'.
+                        '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
+                        '<button class="icon del" data-preset="'.$pid.'" title="Löschen" aria-label="Löschen">🗑</button>'.
                         '</div>'.
-                    '</div>';
+                        '</div>';
             }
         } else {
             $rows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
         $btn = 42; $gap = 6;
-        $zInfo = $this->getZoomInfo();
-        $zMin  = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
-        $zMax  = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
-        $zPos  = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
-
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
-    #ptz-wrap{
-    --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px;
-    max-width: 520px; margin:0 auto; user-select:none;
-    }
-    #ptz-wrap .grid{
-    display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn));
-    gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px;
-    }
-    #ptz-wrap button{
-    height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8;
-    font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06);
-    box-sizing:border-box; padding:6px 10px;
-    }
+    #ptz-wrap{ --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px; max-width: 520px; margin:0 auto; user-select:none; }
+    #ptz-wrap .grid{ display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn)); gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px; }
+    #ptz-wrap button{ height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8; font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06); box-sizing:border-box; padding:6px 10px; }
     #ptz-wrap .dir{ width:var(--btn); padding:0; }
-    #ptz-wrap button:hover{ filter:brightness(.98); } 
+    #ptz-wrap button:hover{ filter:brightness(.98); }
     #ptz-wrap button:active{ transform:translateY(1px); }
-    #ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;}
-    #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
-
+    #ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;} #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
     #ptz-wrap .section-title{ font-weight:600; margin:10px 0 6px; }
-
     #ptz-wrap .presets{ display:block; }
-    #ptz-wrap .preset-row{
-    display:flex; align-items:center; gap:8px; margin-bottom:var(--gap);
-    }
-    #ptz-wrap .preset{
-    flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    }
+    #ptz-wrap .preset-row{ display:flex; align-items:center; gap:8px; margin-bottom:var(--gap); }
+    #ptz-wrap .preset{ flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     #ptz-wrap .icons { display:flex; gap:6px; }
-    #ptz-wrap .icon{
-    width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center;
-    padding:0; font-size:18px;
-    }
+    #ptz-wrap .icon{ width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; padding:0; font-size:18px; }
     #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
-
-    #ptz-wrap .new{
-    margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;
-    }
-    #ptz-wrap .new input[type="text"]{
-    flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px;
-    }
+    #ptz-wrap .new{ margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    #ptz-wrap .new input[type="text"]{ flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px; }
     #ptz-wrap .new button{ height:36px; padding:6px 10px; }
     #ptz-wrap .hint{ font-size:14px; opacity:.75; }
     </style>
-
     <div class="grid">
-    <button data-dir="up"    class="dir up"    title="Hoch"   aria-label="Hoch">▲</button>
-    <button data-dir="left"  class="dir left"  title="Links"  aria-label="Links">◀</button>
+    <button data-dir="up" class="dir up" title="Hoch" aria-label="Hoch">▲</button>
+    <button data-dir="left" class="dir left" title="Links" aria-label="Links">◀</button>
     <button data-dir="right" class="dir right" title="Rechts" aria-label="Rechts">▶</button>
-    <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
+    <button data-dir="down" class="dir down" title="Runter" aria-label="Runter">▼</button>
     </div>
-
     <div class="section-title">Zoom</div>
     <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
-    <input type="range" id="ptz-zoom"
-            min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}"
-            style="width:220px;">
+    <input type="range" id="ptz-zoom" min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}" style="width:220px;">
     </div>
-
     <div class="section-title">Presets</div>
-    <div class="presets">
-    {$rows}
-    </div>
-
+    <div class="presets"> {$rows} </div>
     <div class="section-title">Neues Preset</div>
     <div class="new">
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
     <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
     </div>
-
     <script>
     (function(){
-    var base   = "{$hook}";
-    var wrap   = document.getElementById("ptz-wrap");
-    var msg    = document.getElementById("ptz-msg");
-    var nameIn = document.getElementById("ptz-new-name");
-    var nextHint = document.getElementById("ptz-nextid-hint");
+    var base = "{$hook}";
+    var wrap = document.getElementById("ptz-wrap");
+    var msg  = document.getElementById("ptz-msg");
+    var nameIn   = document.getElementById("ptz-new-name");
 
     function show(text, ok){
         if (!msg) return;
         msg.className = "status " + (ok ? "ok" : "err");
         msg.textContent = text;
     }
-
     function call(op, extra){
         var qs = new URLSearchParams(extra || {});
         qs.set("ptz", op);
@@ -1453,14 +1409,13 @@ private function SetEmailContent(int $mode): bool
         .then(function(r){ return r.text().catch(function(){ return ""; }); })
         .then(function(t){
             var body = (t || "").trim().toUpperCase();
-            var ok   = (body === "OK");
+            var ok = (body === "OK");
             if (ok) { show("OK", true); return true; }
             if ((t || "").trim() === "") { show("Gesendet", true); return true; }
             show("Fehler: " + (t || ""), false); return false;
         })
         .catch(function(){ show("Gesendet", true); return true; });
     }
-
     function calcNextId(){
         var rows = wrap.querySelectorAll(".preset-row[data-preset]");
         var max = -1;
@@ -1471,66 +1426,42 @@ private function SetEmailContent(int $mode): bool
         return max + 1;
     }
 
-    function updateNextIdHint(){
-        var nid = calcNextId();
-        if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
-    }
-    updateNextIdHint();
-
     var zoomEl = document.getElementById("ptz-zoom");
     if (zoomEl) {
-    zoomEl.addEventListener("change", function(){
+        zoomEl.addEventListener("change", function(){
         var target = parseInt(zoomEl.value, 10);
         if (isNaN(target)) return;
         call("zoompos", { pos: target });
-    });
+        });
     }
 
-    // ---- Buttons: Pfeile / Presets / CRUD ----
     wrap.addEventListener("click", function(ev){
         var btn = ev.target.closest("button");
         if (!btn) return;
 
         if (btn.hasAttribute("data-dir")) {
-        call(btn.getAttribute("data-dir"));
-        return;
+        call(btn.getAttribute("data-dir")); return;
         }
-
         if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
-        call("preset:" + btn.getAttribute("data-preset"));
-        return;
+        call("preset:" + btn.getAttribute("data-preset")); return;
         }
-
         if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
         var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
-        var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
-                    ? btn.parentElement.previousElementSibling.textContent.trim() : "";
+        var cur = (btn.parentElement && btn.parentElement.previousElementSibling) ? btn.parentElement.previousElementSibling.textContent.trim() : "";
         var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
-        if (neu && neu.trim() !== "") {
-            call("rename", { id:id, name:neu.trim() }).then(function(ok){
-            if (ok) updateNextIdHint();
-            });
-        }
+        if (neu && neu.trim() !== "") { call("rename", { id:id, name:neu.trim() }); }
         return;
         }
-
         if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
         var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
-        if (window.confirm("Preset " + idd + " löschen?")) {
-            call("delete", { id: idd }).then(function(ok){
-            if (ok) updateNextIdHint();
-            });
-        }
+        if (window.confirm("Preset " + idd + " löschen?")) { call("delete", { id: idd }); }
         return;
         }
-
         if (btn.id === "ptz-new-save") {
         var nm = (nameIn.value || "").trim();
         if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
         var nid = calcNextId();
-        call("save", { id: nid, name: nm }).then(function(ok){
-            if (ok) { nameIn.value = ""; updateNextIdHint(); }
-        });
+        call("save", { id: nid, name: nm }).then(function(ok){ if (ok) { nameIn.value = ""; } });
         return;
         }
     });
@@ -1543,41 +1474,34 @@ private function SetEmailContent(int $mode): bool
 
     private function setHtmlIfChanged(string $ident, string $html): void
     {
-        $id = @$this->GetIDForIdent($ident);
+        $id  = @$this->GetIDForIdent($ident);
         $old = ($id !== false) ? GetValue($id) : null;
         if (!is_string($old) || $old !== $html) {
             $this->SetValue($ident, $html);
-        } else {
-            $this->SendDebug($ident, 'Unverändert – kein Update', 0);
         }
+        else {
+        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
+        }       
     }
 
     private function HandlePtzCommand(string $cmd): bool
     {
-        // optionale Parameter (aus GET/POST/JSON übernommen)
         $stepParam = isset($_REQUEST['step']) ? max(1, (int)$_REQUEST['step']) : 1;
         $idParam   = $_REQUEST['id']   ?? null;
         $nameParam = $_REQUEST['name'] ?? null;
-
         $id   = is_null($idParam)   ? null : (int)$idParam;
         $name = is_null($nameParam) ? null : (string)$nameParam;
 
-        // PRESET anfahren: "preset:<id>"
         if (strpos($cmd, 'preset:') === 0) {
             $pid = (int)substr($cmd, 7);
-            if ($pid >= 0) {
-                return $this->ptzGotoPreset($pid);
-            }
-            $this->SendDebug("PTZ", "Ungueltige Preset-ID: $cmd", 0);
+            if ($pid >= 0) return $this->ptzGotoPreset($pid);
+            $this->dbg("PTZ", "Ungueltige Preset-ID", $cmd);
             return false;
         }
 
         switch (strtolower($cmd)) {
             case 'save':
-                if ($id === null || $id < 0) {
-                    $this->SendDebug("PTZ/SAVE", "id fehlt/ungueltig", 0);
-                    return false;
-                }
+                if ($id === null || $id < 0) { $this->dbg("PTZ","id fehlt/ungueltig"); return false; }
                 if (is_string($name)) {
                     $name = trim($name);
                     if ($name === '') $name = null;
@@ -1585,110 +1509,77 @@ private function SetEmailContent(int $mode): bool
                         $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
                         $name = mb_substr($name, 0, 32, 'UTF-8');
                     }
-                } else {
-                    $name = null;
-                }
+                } else { $name = null; }
                 $ok = $this->PTZ_SavePreset($id, $name);
-                $this->SendDebug("PTZ/SAVE", "id={$id}, name=" . ($name ?? '<none>') . " -> ".($ok?'OK':'FAIL'), 0);
+                $this->dbg("PTZ", "SAVE", ['id'=>$id, 'name'=>$name, 'ok'=>$ok]);
                 return $ok;
 
             case 'rename':
-                if ($id === null || $id < 0 || !is_string($name) || trim($name) === '') {
-                    $this->SendDebug("PTZ/RENAME", "id/name fehlen/ungueltig", 0);
-                    return false;
-                }
+                if ($id === null || $id < 0 || !is_string($name) || trim($name) === '') { $this->dbg("PTZ","id/name fehlen"); return false; }
                 $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', trim($name));
                 $name = mb_substr($name, 0, 32, 'UTF-8');
                 $ok = $this->PTZ_RenamePreset($id, $name);
-                $this->SendDebug("PTZ/RENAME", "id={$id}, name={$name} -> ".($ok?'OK':'FAIL'), 0);
+                $this->dbg("PTZ", "RENAME", ['id'=>$id, 'name'=>$name, 'ok'=>$ok]);
                 return $ok;
 
             case 'delete':
-                if ($id === null || $id < 0) {
-                    $this->SendDebug("PTZ/DELETE", "id fehlt/ungueltig", 0);
-                    return false;
-                }
+                if ($id === null || $id < 0) { $this->dbg("PTZ","id fehlt"); return false; }
                 $ok = $this->PTZ_DeletePreset($id);
-                $this->SendDebug("PTZ/DELETE", "id={$id} -> ".($ok?'OK':'FAIL'), 0);
+                $this->dbg("PTZ", "DELETE", ['id'=>$id, 'ok'=>$ok]);
                 return $ok;
 
-            case 'zoomin':
-                return $this->ptzZoom('in', $stepParam);
-
-            case 'zoomout':
-                return $this->ptzZoom('out', $stepParam);
+            case 'zoomin':  return $this->ptzZoom('in',  $stepParam);
+            case 'zoomout': return $this->ptzZoom('out', $stepParam);
 
             case 'zoompos':
-                if (!isset($_REQUEST['pos'])) {
-                    $this->SendDebug("PTZ/ZOOMPOS", "pos fehlt", 0);
-                    return false;
-                }
+                if (!isset($_REQUEST['pos'])) { $this->dbg("PTZ","pos fehlt"); return false; }
                 $pos = (int)$_REQUEST['pos'];
-                // an Kamera-Grenzen klemmen
                 $info = $this->getZoomInfo();
-                if (is_array($info)) {
-                    $pos = max($info['min'], min($info['max'], $pos));
-                }
+                if (is_array($info)) $pos = max($info['min'], min($info['max'], $pos));
                 $ok = $this->setZoomPos($pos);
-                $this->SendDebug("PTZ/ZOOMPOS", "pos={$pos} -> ".($ok?'OK':'FAIL'), 0);
+                $this->dbg("PTZ", "ZOOMPOS", ['pos'=>$pos, 'ok'=>$ok]);
                 return $ok;
         }
 
-        // Pfeile (kurzer Impuls + Stop)
-        $map = [
-            'left'  => 'Left',
-            'right' => 'Right',
-            'up'    => 'Up',
-            'down'  => 'Down'
-        ];
-
+        $map = [ 'left' => 'Left', 'right' => 'Right', 'up' => 'Up', 'down' => 'Down' ];
         $k = strtolower($cmd);
         if (!isset($map[$k])) {
-            $this->SendDebug("PTZ", "Unbekanntes Kommando: {$cmd}", 0);
+            $this->dbg("PTZ", "Unbekanntes Kommando", $cmd);
             return false;
         }
         return $this->ptzCtrl($map[$k]);
     }
 
-    private function getPtzStyle(): string {
-    $s = $this->ReadAttributeString("PtzStyle");
-    return ($s === "flat" || $s === "nested") ? $s : "";
+    private function getPtzStyle(): string
+    {
+        $s = $this->ReadAttributeString("PtzStyle");
+        return ($s === "flat" || $s === "nested") ? $s : "";
     }
-
-    private function setPtzStyle(string $s): void {
+    private function setPtzStyle(string $s): void
+    {
         if ($s === "flat" || $s === "nested") {
             $this->WriteAttributeString("PtzStyle", $s);
-            $this->SendDebug("PTZ", "PtzStyle gesetzt: ".$s, 0);
+            $this->dbg("PTZ", "PtzStyle gesetzt", $s);
         }
-    }
-
-    private function ptzOk(?array $res): bool {
-    return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
     {
         $nestedKey = $nestedKey ?: $cmd;
-
-        $known = $this->getPtzStyle();                 // "flat", "nested" oder ""
+        $known = $this->getPtzStyle();
         $order = $known ? [$known, ($known === 'flat' ? 'nested' : 'flat')] : ['flat','nested'];
 
         foreach ($order as $mode) {
-            $payload = [[
-                'cmd'   => $cmd,
-                'param' => ($mode === 'flat') ? $body : [$nestedKey => $body]
-            ]];
-
-            $resp = $this->apiCall($payload, /*suppress*/ true);
+            $payload = [[ 'cmd' => $cmd, 'param' => ($mode === 'flat') ? $body : [$nestedKey => $body] ]];
+            $resp = $this->apiCall($payload, 'PTZ', /*suppress*/ true);
             if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
                 if ($known !== $mode) $this->setPtzStyle($mode);
                 return $resp;
             }
         }
-
         if (!$suppress) {
-            $this->SendDebug("postCmdDual/$cmd", "FAIL body=".json_encode($body), 0);
-            $this->LogMessage("Reolink: postCmdDual FAIL for {$cmd}", KL_ERROR);
+            $this->dbg("PTZ", "postCmdDual FAIL", ['cmd'=>$cmd, 'body'=>$body]);
+            $this->LogMessage("Reolink/PTZ: postCmdDual FAIL for {$cmd}", KL_ERROR);
         }
         return null;
     }
@@ -1696,8 +1587,6 @@ private function SetEmailContent(int $mode): bool
     private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
     {
         $param = ['channel' => 0, 'op' => $op] + $extra;
-
-        // Nur bei Bewegungen Speed setzen – bei Zoom führt 'speed' oft zu Fehlern
         $isMove = in_array($op, ['Left','Right','Up','Down'], true);
         if ($isMove && !isset($param['speed'])) {
             $param['speed'] = 5;
@@ -1706,26 +1595,20 @@ private function SetEmailContent(int $mode): bool
         $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
         if (!$ok) return false;
 
-        // Impuls + Stop nur für Bewegungen (Zoom handled separat)
         if ($isMove) {
             IPS_Sleep($pulseMs);
             $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
         }
-
         return true;
     }
 
     private function ptzGotoPreset(int $id): bool
     {
-        // Erst ToPos
-        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPos', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
+        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPos',    'id'=>$id], 'PtzCtrl', /*suppress*/ true));
         if ($ok) return true;
-
-        // Fallback ToPreset
         $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPreset', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
         if ($ok) return true;
-
-        $this->SendDebug('PTZ/PRESET', "Anfahren fehlgeschlagen für ID=$id", 0);
+        $this->dbg('PTZ', "Preset anfahren fehlgeschlagen", $id);
         return false;
     }
 
@@ -1733,36 +1616,24 @@ private function SetEmailContent(int $mode): bool
     {
         if (!is_array($node) || empty($node)) return;
 
-        // Fall: Liste von Preset-Objekten
         $first = reset($node);
         if (is_array($first) && (isset($first['id']) || isset($first['Id']))) {
             foreach ($node as $p) {
                 if (!is_array($p)) continue;
-
                 $rawId = $p['id'] ?? $p['Id'] ?? null;
                 if (!is_numeric($rawId)) continue;
                 $id = (int)$rawId;
-
-                if (isset($seen[$id])) continue; // Dedupe
+                if (isset($seen[$id])) continue;
 
                 $en = $p['enable'] ?? $p['Enable'] ?? null;
-                if ($en !== null && (int)$en === 0) {
-                    continue; // inaktiv -> nicht anzeigen
-                }
+                if ($en !== null && (int)$en === 0) continue;
 
-                // Name lesen
                 $name = $p['name'] ?? $p['Name'] ?? $p['sName'] ?? $p['label'] ?? $p['presetName'] ?? '';
-                $name = (string)$name;
-                $trim = trim($name);
+                $trim = trim((string)$name);
 
-                // --- integrierte Platzhalter-Erkennung (pos/preset/position + Zahl) ---
-                // Beispiele: "pos1", "pos 01", "preset2", "position3" (Groß/klein egal)
                 $isGeneric = ($trim !== '') && (preg_match('/^(pos|preset|position)\s*0*\d+$/i', $trim) === 1);
-
-                // Heuristik "belegt": typische Flags und/oder Koordinaten
                 $flag  = $p['exist'] ?? $p['bExist'] ?? $p['bexistPos'] ?? $p['enable'] ?? $p['enabled'] ?? $p['set'] ?? $p['bSet'] ?? null;
                 $isSet = ($flag === 1 || $flag === '1' || $flag === true);
-
                 $posArr = $p['pos'] ?? $p['position'] ?? $p['ptzpos'] ?? $p['ptz'] ?? null;
                 $hasPos = false;
                 if (is_array($posArr)) {
@@ -1770,178 +1641,77 @@ private function SetEmailContent(int $mode): bool
                         if (is_numeric($v) && (float)$v != 0.0) { $hasPos = true; break; }
                     }
                 }
-
-                // Filter: Nur dann überspringen, wenn (Name leer ODER generisch) UND keine Flags/Koordinaten
-                if (($trim === '' || $isGeneric) && !$isSet && !$hasPos) {
-                    continue;
-                }
-
+                if (($trim === '' || $isGeneric) && !$isSet && !$hasPos) continue;
                 if ($trim === '') $name = "Preset ".$id;
 
                 $out[] = ['id'=>$id, 'name'=>$name];
                 $seen[$id] = true;
             }
-            // nicht return; darunter weiter tiefer suchen
         }
 
-        // Tiefer rekursiv durchsuchen
         foreach ($node as $v) {
-            if (is_array($v)) {
-                $this->collectPresetsRecursive($v, $out, $seen);
-            }
+            if (is_array($v)) $this->collectPresetsRecursive($v, $out, $seen);
         }
     }
 
     private function getPresetList(): array
     {
         $res = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
-        $list = [];
-        $seen = [];
-
+        $list = []; $seen = [];
         if (is_array($res)) {
-            // 1) Standard-Pfade
-            $v  = $res[0]['value'] ?? [];
+            $v = $res[0]['value'] ?? [];
             $ps = $v['PtzPreset']['preset'] ?? $v['PtzPreset']['table'] ?? $v['preset'] ?? $v['table'] ?? null;
-
             if (is_array($ps)) {
                 $this->collectPresetsRecursive($ps, $list, $seen);
             } else {
-                // 2) Fallback: komplett rekursiv durchsuchen (beliebige Container-Namen)
                 $this->collectPresetsRecursive($v, $list, $seen);
             }
-
-            // 3) Wenn weiterhin leer: komplettes Response durchsuchen
             if (empty($list)) {
                 $this->collectPresetsRecursive($res, $list, $seen);
             }
-
-            // 4) Debug-Hinweis, falls nix gefunden wurde
             if (empty($list)) {
-                $keys = is_array($v) ? implode(',', array_keys($v)) : '';
-                $this->SendDebug('GetPtzPreset', 'Keine Presets erkannt. value-Keys='.$keys.' RAW='.json_encode($res), 0);
+                $this->dbg('PTZ', 'Keine Presets erkannt', $res);
             }
         } else {
-            $this->SendDebug('GetPtzPreset', 'Kein gueltiges Array-Response', 0);
+            $this->dbg('PTZ', 'Kein gueltiges Array-Response');
         }
-
-        // nach ID sortieren (optional)
         usort($list, fn($a,$b) => $a['id'] <=> $b['id']);
         return $list;
     }
 
-    private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
-        $entry = ['id'=>$id, 'enable'=>1];
-        if ($nameForCreate !== null && $nameForCreate !== '') {
-            $n = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $nameForCreate);
-            $entry['name'] = mb_substr($n, 0, 32, 'UTF-8');
-        }
-        // bevorzugt: nested "PtzPreset" + table[]
-        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ $entry ]], 'PtzPreset', /*suppress*/true));
-        // Fallback: einige FW akzeptieren "flat" (ohne table)
-        if (!$ok) {
-            $flat = ['channel'=>0, 'id'=>$id, 'enable'=>1] + (isset($entry['name'])?['name'=>$entry['name']]:[]);
-            $ok = is_array($this->postCmdDual('SetPtzPreset', $flat, 'PtzPreset', /*suppress*/true));
-        }
-        if (!$ok) $this->SendDebug('PTZ/SetPtzPreset', 'Fehlgeschlagen: '.json_encode($entry), 0);
-        return (bool)$ok;
-    }
-
-    private function ptzClearPreset(int $id): bool {
-        $entry = ['id'=>$id, 'enable'=>0, 'name'=>''];
-        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'table'=>[$entry]], 'PtzPreset', /*suppress*/true));
-        if (!$ok) {
-            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'id'=>$id,'enable'=>0,'name'=>''], 'PtzPreset', /*suppress*/true));
-        }
-        if (!$ok) $this->SendDebug('PTZ/Clear', 'enable=0 für id='.$id.' gescheitert', 0);
-        return (bool)$ok;
-    }
-
-    private function ptzRenamePreset(int $id, string $name): bool {
-        $name = trim($name);
-        if ($name === '') return false;
-        $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
-        $name = mb_substr($name, 0, 32, 'UTF-8');
-
-        // bevorzugt: nested mit table[]
-        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]], 'PtzPreset', /*suppress*/true));
-        if (!$ok) {
-            // Fallback: flat
-            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'PtzPreset', /*suppress*/true));
-        }
-        // als letzte Rückfallebenen die alten Varianten weiterprobieren:
-        if (!$ok) {
-            $ok = is_array($this->postCmdDual('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', /*suppress*/true))
-            ?: is_array($this->postCmdDual('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/true));
-        }
-        if (!$ok) $this->SendDebug('PTZ/Rename', "Fehlgeschlagen: id=$id, name=$name", 0);
-        return (bool)$ok;
-    }
-
-    public function PTZ_SavePreset(int $id, ?string $name=null): bool {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->ptzSetPreset($id);
-        if ($ok && $name) { $this->ptzRenamePreset($id, $name); }
-        $this->CreateOrUpdatePTZHtml(); // UI refresh
-        return $ok;
-    }
-    public function PTZ_RenamePreset(int $id, string $name): bool {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->ptzRenamePreset($id, $name);
-        if ($ok) $this->CreateOrUpdatePTZHtml();
-        return $ok;
-    }
-    public function PTZ_DeletePreset(int $id): bool {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->ptzClearPreset($id);
-        if ($ok) $this->CreateOrUpdatePTZHtml();
-        return $ok;
-    }
-
-    private function getZoomInfo(): ?array {
+    private function getZoomInfo(): ?array
+    {
         $res = $this->postCmdDual('GetZoomFocus', ['channel'=>0], 'ZoomFocus', /*suppress*/ false);
         if (!is_array($res) || !isset($res[0]['value'])) return null;
-
         $val  = $res[0]['value'];
         $zf   = $val['ZoomFocus'] ?? $val['zoomFocus'] ?? null;
         $zoom = is_array($zf) ? ($zf['zoom'] ?? $zf['Zoom'] ?? null) : null;
         if (!is_array($zoom)) return null;
-
         $pos = (int)($zoom['pos'] ?? $zoom['Pos'] ?? 0);
         $min = (int)($zoom['min'] ?? $zoom['Min'] ?? 0);
         $max = (int)($zoom['max'] ?? $zoom['Max'] ?? 10);
         return ['pos'=>$pos, 'min'=>$min, 'max'=>$max];
     }
 
-    private function setZoomPos(int $pos): bool {
+    private function setZoomPos(int $pos): bool
+    {
         $info = $this->getZoomInfo() ?: ['min'=>0, 'max'=>10];
-        $min  = (int)$info['min'];
-        $max  = (int)$info['max'];
-        $p    = max($min, min($max, $pos));
-
-        // Falls Kamera intern 0..10 erwartet → normalisieren
+        $min = (int)$info['min']; $max = (int)$info['max'];
+        $p = max($min, min($max, $pos));
         $sendPos = $p;
         if ($max > 10) {
             $sendPos = (int)round(($p - $min) * 10 / max(1, $max - $min));
         }
-
         $res = $this->postCmdDual('StartZoomFocus', ['channel'=>0, 'op'=>'ZoomPos', 'pos'=>$sendPos], 'ZoomFocus', /*suppress*/ true);
         return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function ptzZoom(string $dir, int $step = 1): bool
     {
-        // step = wie viele kurze Zoom-Impulse
-        $step    = max(1, min(27, $step)); // harte Kappe (sicher)
-        $pulseMs = 160;                    // Dauer eines Impulses → feiner/grober
-        $gapMs   = 60;                     // Pause zwischen Impulsen
-
-        // Kandidaten: je nach FW heißt es unterschiedlich
-        $ops = ($dir === 'in')
-            ? ['ZoomIn','ZoomTele','ZoomAdd']
-            : ['ZoomOut','ZoomWide','ZoomDec'];
-
+        $step = max(1, min(27, $step));
+        $pulseMs = 160; $gapMs = 60;
+        $ops = ($dir === 'in') ? ['ZoomIn','ZoomTele','ZoomAdd'] : ['ZoomOut','ZoomWide','ZoomDec'];
         $okAny = false;
-
         for ($i = 0; $i < $step; $i++) {
             $ok = false;
             foreach ($ops as $op) {
@@ -1949,14 +1719,47 @@ private function SetEmailContent(int $mode): bool
                 if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
                     $ok = $okAny = true;
                     IPS_Sleep($pulseMs);
-                    // unbedingt stoppen, sonst läuft der Zoom weiter
                     $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
                     break;
                 }
             }
-            if (!$ok) break;             // Kein passender Op → abbrechen
+            if (!$ok) break;
             if ($i < $step-1) IPS_Sleep($gapMs);
         }
         return $okAny;
+    }
+
+    public function PTZ_SavePreset(int $id, ?string $name=null): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzSetPreset($id);
+        if ($ok && $name) { $this->ptzRenamePreset($id, $name); }
+        if ($ok) {
+            $this->WriteAttributeString("PtzPresetsCache", "");   // Cache leeren
+            $this->CreateOrUpdatePTZHtml(true);                   // Presets neu holen
+        }
+        return $ok;
+    }
+
+    public function PTZ_RenamePreset(int $id, string $name): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzRenamePreset($id, $name);
+        if ($ok) {
+            $this->WriteAttributeString("PtzPresetsCache", "");
+            $this->CreateOrUpdatePTZHtml(true);
+        }
+        return $ok;
+    }
+
+    public function PTZ_DeletePreset(int $id): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzClearPreset($id);
+        if ($ok) {
+            $this->WriteAttributeString("PtzPresetsCache", "");
+            $this->CreateOrUpdatePTZHtml(true);
+        }
+        return $ok;
     }
 }
