@@ -99,8 +99,6 @@ Integration von Kamerastream, Schnappschüssen und Variablen zur intelligenten B
 ### 7. Webhook
 
 Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konfigurationsformular angezeigt. Dieser Pfad muss im Webinterface der Kamera in den Einstellungen unter Push eingetragen werden. Dort den Webhook-Pfad mit dem Default-Content hinzufügen.
-Es ist nur noch die http://<ip-von-symcon>:3777 davor aufzuführen.
-Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 
 ### 8. Versionen
 
