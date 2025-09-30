@@ -1480,7 +1480,7 @@ class Reolink extends IPSModule
             $this->SetValue($ident, $html);
         }
         else {
-        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident, 'value' => $html], true);
+        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
         }       
     }
 
