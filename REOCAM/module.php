@@ -1481,7 +1481,7 @@ class Reolink extends IPSModule
         }
         else {
         $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
-    }       
+        }       
     }
 
     private function HandlePtzCommand(string $cmd): bool
