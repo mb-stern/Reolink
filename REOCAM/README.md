@@ -108,7 +108,7 @@ Version 2.8 (30.09.2025)
 - Nun ist ein Schalter zum Deaktivieren der Instanz im Konfigurationsformular verfügbar.
 - Der kompletten Pfad zum Hook wird nun im Konfigurationsformular angezeigt.
 - Die Debug-Ausgabe komplett überarbeitet.
-- Code überarbeitet, insbesondere finden keine reduntanten API-Abfragen mehr statt.
+- Code überarbeitet, insbesondere finden keine redundanten API-Abfragen mehr statt.
 
 Version 2.7 (04.09.2025)
 - Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.
