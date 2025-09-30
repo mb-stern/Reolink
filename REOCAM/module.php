@@ -1128,6 +1128,9 @@ class Reolink extends IPSModule
                 $this->SetValue($f['ident'], $new);
                 $this->dbg('EMAIL', 'Var geändert', ['ident' => $f['ident'], 'old' => $old, 'new' => $new]);
             }
+            else {
+                $this->dbg('EMAIL', 'Unverändert', ['ident' => $f, 'value' => $new], true);
+            }
         }
     }
 

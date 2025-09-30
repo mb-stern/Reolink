@@ -104,7 +104,7 @@ Beispiel: http://192.168.178.48:3777/hook/reolink_28009
 ### 8. Versionen
 
 Version 2.8 (29.09.2025)
-- Neu ist ein Schalter im Konfigurationsformular zum Deaktivieren der Instanz verfügbar.
+- Schalter zum Deaktivieren der Instanz im Konfigurationsformular eingefügt.
 - Debug Ausgabe überarbeitet.
 - Code überarbeitet, insbesondere dass nicht mehrfache API-Abfragen gemacht werden.
 - Der kompletten Pfad zum Hook wird nun im Konfigurationsformular angezeigt.
