@@ -29,7 +29,27 @@
         { "caption": "Substream",  "value": "sub"  }
       ]
     },
-
+    {
+      "type": "ExpansionPanel",
+      "caption": "API-Funktionen",
+      "items": [
+        {
+          "type": "CheckBox",
+          "name": "EnableApiWhiteLed",
+          "caption": "Spotlight steuern"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableApiEmail",
+          "caption": "E-Mail-Benachrichtigungen konfigurieren"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableApiPTZ",
+          "caption": "PTZ, Presets und Zoom als html-Kachel (kann nicht oder nur teilweise unterstützt sein)"
+        }
+      ]
+    },
     {
       "type": "CheckBox",
       "name": "EnablePolling",
@@ -75,27 +95,6 @@
       "caption": "Maximale Anzahl Archivbilder",
       "minimum": 1,
       "suffix": "Bilder"
-    },
-    {
-      "type": "ExpansionPanel",
-      "caption": "API-Funktionen",
-      "items": [
-        {
-          "type": "CheckBox",
-          "name": "EnableApiWhiteLed",
-          "caption": "Spotlight steuern"
-        },
-        {
-          "type": "CheckBox",
-          "name": "EnableApiEmail",
-          "caption": "E-Mail-Benachrichtigungen konfigurieren"
-        },
-        {
-          "type": "CheckBox",
-          "name": "EnableApiPTZ",
-          "caption": "PTZ, Presets und Zoom als html-Kachel (kann nicht oder nur teilweise unterstützt sein)"
-        }
-      ]
     },
     {
       "type": "Label",
