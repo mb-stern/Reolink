@@ -303,10 +303,23 @@ class Reolink extends IPSModule
         return $hookPath;
     }
 
+    private function getLocalIPv4(string $probe='8.8.8.8:53'): string {
+        $ip = '127.0.0.1';
+        if ($sock = @stream_socket_client('udp://'.$probe, $e1, $e2, 1)) {
+            $name = stream_socket_get_name($sock, false);
+            fclose($sock);
+            if (is_string($name) && ($p = strrpos($name, ':')) !== false) {
+                $ip = substr($name, 0, $p);
+            }
+        }
+        return $ip;
+    }
+
     private function BuildWebhookFullUrl(string $hookPath): string
     {
-        $host = filter_var(@gethostbyname(@gethostname()), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ?: '127.0.0.1';
-        return "http://{$host}:3777{$hookPath}";
+        $host = $this->getLocalIPv4();   
+        $port = 3777;   
+        return "http://{$host}:{$port}{$hookPath}";
     }
 
     public function ProcessHookData()
