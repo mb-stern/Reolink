@@ -102,6 +102,9 @@ Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konf
 
 ### 8. Versionen
 
+Version 2.9 (23.10.2025)
+- Verbesserte Erkennung der Server-IP-Adresse im Konfigurationsformular.
+
 Version 2.8 (30.09.2025)
 - Nun ist ein Schalter zum Deaktivieren der Instanz im Konfigurationsformular verfügbar.
 - Der kompletten Pfad zum Hook wird nun im Konfigurationsformular angezeigt.
