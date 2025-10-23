@@ -1,154 +1,193 @@
 # Reolink für IP-Symcon
 
-### Inhaltsverzeichnis
-
-1. [Funktionsumfang](#1-funktionsumfang)
-2. [Voraussetzungen](#2-voraussetzungen)
-3. [Software-Installation](#3-software-installation)
-4. [Einrichten der Instanzen in IP-Symcon](#4-einrichten-der-instanzen-in-ip-symcon)
-5. [Statusvariablen und Profile](#5-statusvariablen-und-profile)
-6. [WebFront](#6-webfront)
-7. [Webhook](#7-webhook)
+## Inhaltsverzeichnis
+1. [Funktionsumfang](#1-funktionsumfang)  
+2. [Voraussetzungen](#2-voraussetzungen)  
+3. [Software-Installation](#3-software-installation)  
+4. [Einrichtung der Instanzen in IP-Symcon](#4-einrichtung-der-instanzen-in-ip-symcon)  
+5. [Statusvariablen und Profile](#5-statusvariablen-und-profile)  
+6. [WebFront](#6-webfront)  
+7. [Webhook](#7-webhook)  
 8. [Versionen](#8-versionen)
 
-### 1. Funktionsumfang
+---
 
-Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. 
-Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktioniert aber auch mit anderen Reolink-Kameras.
-Daher ist immer die aktuellste Firmware aufzuspielen. Die neuste Firmware muss im Reolink Download-Center gesucht werden, da die App meist keine Neue anzeigt.
-Der Webhook ist nur über das Webinterface der Kamera sichtbar, in der App für Windows ist diese Funktion ausgeblendet.
-Beherrscht die Kamera kein Webhook, kann sie aktiv gepollt werden. Dies bringt aber je nach Polling-Intervall eine kleine Verzögerung mit sich.
+## 1. Funktionsumfang
 
-Das Modul kann folgendes:
+Dieses Modul integriert **Reolink-Kameras** vollständig in **IP-Symcon**, mit Schwerpunkt auf der **Webhook-Integration**.  
+Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, Tier, Fahrzeug, Besucher) in Echtzeit an IP-Symcon zu übertragen — ohne Polling und nahezu verzögerungsfrei.
 
-- Schnappschüsse bei Bewegungen aufnehmen (Allgemeine Bewegungen, Personen, Tiere, Fahrzeuge und Besucher (Doorbell)).
-- Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
-- Die intelligente Bewegungserkennung als Variable darstellen.
-- Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
-- Main- oder Substream angezeigt.
-- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers und steuern von Mailfunktionen.
+### Hauptfunktionen
+- **Echtzeit-Verarbeitung über Webhook**: Auslösen bei Personen-, Tier-, Fahrzeug- und Bewegungsereignissen  
+- **Automatische Schnappschüsse** bei jeder erkannten Bewegung  
+- **Bildarchiv-Funktion** mit frei definierbarer Anzahl gespeicherter Bilder  
+- **Intelligente Bewegungserkennung** (Person, Tier, Fahrzeug, Besucher) als IP-Symcon-Variablen  
+- **RTSP-Stream-Integration** (Main- oder Substream auswählbar)  
+- **API-Funktionen** zur Kamerasteuerung:
+  - LED-Licht (Ein/Aus, Helligkeit, Automatik)
+  - E-Mail-Benachrichtigung
+  - PTZ-Steuerung mit Presets und Zoom  
+- **Automatische Webhook-Erstellung** in IP-Symcon  
+- **Optimierte IP-Adress-Erkennung** (Sollte nun auch unter Linux-Systemen funktionieren)
 
-Aktuell getestete Reolink-Kameras welche mit Webhook funktionieren (immer mit der neusten Firmware):
-- Reolink Duo 2
-- Reolink RLC-810A
-- Reolink Doorbell
-- Reolink E1 Outdoor (nicht alle Hardware-Versionen)
-- Reolink RLC-520A
-- Reolink E1 ZOOM
-- Reolink E540
+### Unterstützte Kameras (getestet)
+| Modell | Webhook | Bemerkung |
+|--------|----------|-----------|
+| Reolink Duo 2 | ✅ | Voll unterstützt |
+| Reolink RLC-810A | ✅ | Empfohlen |
+| Reolink Doorbell | ✅ | Besucher-Erkennung aktivierbar |
+| Reolink E1 Outdoor | ⚠️ | Nur bestimmte Hardware-Revisionen |
+| Reolink RLC-520A | ✅ | Voll unterstützt |
+| Reolink E1 Zoom | ✅ | Unterstützt PTZ |
+| Reolink E540 | ✅ | Voll unterstützt |
 
-Akkubetriebenen Reolink-Kameras (z.B. Argus Modelle) unterstützen nach meinem Wissensstand kein Webhook und könnten bestenfalls über die Pollingfunktion eingebunden werden. Ich habe aber dazu noch keine oder zu wenig Feedback erhalten.
+> ⚠️ **Akkubetriebene Modelle** (z. B. *Argus-Reihe*) unterstützen keine Webhooks.  
+> Diese können nur über Polling angebunden werden (eingeschränkt getestet).
 
-Wenn eine Kamera mit dem Modul funktioniert, würde ich mich um Angabe des Kameramodells freuen.
-Wenn nicht, benötige ich eine Info mit Angabe des Kameramodells. Ebenfalls natürlich eine Sequenz Debug. Eventuell kann ich die Kamera dann ins Modul integrieren.
+---
 
-### 2. Voraussetzungen
+## 2. Voraussetzungen
 
-- IP-Symcon ab Version 7.0
-- Bei der Inbetriebnahme sind zwingend alle Protokolle zu aktiviern, insbesonder http und https.
-- Im Webinterface der Kamerakonfiguration, unter Push Notifications muss der Menupunkt 'Webhook' vorhanden sein. Wenn dieser fehlt ist zu prüfen, ob eine neue Firmware zur Verfügung steht unter https://reolink.com/de/download-center. Falls die Kamera keinen Webhook unterstützt kann im Konfigurationsformular die Pollingfunktion aktiviert werden.
+- IP-Symcon **ab Version 7.0**  
+- Kamera muss **HTTP / HTTPS-Zugriff** zulassen  
+- Im Kameramenü unter *Push Notifications → Webhook* muss ein Eintrag möglich sein  
+- Aktuellste Firmware über das [Reolink Download-Center](https://reolink.com/de/download-center)  
+- Bei Kameras ohne Webhook kann **Polling** aktiviert werden (mit Latenz)
 
-### 3. Software-Installation
+---
 
-* Über den Module Store kann das Modul installiert werden.
+## 3. Software-Installation
 
-### 4. Einrichten der Instanzen in IP-Symcon
+Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 
-- Unter 'Instanz hinzufügen' kann das 'Reolink'-Modul mithilfe des Schnellfilters gefunden werden.  
-- Weitere Informationen zum Hinzufügen von Instanzen in der [Dokumentation der Instanzen](https://www.symcon.de/service/dokumentation/konzepte/instanzen/#Instanz_hinzufügen)
+---
 
-__Konfigurationsseite__:
+## 4. Einrichtung der Instanzen in IP-Symcon
 
-Name     | Beschreibung
--------- | ------------------
-Webhook                             |	Hier wird der verwendete Webhook angezeigt. Diesen in der Kamerakonfiguration eintragen
-Instanz aktivieren                  |	Hier kann die Instanz temporär deaktiviert werden, um Fehlermeldungen bei Nichtverfügbarkeit der Kamera zu verhindern.
-IP-Adresse                          |	IP-Adresse der Kamera
-Benutzername                        |   Benutzername zur Anmeldung im Interface der Kamera
-Passwort                            |   Passwort zur Anmeldung im Interface der Kamera. Es dürfen keine Sonderzeichen wie +, @, :, /, ?, #, [, ] verwendet werden.
-Stream-Typ                          |   Standard ist Substream. Hier kann zwischen Main- und Substream gewählt werden. Achtung: Der Mainstream ist häufig H265 codiert, dies kann von IP-Symcon nicht abgespielt werden.
-API-Funktionen                      |   Unterhalb diesem Menu befinden sich die API-Funktionen. Die Funktionen werden laufend erweitert. Aktuell ist die LED-, Email- und PTZ-Steuerung verfügbar. In der PTZ-Steuerung integriert sind ebenfalls die Presets (auswählen und speichern) und Zoom-Funktion. Aktuelle Einschränkung beim Zoomen: Es kann nur von 0-10 über die API gezoomt werden, nicht wie im Kamerainterface zum Beispiel 0-27.
-Polling aktivieren                  |   Den Schalter nur aktivieren, wenn die Kamera keinen Webhook unterstützt. Webhook ist immer zu bevorzugen. Wenn der Schalter aktiviert ist wird die Kamera aktiv im eingegebenen Intervall abgefragt, was eine entsprechende Verzögerung mit sich bringt. Es wird aktuell nur die intelligente Erkennung abgefragt (Personen, Tiere, Fahrzeuge).
-Test-Elemente anzeigen              |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable, um mit der Testfunktion des Webhook aus dem Kamerainterface zu arbeiten. Dies ist nur für allfällige Tests und Diagnose erforderlich.
-Besucher-Erkennung                  |   Aktiviert die Anzeige der Elemente wie Bildarchiv, Schnappschuss und Variable für die Besucher-Erkennung (Nur Doorbell)
-Intelligente Bewegungserkennung     |   Aktiviert die intelligente Bewegungserkennung
-Schnappschüsse anzeigen             |   Aktiviert den letzen Schnappschuss der intelligenten Bewegungserkennung zur allfälligen Weiterverarbeitung. Solange noch kein Schnappschuss erstellt ist wird nichts angezeigt.
-Bildarchive anzeigen                |   Aktiviert die Bildarchive. Beachte, dass die Bildarchive nur in der Visu angezeigt werden, wenn diese separat verlinkt werden.
-Anzahl Archivbilder                 |   Standard ist 20. Bestimmt die maximale Anzahl der Archivbilder. Nicht zu viele Bilder einstellen, da diese alle in IP-Symcon gespeichert werden.
+### Instanz hinzufügen
+- Unter *Instanz hinzufügen* das Modul **Reolink** auswählen.
 
-### 5. Statusvariablen und Profile
+### Konfigurationsparameter
 
-Die Statusvariablen/Kategorien werden automatisch angelegt. Das Löschen einzelner kann zu Fehlfunktionen führen.
+| Name | Beschreibung |
+|------|---------------|
+| **Webhook** | Wird automatisch erzeugt. Dieser Pfad muss exakt im Kamera-Menü unter *Push → Webhook* eingetragen werden. |
+| **Instanz aktivieren** | Deaktiviert die Instanz temporär, um Fehlermeldungen zu vermeiden. |
+| **IP-Adresse** | IP-Adresse der Kamera. |
+| **Benutzername** | Benutzername für den Zugriff. |
+| **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
+| **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
+| **API-Funktionen** | Aktiviert LED-, E-Mail- und PTZ-Steuerung. |
+| **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
+| **Intelligente Bewegungserkennung** | Erstellt Variablen für Personen, Tiere, Fahrzeuge, Bewegung und Besucher. |
+| **Schnappschüsse anzeigen** | Zeigt den letzten Schnappschuss jeder Erkennungsart. |
+| **Bildarchive anzeigen** | Erstellt Archive mit Schnappschüssen; Anzeige über separate Verlinkung im WebFront. |
+| **Anzahl Archivbilder** | Maximale Bildanzahl pro Archiv (Standard 20). |
+| **Test-Elemente anzeigen** | Fügt Test-Variablen und Test-Snapshots hinzu (nur zur Diagnose). |
+| **Besucher-Erkennung** | Aktiviert Doorbell-Erkennung (nur Doorbell-Modelle). |
 
-#### Statusvariablen
+---
 
-Es werden Variablen/Typen je nach Wahl im Konfigurationsformular erstellt.
+## 5. Statusvariablen und Profile
 
-#### Profile
+### Statusvariablen
+Je nach Konfiguration werden automatisch angelegt:
 
-Name     | Typ
--------- | ------------------
-REOCAM.WLED              |	Integer
-REOCAM.EmailInterval     |	Integer
-REOCAM.EmailContent      |	Integer
+| Variable | Typ | Beschreibung |
+|-----------|-----|--------------|
+| Person | Boolean | Bewegung durch Person erkannt |
+| Tier | Boolean | Bewegung durch Tier erkannt |
+| Fahrzeug | Boolean | Bewegung durch Fahrzeug erkannt |
+| Bewegung | Boolean | Allgemeine Bewegung erkannt |
+| Besucher | Boolean | Besucher erkannt (Doorbell) |
+| WhiteLed / Mode / Bright | Integer / Boolean | LED-Licht-Parameter |
+| EmailNotify / Interval / Content | Integer / Boolean | E-Mail-Steuerung |
+| PTZ_HTML | String | HTML-Element für PTZ-Steuerung |
 
-### 6. WebFront
+### Profile
 
-Integration von Kamerastream, Schnappschüssen und Variablen zur intelligenten Bewegungserkennung und Bildarchiv.
+| Profilname | Typ | Beschreibung |
+|-------------|-----|--------------|
+| `REOCAM.WLED` | Integer | LED-Modus (Aus / Auto / Zeit) |
+| `REOCAM.EmailInterval` | Integer | Versandintervall |
+| `REOCAM.EmailContent` | Integer | E-Mail-Inhalt (Text / Bild / Video) |
 
-### 7. Webhook
+---
 
-Es wird automatisch ein Webhook erstellt. Der Name des Webhook wird oben im Konfigurationsformular angezeigt. Dieser Pfad muss im Webinterface der Kamera in den Einstellungen unter Push eingetragen werden. Dort den Webhook-Pfad mit dem Default-Content hinzufügen.
+## 6. WebFront
 
-### 8. Versionen
+- Anzeige des **Live-Streams** über RTSP-Medienobjekt  
+- Darstellung der **Schnappschüsse** und **Bildarchive**  
+- Direkte **PTZ-Steuerung** über ein integriertes HTML-Element  
+- Klare Trennung der Ereignis-Kategorien (Person, Tier, Fahrzeug, Besucher)
 
-Version 2.9 (23.10.2025)
-- Verbesserte Erkennung der Server-IP-Adresse im Konfigurationsformular.
+---
 
-Version 2.8 (30.09.2025)
-- Nun ist ein Schalter zum Deaktivieren der Instanz im Konfigurationsformular verfügbar.
-- Der kompletten Pfad zum Hook wird nun im Konfigurationsformular angezeigt.
-- Die Debug-Ausgabe komplett überarbeitet.
-- Code überarbeitet, insbesondere finden keine redundanten API-Abfragen mehr statt.
+## 7. Webhook
 
-Version 2.7 (04.09.2025)
-- Neue API-Funktion 'PTZ-Steuerung'. Es wird ein html-Element generiert. Dies beinhaltet die PTZ-Steuerung , die Zoomfunktion und die Möglichkeit, Presets zu speichern und abzurufen.
-- Konfigurationsformular angepasst, die API-Funktionen haben eine eigene Rubrik und können nun einzeln ausgewählt werden.
+- Der Webhook wird bei Instanz-Erstellung automatisch registriert.  
+- Der vollständige Pfad wird im Formular angezeigt.  
+- Dieser muss in der Kamera unter *Push → Webhook* eingetragen werden.  
+- Unterstützt POST-Payloads der Reolink-API sowie zusätzliche Status-Updates.  
+- Funktioniert über **Symcon Connect** (extern) und **lokal**.  
+- Unter Linux wird automatisch die **korrekte lokale IP** ermittelt (nicht 127.0.1.1).
 
-Version 2.6 (25.08.2025)
-- Neue API-Funktion 'Mailversand'. Die SMTP-Konfiguration ist im Kameraintrface vorzunehmen. Im Modul kann der Mailversand de/aktiviert (zb bei Abwesenheit), das Versand-Intervall eingestellt und der Mailinhalt bestimmt werden.
-- Einige Code Modifikationen
+---
 
-Version 2.5 (15.06.2025)
-- Codeoptimierung im Bereich der LED-Parameter.
-- Rechtschreibung korrigiert.
+## 8. Versionen
 
-Version 2.4 (14.02.2025)
-- urlencode hinzugefügt, um auch Benutzernamen und Passwörter mit Sonderzeichen zu erlauben.
+### Version 2.9 (23.10.2025)
+- Verbesserte Erkennung der Server-IP-Adresse im Konfigurationsformular
 
-Version 2.3 (02.01.2025)
-- Fehlermeldung beim Erstellen des Moduls behoben.
-- Erstellung der Webhook-Variablen entfernt (war nur zu Testzwecken). Im Fehlerfall ist das JSON aus dem Debug zu bewerten.
-- Code überarbeitet, einzelne Funktionen zusammengefasst und unnötige public Funktionen auf private gesetzt.
-- API-Variablen werden nur noch aktualisiert wenn sich deren Zustand geändert hat.
+### Version 2.8 (30.09.2025)
+- Neuer Schalter *Instanz deaktivieren*  
+- Vollständiger Webhook-Pfad im Formular  
+- Überarbeitete Debug-Ausgabe  
+- Optimierte API-Abfragen
 
-Version 2.2 (28.12.2024)
-- Verbesserte Fehlerbehandlung und Debugausgabe der 'SendApiRequest' Funktion
-- Die API-Istwerte werden nun alle 60 Sekunden abgefragt, um diese im Falle einer externen Änderung zu aktualisieren.
+### Version 2.7 (04.09.2025)
+- Neue API-Funktion *PTZ-Steuerung* (Zoom & Presets)  
+- Eigene Rubrik für API-Funktionen im Formular
 
-Version 2.1 (22.12.2024)
-- Anpassung Modulname
-- Anpassung Readme mit geänderter URL
+### Version 2.6 (25.08.2025)
+- Neue API-Funktion *E-Mail-Versand*  
+- Diverse interne Code-Anpassungen
 
-Version 2.0 (7.12.2024)
-- Es geht Richtung Store-Kompatibilität, diverse interne Anpassungen.
+### Version 2.5 (15.06.2025)
+- Code-Optimierungen für LED-Parameter
 
-Version 1.2 (19.11.2024)
-- Unterstützung für Kameras ohne Webhook (pollen)
+### Version 2.4 (14.02.2025)
+- `urlencode()`-Erweiterung für einfache Sonderzeichen
 
-Version 1.1 (17.11.2024)
-- Unterstützung der Doorbell
-- API-Funktion (Steuerung des LED-Licht)
+### Version 2.3 (02.01.2025)
+- Fehlerbehebung bei Instanz-Erstellung  
+- Verbesserte Debug-Ausgabe und API-Verarbeitung
 
-Version 1.0 (16.11.2024)
+### Version 2.2 (28.12.2024)
+- Verbesserte Fehlerbehandlung in `SendApiRequest`  
+- Automatische Aktualisierung der API-Werte
+
+### Version 2.1 (22.12.2024)
+- Anpassung Modulname  
+- Überarbeitete Readme-URL
+
+### Version 2.0 (07.12.2024)
+- Vorbereitung auf Store-Kompatibilität  
+- Diverse interne Anpassungen
+
+### Version 1.2 (19.11.2024)
+- Unterstützung für Kameras ohne Webhook (Polling)
+
+### Version 1.1 (17.11.2024)
+- Unterstützung Doorbell  
+- Neue API-Funktion LED-Licht
+
+### Version 1.0 (16.11.2024)
 - Initiale Beta-Version
+
+---
+
+9. Lizenz
+Dieses Modul steht unter der MIT-Lizenz.
+© 2025 Stefan Künzli
+https://opensource.org/licenses/MIT
