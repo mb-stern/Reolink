@@ -117,7 +117,15 @@ class Reolink extends IPSModule
         $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ);
+        $enablePush  = $this->ReadPropertyBoolean("EnableApiPush");
+        $enableRec   = $this->ReadPropertyBoolean("EnableApiRecord");
+        $enableFTP   = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSiren = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableSens  = $this->ReadPropertyBoolean("EnableApiSensitivity");
+
+        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ
+            || $enablePush || $enableRec || $enableFTP || $enableSiren || $enableSens);
+
 
         if ($anyFeatureOn) {
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
@@ -1909,48 +1917,44 @@ class Reolink extends IPSModule
 
     //Aufnahme (Bewegungsaufzeichnung) EIN/AUS
 
-    private function UpdateRecordStatus(): void {
-        $enabled = null;
-
-        // Versuch 1: global
-        $res = $this->apiCall([[ "cmd"=>"GetRec", "param"=>["channel"=>0] ]], 'RECORD', true);
-        if (is_array($res)) {
-            $v = $res[0]['value'] ?? [];
-            $rec = $v['Rec'] ?? $v['rec'] ?? $v;
-            $enabled = isset($rec['enable']) ? ((int)$rec['enable']===1) : null;
+    private function UpdateRecordStatus(): void 
+    {
+        $r = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'RECORD', true);
+        if (is_array($r) && isset($r[0]['value']['MdAlarm'])) {
+            $enabled = ((int)($r[0]['value']['MdAlarm']['record'] ?? 0)===1);
+            $id = @$this->GetIDForIdent("RecordOnMotion");
+            if ($id!==false) $this->SetValue("RecordOnMotion", $enabled);
         }
-        // Versuch 2: motion-spezifisch
-        if ($enabled===null) {
-            $r2 = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'RECORD', true);
-            if (is_array($r2)) {
-                $v = $r2[0]['value']['MdAlarm'] ?? [];
-                $enabled = isset($v['record']) ? ((int)$v['record']===1) : null;
-            }
-        }
-        $id = @$this->GetIDForIdent("RecordOnMotion");
-        if ($id!==false && $enabled!==null) $this->SetValue("RecordOnMotion", (bool)$enabled);
     }
 
-    private function RecordApply(bool $on): bool {
-        // Versuch 1: SetRec
-        $r1 = $this->apiCall([[ "cmd"=>"SetRec", "param"=>["Rec"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'RECORD', true);
-        if (is_array($r1) && (($r1[0]['code'] ?? -1)===0)) return true;
-
-        // Versuch 2: MdAlarm.record
-        $r2 = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>["record"=>$on?1:0, "channel"=>0]] ]], 'RECORD', true);
-        return is_array($r2) && (($r2[0]['code'] ?? -1)===0);
+    private function RecordApply(bool $on): bool 
+    {
+        $r = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>["record"=>$on?1:0, "channel"=>0]] ]], 'RECORD', true);
+        return is_array($r) && (($r[0]['code'] ?? -1)===0);
     }
+
 
     //FTP EIN/AUS
 
-    private function UpdateFtpStatus(): void {
-        $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
-        if (!is_array($res)) return;
-        $v = $res[0]['value']['Ftp'] ?? [];
-        $enabled = isset($v['enable']) ? ((int)$v['enable']===1) : null;
+    private function DetectFtpApiVersion(): string {
+        // Versuch V20 zuerst
+        $r = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
+        if (is_array($r) && (($r[0]['code'] ?? -1)===0)) return "V20";
 
-        $id = @$this->GetIDForIdent("FTPEnabled");
-        if ($id!==false && $enabled!==null) $this->SetValue("FTPEnabled", (bool)$enabled);
+        // Fallback: klassisch mit action
+        $r2 = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1 ]], 'FTP', true);
+        return (is_array($r2) && (($r2[0]['code'] ?? -1)===0)) ? "LEGACY" : "NONE";
+    }
+
+    private function UpdateFtpStatus(): void {
+        $ver = $this->DetectFtpApiVersion();
+        if ($ver === "V20") {
+            $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
+            // ... enabled aus $res[0]['value']['Ftp']['enable'] lesen
+        } elseif ($ver === "LEGACY") {
+            $res = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1 ]], 'FTP', true);
+            // ... enabled aus $res[0]['value']['Ftp']['schedule']['enable'] o.ä. lesen (siehe Doku)
+        }
     }
 
     private function FtpApply(bool $on): bool {
@@ -1961,31 +1965,20 @@ class Reolink extends IPSModule
     //Sirene EIN/AUS
 
     private function UpdateSirenStatus(): void {
-        $enabled = null;
-
-        // Kamera
-        $r1 = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
-        if (is_array($r1)) {
-            $s = $r1[0]['value']['Siren'] ?? [];
-            $enabled = isset($s['enable']) ? ((int)$s['enable']===1) : null;
+        // Versuch 1: V20
+        $r = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0] ]], 'SIREN', true);
+        if (is_array($r) && isset($r[0]['value'])) {
+            $node = $r[0]['value']['AudioAlarm'] ?? $r[0]['value'];
+            $enabled = isset($node['enable']) ? ((int)$node['enable']===1) : null;
+            if ($enabled!==null && ($id=@$this->GetIDForIdent("Siren"))!==false) $this->SetValue("Siren", (bool)$enabled);
+            return;
         }
-        // Alternative (einige Modelle/NVR)
-        if ($enabled===null) {
-            $r2 = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
-            if (is_array($r2)) {
-                $b = $r2[0]['value']['Buzzer'] ?? [];
-                $enabled = isset($b['enable']) ? ((int)$b['enable']===1) : null;
-            }
-        }
-        $id = @$this->GetIDForIdent("Siren");
-        if ($id!==false && $enabled!==null) $this->SetValue("Siren", (bool)$enabled);
     }
 
     private function SirenApply(bool $on): bool {
-        $r1 = $this->apiCall([[ "cmd"=>"SetSiren", "param"=>["Siren"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'SIREN', true);
-        if (is_array($r1) && (($r1[0]['code'] ?? -1)===0)) return true;
-        $r2 = $this->apiCall([[ "cmd"=>"SetBuzzer", "param"=>["Buzzer"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'SIREN', true);
-        return is_array($r2) && (($r2[0]['code'] ?? -1)===0);
+        $payload = [[ "cmd"=>"SetAudioAlarm", "param"=>[ "AudioAlarm"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
+        $r = $this->apiCall($payload, 'SIREN', true);
+        return is_array($r) && (($r[0]['code'] ?? -1)===0);
     }
 
     //Empfindlichkeit (ein Wert 0–100, AI/MD auto)
@@ -1995,47 +1988,30 @@ class Reolink extends IPSModule
         return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? "AI" : "MD";
     }
 
-    private function UpdateSensitivityStatus(): void
+    private function UpdateSensitivityStatus(): void 
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Sensitivity");
-        if ($id === false) return;
+        $id = @$this->GetIDForIdent("Sensitivity"); if ($id===false) return;
 
-        $api = $this->DetectSensitivityApi();
-        $cmd = ($api === "AI") ? "GetAiSensitivity" : "GetMdSensitivity";
-        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'SENS', true);
-        if (!is_array($res) || !isset($res[0]['value'])) { $this->dbg('SENS','Ungültige Antwort', $res); return; }
+        $res = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (!is_array($res) || !isset($res[0]['value'])) return;
+        $ai = $res[0]['value']['AiCfg'] ?? $res[0]['value'];
 
-        $v = $res[0]['value'];
-        $node = $v['AiSensitivity'] ?? $v['aiSensitivity'] ?? $v['MdSensitivity'] ?? $v['mdSensitivity'] ?? $v;
-        $val  = is_array($node) ? ($node['value'] ?? $node['Value'] ?? null) : ($v['value'] ?? null);
-
-        if (is_numeric($val)) {
-            $val = max(0, min(100, (int)$val));
-            if (GetValue($id) !== $val) $this->SetValue("Sensitivity", $val);
-        } else {
-            $this->dbg('SENS','Kein Sensitivitätswert gefunden', $res);
-        }
+        // Beispiel: du bündelst auf „motion“ bzw. „md“ – oder nimmst people/vehicle/dog_cat
+        $val = $ai['md']['sensitivity'] ?? $ai['people']['sensitivity'] ?? $ai['vehicle']['sensitivity'] ?? null;
+        if (is_numeric($val)) $this->SetValue("Sensitivity", max(0, min(100, (int)$val)));
     }
 
-    private function SensitivityApply(int $value): bool
+    private function SensitivityApply(int $value): bool 
     {
         if (!$this->apiEnsureToken()) return false;
         $value = max(0, min(100, $value));
-        $api = $this->DetectSensitivityApi();
-
-        if ($api === "AI") {
-            $r = $this->apiCall([[
-                "cmd"=>"SetAiSensitivity",
-                "param"=>["AiSensitivity"=>["value"=>$value, "channel"=>0]]
-            ]], 'SENS', true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-        }
-        $r2 = $this->apiCall([[
-            "cmd"=>"SetMdSensitivity",
-            "param"=>["MdSensitivity"=>["value"=>$value, "channel"=>0]]
-        ]], 'SENS', true);
-        return is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+        // Beispielhaft „md“ schreiben; je nach Wunsch auch auf people/vehicle/dog_cat verteilen
+        $payload = [[
+            "cmd"=>"SetAiCfg",
+            "param"=>["AiCfg" => ["channel"=>0, "md"=>["sensitivity"=>$value]]]
+        ]];
+        $r = $this->apiCall($payload, 'SENS', true);
+        return is_array($r) && (($r[0]['code'] ?? -1)===0);
     }
-
 }
