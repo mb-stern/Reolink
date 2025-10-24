@@ -84,7 +84,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Bildarchive anzeigen** | Erstellt Archive mit Schnappschüssen; Anzeige über separate Verlinkung im WebFront. |
 | **Anzahl Archivbilder** | Maximale Bildanzahl pro Archiv (Standard 20). |
 | **Test-Elemente anzeigen** | Fügt Test-Variablen und Test-Snapshots hinzu (nur zur Diagnose). |
-| **Besucher-Erkennung** | Aktiviert Doorbell-Erkennung (nur Doorbell-Modelle). |
+| **Besucher-Erkennung** | Aktiviert Klingel-Erkennung (nur Doorbell-Modelle). |
 
 ---
 
