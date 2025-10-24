@@ -2033,15 +2033,122 @@ class Reolink extends IPSModule
 
     //Sirene EIN/AUS
 
-    private function UpdateSirenStatus(): void {
-        // Versuch 1: V20
-        $r = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0] ]], 'SIREN', true);
-        if (is_array($r) && isset($r[0]['value'])) {
-            $node = $r[0]['value']['AudioAlarm'] ?? $r[0]['value'];
-            $enabled = isset($node['enable']) ? ((int)$node['enable']===1) : null;
-            if ($enabled!==null && ($id=@$this->GetIDForIdent("Siren"))!==false) $this->SetValue("Siren", (bool)$enabled);
-            return;
+    private function DetectSirenApiVariant(): string
+    {
+        // Reihenfolge: neues AudioAlarm -> klassisches Siren -> Buzzer
+        $t1 = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0] ]], 'SIREN', true);
+        if (is_array($t1) && (($t1[0]['code'] ?? -1)===0)) return "AudioAlarm";
+
+        $t2 = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
+        if (is_array($t2) && (($t2[0]['code'] ?? -1)===0)) return "Siren";
+
+        $t3 = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
+        if (is_array($t3) && (($t3[0]['code'] ?? -1)===0)) return "Buzzer";
+
+        return "NONE";
+    }
+
+    private function ParseSirenEnabledFromResponse(?array $res): ?bool
+    {
+        if (!is_array($res) || !isset($res[0]['value'])) return null;
+        $v = $res[0]['value'];
+
+        // AudioAlarm-Form
+        if (isset($v['AudioAlarm']) || isset($v['audioAlarm'])) {
+            $aa = $v['AudioAlarm'] ?? $v['audioAlarm'];
+            // Manche FW: enable direkt, andere: schedule/enable
+            if (isset($aa['enable'])) return ((int)$aa['enable']===1);
+            if (isset($aa['schedule']['enable'])) return ((int)$aa['schedule']['enable']===1);
         }
+
+        // Siren-Form
+        if (isset($v['Siren']) || isset($v['siren'])) {
+            $s = $v['Siren'] ?? $v['siren'];
+            if (isset($s['enable'])) return ((int)$s['enable']===1);
+            if (isset($s['Enable'])) return ((int)$s['Enable']===1);
+            if (isset($s['schedule']['enable'])) return ((int)$s['schedule']['enable']===1);
+        }
+
+        // Buzzer-Form (einige Modelle/NVR)
+        if (isset($v['Buzzer']) || isset($v['buzzer'])) {
+            $b = $v['Buzzer'] ?? $v['buzzer'];
+            if (isset($b['enable'])) return ((int)$b['enable']===1);
+            if (isset($b['Enable'])) return ((int)$b['Enable']===1);
+            if (isset($b['schedule']['enable'])) return ((int)$b['schedule']['enable']===1);
+        }
+
+        return null;
+    }
+
+    private function UpdateSirenStatus(): void
+    {
+        if (!$this->apiEnsureToken()) return;
+        $id = @$this->GetIDForIdent("Siren");
+        if ($id === false) return;
+
+        $variant = $this->DetectSirenApiVariant();
+        $res = null;
+
+        switch ($variant) {
+            case "AudioAlarm":
+                $res = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0] ]], 'SIREN', true);
+                break;
+            case "Siren":
+                // einige FWs benötigen "param"=>["channel"=>0], andere zusätzlich "action"=>0 – hier erst ohne
+                $res = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
+                if (!is_array($res) || (($res[0]['code'] ?? -1)!==0)) {
+                    $res = $this->apiCall([[ "cmd"=>"GetSiren", "action"=>0, "param"=>["channel"=>0] ]], 'SIREN', true);
+                }
+                break;
+            case "Buzzer":
+                $res = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
+                if (!is_array($res) || (($res[0]['code'] ?? -1)!==0)) {
+                    $res = $this->apiCall([[ "cmd"=>"GetBuzzer", "action"=>0, "param"=>["channel"=>0] ]], 'SIREN', true);
+                }
+                break;
+            default:
+                $this->dbg('SIREN', 'Kein passender Endpunkt verfügbar (AudioAlarm/Siren/Buzzer nicht unterstützt?)');
+                return;
+        }
+
+        $enabled = $this->ParseSirenEnabledFromResponse($res);
+        if ($enabled !== null) {
+            $this->SetValue("Siren", $enabled);
+            $this->dbg('SIREN', 'Status gelesen', ['enabled'=>$enabled, 'variant'=>$variant]);
+        } else {
+            $this->dbg('SIREN', 'Antwort ohne erkennbares enable-Feld', $res);
+        }
+    }
+
+    private function SirenApply(bool $on): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $variant = $this->DetectSirenApiVariant();
+        $payload = null;
+
+        switch ($variant) {
+            case "AudioAlarm":
+                $payload = [[ "cmd"=>"SetAudioAlarm", "param"=>[ "AudioAlarm"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
+                break;
+            case "Siren":
+                $payload = [[ "cmd"=>"SetSiren", "param"=>[ "Siren"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
+                break;
+            case "Buzzer":
+                $payload = [[ "cmd"=>"SetBuzzer", "param"=>[ "Buzzer"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
+                break;
+            default:
+                $this->dbg('SIREN', 'Set nicht möglich – kein Endpunkt verfügbar');
+                return false;
+        }
+
+        $r = $this->apiCall($payload, 'SIREN', true);
+        $ok = is_array($r) && (($r[0]['code'] ?? -1)===0);
+
+        // Nachsetzen: neu einlesen, damit UI stimmt
+        if ($ok) $this->UpdateSirenStatus(); 
+        else     $this->dbg('SIREN', 'Set FAIL', $r);
+
+        return $ok;
     }
 
     private function SirenApply(bool $on): bool {
