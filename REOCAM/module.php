@@ -114,17 +114,27 @@ class Reolink extends IPSModule
         }
 
         // API-Schalter
-        $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ);
+        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enablePush       = $this->ReadPropertyBoolean("EnableApiPush");
+        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
+        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
+
+        $anyFeatureOn = (
+            $enableWhiteLed || $enableEmail || $enablePTZ ||
+            $enablePush || $enableRecord || $enableFTP ||
+            $enableSiren || $enableSensitivity
+        );
 
         if ($anyFeatureOn) {
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             $this->CreateApiVariables();
             $this->GetToken();
-            $this->ExecuteApiRequests();
+            $this->ExecuteApiRequests(); // sofortige Erst-Synchronisation
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
