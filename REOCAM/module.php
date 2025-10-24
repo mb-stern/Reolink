@@ -45,6 +45,12 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("EmailApiVersion", "");
         $this->RegisterAttributeString("PtzStyle", "");
         $this->RegisterAttributeString("PtzPresetsCache", "");
+        $this->RegisterPropertyBoolean("EnableApiPush",   true);
+        $this->RegisterPropertyBoolean("EnableApiRecord", true);
+        $this->RegisterPropertyBoolean("EnableApiFTP",    false);
+        $this->RegisterPropertyBoolean("EnableApiSiren",  false);
+        $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
+
 
 
         // Timer
@@ -168,6 +174,37 @@ class Reolink extends IPSModule
                 $ok = $this->EmailApply(null, null, (int)$Value);
                 if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
                 else     { $this->EmailApply(null, null, null); }
+                break;
+
+            case "PushNotify":
+                $ok = $this->PushApply((bool)$Value);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
+                else     $this->UpdatePushStatus();
+                break;
+
+            case "RecordOnMotion":
+                $ok = $this->RecordApply((bool)$Value);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
+                else     $this->UpdateRecordStatus();
+                break;
+
+            case "FTPEnabled":
+                $ok = $this->FtpApply((bool)$Value);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
+                else     $this->UpdateFtpStatus();
+                break;
+
+            case "Siren":
+                $ok = $this->SirenApply((bool)$Value);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
+                else     $this->UpdateSirenStatus();
+                break;
+
+            case "Sensitivity":
+                $val = max(0, min(100, (int)$Value));
+                $ok  = $this->SensitivityApply($val);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
+                else     $this->UpdateSensitivityStatus();
                 break;
 
             default:
@@ -1000,22 +1037,64 @@ class Reolink extends IPSModule
             $id = @$this->GetIDForIdent("PTZ_HTML");
             if ($id !== false) $this->UnregisterVariable("PTZ_HTML");
         }
+
+        // Push
+        if ($this->ReadPropertyBoolean("EnableApiPush")) {
+            if (!@$this->GetIDForIdent("PushNotify")) {
+                $this->RegisterVariableBoolean("PushNotify", "Push-Nachrichten", "~Switch", 6);
+                $this->EnableAction("PushNotify");
+            }
+        } else { $id=@$this->GetIDForIdent("PushNotify"); if($id!==false) $this->UnregisterVariable("PushNotify"); }
+
+        // Aufnahme (Bewegung)
+        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
+            if (!@$this->GetIDForIdent("RecordOnMotion")) {
+                $this->RegisterVariableBoolean("RecordOnMotion", "Aufnahme (Bewegung)", "~Switch", 7);
+                $this->EnableAction("RecordOnMotion");
+            }
+        } else { $id=@$this->GetIDForIdent("RecordOnMotion"); if($id!==false) $this->UnregisterVariable("RecordOnMotion"); }
+
+        // FTP
+        if ($this->ReadPropertyBoolean("EnableApiFTP")) {
+            if (!@$this->GetIDForIdent("FTPEnabled")) {
+                $this->RegisterVariableBoolean("FTPEnabled", "FTP-Upload", "~Switch", 9);
+                $this->EnableAction("FTPEnabled");
+            }
+        } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
+
+        // Sirene
+        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+            if (!@$this->GetIDForIdent("Siren")) {
+                $this->RegisterVariableBoolean("Siren", "Sirene", "~Switch", 11);
+                $this->EnableAction("Siren");
+            }
+        } else { $id=@$this->GetIDForIdent("Siren"); if($id!==false) $this->UnregisterVariable("Siren"); }
+
+        // Empfindlichkeit (0..100)
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
+            if (!@$this->GetIDForIdent("Sensitivity")) {
+                $this->RegisterVariableInteger("Sensitivity", "Empfindlichkeit", "~Intensity.100", 12);
+                $this->EnableAction("Sensitivity");
+                // kein SetValue() – Wert wird via UpdateSensitivityStatus() vom Gerät gelesen
+            }
+        } else {
+            $id = @$this->GetIDForIdent("Sensitivity");
+            if ($id !== false) $this->UnregisterVariable("Sensitivity");
+        }
     }
 
     public function ExecuteApiRequests()
     {
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
-
-        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-            $this->UpdateWhiteLedStatus();
-        }
-        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            $this->EmailApply(null, null, null);
-        }
-        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->CreateOrUpdatePTZHtml(false);
-}
+        if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))   {$this->UpdateWhiteLedStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiEmail"))      {$this->EmailApply(null, null, null); }
+        if ($this->ReadPropertyBoolean("EnableApiPTZ"))        {$this->CreateOrUpdatePTZHtml(false); }
+        if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiRecord"))     { $this->UpdateRecordStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiSiren"))      { $this->UpdateSirenStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
 
     }
 
@@ -1568,6 +1647,7 @@ class Reolink extends IPSModule
         $s = $this->ReadAttributeString("PtzStyle");
         return ($s === "flat" || $s === "nested") ? $s : "";
     }
+   
     private function setPtzStyle(string $s): void
     {
         if ($s === "flat" || $s === "nested") {
@@ -1775,4 +1855,167 @@ class Reolink extends IPSModule
         }
         return $ok;
     }
+
+    //Push EIN/AUS
+
+    private function DetectPushApiVersion(): string {
+    $test = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
+    return (is_array($test) && (($test[0]['code'] ?? -1) === 0)) ? "V20" : "LEGACY";
+    }
+
+    private function UpdatePushStatus(): void {
+        $ver = $this->DetectPushApiVersion();
+        $cmd = ($ver==='V20') ? "GetPushV20" : "GetPush";
+        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'PUSH', true);
+
+        $enabled = null;
+        if (is_array($res)) {
+            $v = $res[0]['value'] ?? [];
+            $push = $v['Push'] ?? $v['push'] ?? $v;
+            $enabled = isset($push['enable']) ? ((int)$push['enable']===1)
+                    : (isset($push['Enable']) ? ((int)$push['Enable']===1) : null);
+        }
+        $id = @$this->GetIDForIdent("PushNotify");
+        if ($id!==false && $enabled!==null) $this->SetValue("PushNotify", (bool)$enabled);
+    }
+
+    private function PushApply(bool $on): bool {
+        $ver = $this->DetectPushApiVersion();
+        $cmd = ($ver==='V20') ? "SetPushV20" : "SetPush";
+        $payload = [[ "cmd"=>$cmd, "param"=>[ "Push" => ["enable"=>$on?1:0, "channel"=>0] ] ]];
+        $res = $this->apiCall($payload, 'PUSH', true);
+        return is_array($res) && (($res[0]['code'] ?? -1)===0);
+    }
+
+    //Aufnahme (Bewegungsaufzeichnung) EIN/AUS
+
+    private function UpdateRecordStatus(): void {
+        $enabled = null;
+
+        // Versuch 1: global
+        $res = $this->apiCall([[ "cmd"=>"GetRec", "param"=>["channel"=>0] ]], 'RECORD', true);
+        if (is_array($res)) {
+            $v = $res[0]['value'] ?? [];
+            $rec = $v['Rec'] ?? $v['rec'] ?? $v;
+            $enabled = isset($rec['enable']) ? ((int)$rec['enable']===1) : null;
+        }
+        // Versuch 2: motion-spezifisch
+        if ($enabled===null) {
+            $r2 = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'RECORD', true);
+            if (is_array($r2)) {
+                $v = $r2[0]['value']['MdAlarm'] ?? [];
+                $enabled = isset($v['record']) ? ((int)$v['record']===1) : null;
+            }
+        }
+        $id = @$this->GetIDForIdent("RecordOnMotion");
+        if ($id!==false && $enabled!==null) $this->SetValue("RecordOnMotion", (bool)$enabled);
+    }
+
+    private function RecordApply(bool $on): bool {
+        // Versuch 1: SetRec
+        $r1 = $this->apiCall([[ "cmd"=>"SetRec", "param"=>["Rec"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'RECORD', true);
+        if (is_array($r1) && (($r1[0]['code'] ?? -1)===0)) return true;
+
+        // Versuch 2: MdAlarm.record
+        $r2 = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>["record"=>$on?1:0, "channel"=>0]] ]], 'RECORD', true);
+        return is_array($r2) && (($r2[0]['code'] ?? -1)===0);
+    }
+
+    //FTP EIN/AUS
+
+    private function UpdateFtpStatus(): void {
+        $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
+        if (!is_array($res)) return;
+        $v = $res[0]['value']['Ftp'] ?? [];
+        $enabled = isset($v['enable']) ? ((int)$v['enable']===1) : null;
+
+        $id = @$this->GetIDForIdent("FTPEnabled");
+        if ($id!==false && $enabled!==null) $this->SetValue("FTPEnabled", (bool)$enabled);
+    }
+
+    private function FtpApply(bool $on): bool {
+        $res = $this->apiCall([[ "cmd"=>"SetFtp", "param"=>["Ftp"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'FTP', true);
+        return is_array($res) && (($res[0]['code'] ?? -1)===0);
+    }
+
+    //Sirene EIN/AUS
+
+    private function UpdateSirenStatus(): void {
+        $enabled = null;
+
+        // Kamera
+        $r1 = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
+        if (is_array($r1)) {
+            $s = $r1[0]['value']['Siren'] ?? [];
+            $enabled = isset($s['enable']) ? ((int)$s['enable']===1) : null;
+        }
+        // Alternative (einige Modelle/NVR)
+        if ($enabled===null) {
+            $r2 = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
+            if (is_array($r2)) {
+                $b = $r2[0]['value']['Buzzer'] ?? [];
+                $enabled = isset($b['enable']) ? ((int)$b['enable']===1) : null;
+            }
+        }
+        $id = @$this->GetIDForIdent("Siren");
+        if ($id!==false && $enabled!==null) $this->SetValue("Siren", (bool)$enabled);
+    }
+
+    private function SirenApply(bool $on): bool {
+        $r1 = $this->apiCall([[ "cmd"=>"SetSiren", "param"=>["Siren"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'SIREN', true);
+        if (is_array($r1) && (($r1[0]['code'] ?? -1)===0)) return true;
+        $r2 = $this->apiCall([[ "cmd"=>"SetBuzzer", "param"=>["Buzzer"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'SIREN', true);
+        return is_array($r2) && (($r2[0]['code'] ?? -1)===0);
+    }
+
+    //Empfindlichkeit (ein Wert 0–100, AI/MD auto)
+    private function DetectSensitivityApi(): string
+    {
+        $t = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
+        return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? "AI" : "MD";
+    }
+
+    private function UpdateSensitivityStatus(): void
+    {
+        if (!$this->apiEnsureToken()) return;
+        $id = @$this->GetIDForIdent("Sensitivity");
+        if ($id === false) return;
+
+        $api = $this->DetectSensitivityApi();
+        $cmd = ($api === "AI") ? "GetAiSensitivity" : "GetMdSensitivity";
+        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'SENS', true);
+        if (!is_array($res) || !isset($res[0]['value'])) { $this->dbg('SENS','Ungültige Antwort', $res); return; }
+
+        $v = $res[0]['value'];
+        $node = $v['AiSensitivity'] ?? $v['aiSensitivity'] ?? $v['MdSensitivity'] ?? $v['mdSensitivity'] ?? $v;
+        $val  = is_array($node) ? ($node['value'] ?? $node['Value'] ?? null) : ($v['value'] ?? null);
+
+        if (is_numeric($val)) {
+            $val = max(0, min(100, (int)$val));
+            if (GetValue($id) !== $val) $this->SetValue("Sensitivity", $val);
+        } else {
+            $this->dbg('SENS','Kein Sensitivitätswert gefunden', $res);
+        }
+    }
+
+    private function SensitivityApply(int $value): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $value = max(0, min(100, $value));
+        $api = $this->DetectSensitivityApi();
+
+        if ($api === "AI") {
+            $r = $this->apiCall([[
+                "cmd"=>"SetAiSensitivity",
+                "param"=>["AiSensitivity"=>["value"=>$value, "channel"=>0]]
+            ]], 'SENS', true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+        }
+        $r2 = $this->apiCall([[
+            "cmd"=>"SetMdSensitivity",
+            "param"=>["MdSensitivity"=>["value"=>$value, "channel"=>0]]
+        ]], 'SENS', true);
+        return is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+    }
+
 }
