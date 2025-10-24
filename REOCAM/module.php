@@ -2117,4 +2117,37 @@ class Reolink extends IPSModule
         return false;
     }
 
+    private function aiRead(): ?array 
+    {
+    $r = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
+    if (!is_array($r) || !isset($r[0]['value'])) return null;
+    return $r[0]['value']['AiCfg'] ?? $r[0]['value'] ?? null;
+    }
+
+    private function UpdateAiSensitivityStatus(): void 
+    {
+        if (!$this->apiEnsureToken()) return;
+        $id = @$this->GetIDForIdent("SensitivityAI"); if ($id===false) return;
+
+        $ai = $this->aiRead(); if (!$ai) return;
+        $v  = $ai['people']['sensitivity'] ?? null; // alternativ vehicle/dog_cat
+        if (is_numeric($v)) $this->SetValue("SensitivityAI", max(0, min(100, (int)$v)));
+    }
+
+    private function AiSensitivityApply(int $val): bool 
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $val = max(0, min(100, (int)$val));
+        $payload = [[
+            "cmd"=>"SetAiCfg",
+            "param"=>["AiCfg" => ["channel"=>0, "people"=>["sensitivity"=>$val]]]
+        ]];
+        $r = $this->apiCall($payload, 'SENS', true);
+        if (is_array($r) && (($r[0]['code'] ?? -1)===0)) {
+            $this->UpdateAiSensitivityStatus();
+            return true;
+        }
+        return false;
+    }
+
 }
