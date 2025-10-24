@@ -1928,20 +1928,19 @@ class Reolink extends IPSModule
     return (is_array($test) && (($test[0]['code'] ?? -1) === 0)) ? "V20" : "LEGACY";
     }
 
-    private function UpdatePushStatus(): void {
+    private function UpdatePushStatus(): void
+    {
         $ver = $this->DetectPushApiVersion();
         $cmd = ($ver==='V20') ? "GetPushV20" : "GetPush";
-        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'PUSH', true);
+        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'PUSH');
+        if (!is_array($res) || !isset($res[0]['value'])) { $this->dbg('PUSH','Ungültige Antwort', $res); return; }
 
-        $enabled = null;
-        if (is_array($res)) {
-            $v = $res[0]['value'] ?? [];
-            $push = $v['Push'] ?? $v['push'] ?? $v;
-            $enabled = isset($push['enable']) ? ((int)$push['enable']===1)
-                    : (isset($push['Enable']) ? ((int)$push['Enable']===1) : null);
-        }
-        $id = @$this->GetIDForIdent("PushNotify");
-        if ($id!==false && $enabled!==null) $this->SetValue("PushNotify", (bool)$enabled);
+        $v = $res[0]['value'];
+        $push = $v['Push'] ?? $v['push'] ?? $v;
+        $enabled = isset($push['enable']) ? ((int)$push['enable']===1)
+                : (isset($push['Enable']) ? ((int)$push['Enable']===1) : null);
+
+        $this->ApplyPushStateToVars($enabled);
     }
 
     private function PushApply(bool $on): bool {
@@ -1952,28 +1951,41 @@ class Reolink extends IPSModule
         return is_array($res) && (($res[0]['code'] ?? -1)===0);
     }
 
+    private function ApplyPushStateToVars(?bool $enabled): void
+    {
+        $id = @$this->GetIDForIdent("PushNotify");
+        if ($id === false || $enabled === null) return;
+        $old = (bool)GetValue($id);
+        if ($old !== (bool)$enabled) {
+            $this->SetValue("PushNotify", (bool)$enabled);
+            $this->dbg('PUSH', 'Var geändert', ['old'=>$old, 'new'=>$enabled]);
+        } else {
+            $this->dbg('PUSH', 'Unverändert', ['value'=>$enabled], true);
+        }
+    }
+
     //Aufnahme (Bewegungsaufzeichnung) EIN/AUS
 
-    private function UpdateRecordStatus(): void {
+    private function UpdateRecordStatus(): void
+    {
+        // Versuch 1: GetRec
+        $res = $this->apiCall([[ "cmd"=>"GetRec", "param"=>["channel"=>0] ]], 'RECORD');
         $enabled = null;
-
-        // Versuch 1: global
-        $res = $this->apiCall([[ "cmd"=>"GetRec", "param"=>["channel"=>0] ]], 'RECORD', true);
-        if (is_array($res)) {
-            $v = $res[0]['value'] ?? [];
+        if (is_array($res) && isset($res[0]['value'])) {
+            $v = $res[0]['value'];
             $rec = $v['Rec'] ?? $v['rec'] ?? $v;
-            $enabled = isset($rec['enable']) ? ((int)$rec['enable']===1) : null;
+            if (isset($rec['enable'])) $enabled = ((int)$rec['enable']===1);
         }
-        // Versuch 2: motion-spezifisch
+        // Fallback: GetMdAlarm
         if ($enabled===null) {
             $r2 = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'RECORD', true);
-            if (is_array($r2)) {
-                $v = $r2[0]['value']['MdAlarm'] ?? [];
-                $enabled = isset($v['record']) ? ((int)$v['record']===1) : null;
+            if (is_array($r2) && isset($r2[0]['value']['MdAlarm']['record'])) {
+                $enabled = ((int)$r2[0]['value']['MdAlarm']['record']===1);
             }
         }
-        $id = @$this->GetIDForIdent("RecordOnMotion");
-        if ($id!==false && $enabled!==null) $this->SetValue("RecordOnMotion", (bool)$enabled);
+        if ($enabled===null) { $this->dbg('RECORD','Ungültige Antwort', $res ?? null); return; }
+
+        $this->ApplyRecordStateToVars($enabled);
     }
 
     private function RecordApply(bool $on): bool {
@@ -1986,16 +1998,28 @@ class Reolink extends IPSModule
         return is_array($r2) && (($r2[0]['code'] ?? -1)===0);
     }
 
+    private function ApplyRecordStateToVars(?bool $enabled): void
+    {
+        $id = @$this->GetIDForIdent("RecordOnMotion");
+        if ($id === false || $enabled === null) return;
+        $old = (bool)GetValue($id);
+        if ($old !== (bool)$enabled) {
+            $this->SetValue("RecordOnMotion", (bool)$enabled);
+            $this->dbg('RECORD', 'Var geändert', ['old'=>$old, 'new'=>$enabled]);
+        } else {
+            $this->dbg('RECORD', 'Unverändert', ['value'=>$enabled], true);
+        }
+    }
+
     //FTP EIN/AUS
 
-    private function UpdateFtpStatus(): void {
-        $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
-        if (!is_array($res)) return;
-        $v = $res[0]['value']['Ftp'] ?? [];
-        $enabled = isset($v['enable']) ? ((int)$v['enable']===1) : null;
+    private function UpdateFtpStatus(): void
+    {
+        $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP');
+        if (!is_array($res) || !isset($res[0]['value']['Ftp'])) { $this->dbg('FTP','Ungültige Antwort', $res); return; }
+        $enabled = isset($res[0]['value']['Ftp']['enable']) ? ((int)$res[0]['value']['Ftp']['enable']===1) : null;
 
-        $id = @$this->GetIDForIdent("FTPEnabled");
-        if ($id!==false && $enabled!==null) $this->SetValue("FTPEnabled", (bool)$enabled);
+        $this->ApplyFtpStateToVars($enabled);
     }
 
     private function FtpApply(bool $on): bool {
@@ -2003,27 +2027,38 @@ class Reolink extends IPSModule
         return is_array($res) && (($res[0]['code'] ?? -1)===0);
     }
 
+    private function ApplyFtpStateToVars(?bool $enabled): void
+    {
+        $id = @$this->GetIDForIdent("FTPEnabled");
+        if ($id === false || $enabled === null) return;
+        $old = (bool)GetValue($id);
+        if ($old !== (bool)$enabled) {
+            $this->SetValue("FTPEnabled", (bool)$enabled);
+            $this->dbg('FTP', 'Var geändert', ['old'=>$old, 'new'=>$enabled]);
+        } else {
+            $this->dbg('FTP', 'Unverändert', ['value'=>$enabled], true);
+        }
+    }
+
     //Sirene EIN/AUS
 
-    private function UpdateSirenStatus(): void {
+    private function UpdateSirenStatus(): void
+    {
         $enabled = null;
 
-        // Kamera
         $r1 = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
-        if (is_array($r1)) {
-            $s = $r1[0]['value']['Siren'] ?? [];
-            $enabled = isset($s['enable']) ? ((int)$s['enable']===1) : null;
+        if (is_array($r1) && isset($r1[0]['value']['Siren']['enable'])) {
+            $enabled = ((int)$r1[0]['value']['Siren']['enable']===1);
         }
-        // Alternative (einige Modelle/NVR)
         if ($enabled===null) {
             $r2 = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
-            if (is_array($r2)) {
-                $b = $r2[0]['value']['Buzzer'] ?? [];
-                $enabled = isset($b['enable']) ? ((int)$b['enable']===1) : null;
+            if (is_array($r2) && isset($r2[0]['value']['Buzzer']['enable'])) {
+                $enabled = ((int)$r2[0]['value']['Buzzer']['enable']===1);
             }
         }
-        $id = @$this->GetIDForIdent("Siren");
-        if ($id!==false && $enabled!==null) $this->SetValue("Siren", (bool)$enabled);
+        if ($enabled===null) { $this->dbg('SIREN','Ungültige Antwort'); return; }
+
+        $this->ApplySirenStateToVars($enabled);
     }
 
     private function SirenApply(bool $on): bool {
@@ -2031,6 +2066,19 @@ class Reolink extends IPSModule
         if (is_array($r1) && (($r1[0]['code'] ?? -1)===0)) return true;
         $r2 = $this->apiCall([[ "cmd"=>"SetBuzzer", "param"=>["Buzzer"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'SIREN', true);
         return is_array($r2) && (($r2[0]['code'] ?? -1)===0);
+    }
+
+    private function ApplySirenStateToVars(?bool $enabled): void
+    {
+        $id = @$this->GetIDForIdent("Siren");
+        if ($id === false || $enabled === null) return;
+        $old = (bool)GetValue($id);
+        if ($old !== (bool)$enabled) {
+            $this->SetValue("Siren", (bool)$enabled);
+            $this->dbg('SIREN', 'Var geändert', ['old'=>$old, 'new'=>$enabled]);
+        } else {
+            $this->dbg('SIREN', 'Unverändert', ['value'=>$enabled], true);
+        }
     }
 
     //Empfindlichkeit (ein Wert 0–100, AI/MD auto)
@@ -2043,24 +2091,17 @@ class Reolink extends IPSModule
     private function UpdateSensitivityStatus(): void
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Sensitivity");
-        if ($id === false) return;
-
         $api = $this->DetectSensitivityApi();
         $cmd = ($api === "AI") ? "GetAiSensitivity" : "GetMdSensitivity";
-        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'SENS', true);
+        $res = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0] ]], 'SENS');
         if (!is_array($res) || !isset($res[0]['value'])) { $this->dbg('SENS','Ungültige Antwort', $res); return; }
 
         $v = $res[0]['value'];
         $node = $v['AiSensitivity'] ?? $v['aiSensitivity'] ?? $v['MdSensitivity'] ?? $v['mdSensitivity'] ?? $v;
         $val  = is_array($node) ? ($node['value'] ?? $node['Value'] ?? null) : ($v['value'] ?? null);
+        $val  = is_numeric($val) ? (int)$val : null;
 
-        if (is_numeric($val)) {
-            $val = max(0, min(100, (int)$val));
-            if (GetValue($id) !== $val) $this->SetValue("Sensitivity", $val);
-        } else {
-            $this->dbg('SENS','Kein Sensitivitätswert gefunden', $res);
-        }
+        $this->ApplySensitivityStateToVars($val);
     }
 
     private function SensitivityApply(int $value): bool
@@ -2083,4 +2124,17 @@ class Reolink extends IPSModule
         return is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
     }
 
+    private function ApplySensitivityStateToVars(?int $val): void
+    {
+        $id = @$this->GetIDForIdent("Sensitivity");
+        if ($id === false || $val === null) return;
+        $val = max(0, min(100, (int)$val));
+        $old = (int)GetValue($id);
+        if ($old !== $val) {
+            $this->SetValue("Sensitivity", $val);
+            $this->dbg('SENS', 'Var geändert', ['old'=>$old, 'new'=>$val]);
+        } else {
+            $this->dbg('SENS', 'Unverändert', ['value'=>$val], true);
+        }
+    }
 }
