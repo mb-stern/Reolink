@@ -2151,12 +2151,6 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function SirenApply(bool $on): bool {
-        $payload = [[ "cmd"=>"SetAudioAlarm", "param"=>[ "AudioAlarm"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
-        $r = $this->apiCall($payload, 'SIREN', true);
-        return is_array($r) && (($r[0]['code'] ?? -1)===0);
-    }
-
     private function DetectSensitivityApi(): string
     {
         $v = $this->ReadAttributeString("SensitivityApi");
