@@ -40,7 +40,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
 
         // Attribute
-        $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeBoolean("TokenRefreshing", false);
         $this->RegisterAttributeInteger("ApiTokenExpiresAt", 0);
         $this->RegisterAttributeString("CurrentHook", "");
@@ -50,7 +49,6 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("PtzPresetsCache", "");
         $this->RegisterAttributeString("PushApiVersion", "");
         $this->RegisterAttributeString("FtpApiVersion", "");
-        $this->RegisterAttributeString("SensitivityApi", "");
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -1060,13 +1058,6 @@ class Reolink extends IPSModule
             }
         } else { $id=@$this->GetIDForIdent("PushNotify"); if($id!==false) $this->UnregisterVariable("PushNotify"); }
 
-        // Aufnahme (Bewegung)
-        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-            if (!@$this->GetIDForIdent("RecordOnMotion")) {
-                $this->RegisterVariableBoolean("RecordOnMotion", "Aufnahme (Bewegung)", "~Switch", 7);
-                $this->EnableAction("RecordOnMotion");
-            }
-        } else { $id=@$this->GetIDForIdent("RecordOnMotion"); if($id!==false) $this->UnregisterVariable("RecordOnMotion"); }
 
         // FTP
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
@@ -1105,7 +1096,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiEmail"))      { $this->EmailApply(null, null, null); } // nur GET
             if ($this->ReadPropertyBoolean("EnableApiPTZ"))        { $this->CreateOrUpdatePTZHtml(false); }
             if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiRecord"))     { $this->UpdateRecordStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
         } finally {
@@ -2032,42 +2022,75 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-
-    private function DetectSensitivityApi(): string
-    {
-        $v = $this->ReadAttributeString("SensitivityApi");
-        if ($v === "AI" || $v === "MD") return $v;
-
-        $t = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
-        $v = (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? "AI" : "MD";
-        $this->WriteAttributeString("SensitivityApi", $v);
-        return $v;
-    }
-
     private function UpdateSensitivityStatus(): void 
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Sensitivity"); if ($id===false) return;
+        $id = @$this->GetIDForIdent("Sensitivity");
+        if ($id === false) return;
 
-        $res = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (!is_array($res) || !isset($res[0]['value'])) return;
-        $ai = $res[0]['value']['AiCfg'] ?? $res[0]['value'];
+        $val = null;
 
-        // Beispiel: du bündelst auf „motion“ bzw. „md“ – oder nimmst people/vehicle/dog_cat
-        $val = $ai['md']['sensitivity'] ?? $ai['people']['sensitivity'] ?? $ai['vehicle']['sensitivity'] ?? null;
-        if (is_numeric($val)) $this->SetValue("Sensitivity", max(0, min(100, (int)$val)));
+        // Versuch 1: GetAiCfg (verschiedene Firmwares, param unter AiCfg)
+        $r1 = $this->apiCall([[ "cmd" => "GetAiCfg", "param" => ["AiCfg" => ["channel" => 0]] ]], "SENS", true);
+        if (is_array($r1) && isset($r1[0]['value'])) {
+            $ai = $r1[0]['value']['AiCfg'] ?? $r1[0]['value'];
+            foreach (['people','vehicle','dog_cat','md'] as $k) {
+                if (isset($ai[$k]['sensitivity']) && is_numeric($ai[$k]['sensitivity'])) { $val = (int)$ai[$k]['sensitivity']; break; }
+                if (isset($ai[$k]['level'])       && is_numeric($ai[$k]['level']))       { $val = (int)$ai[$k]['level'];       break; }
+            }
+        }
+
+        // Versuch 2: GetAiSensitivity (manche liefern hier flache Zahlen/Objekte)
+        if ($val === null) {
+            $r2 = $this->apiCall([[ "cmd" => "GetAiSensitivity", "param" => ["channel" => 0] ]], "SENS", true);
+            if (is_array($r2) && isset($r2[0]['value'])) {
+                $node = $r2[0]['value']['AiSensitivity'] ?? $r2[0]['value'];
+                foreach (['people','vehicle','dog_cat','md'] as $k) {
+                    $x = $node[$k] ?? null;
+                    if (is_numeric($x)) { $val = (int)$x; break; }
+                    if (is_array($x) && isset($x['sensitivity']) && is_numeric($x['sensitivity'])) { $val = (int)$x['sensitivity']; break; }
+                }
+            }
+        }
+
+        // Versuch 3: Legacy Motion (MD)
+        if ($val === null) {
+            $r3 = $this->apiCall([[ "cmd" => "GetMdCfg", "param" => ["channel" => 0] ]], "SENS", true);
+            if (is_array($r3) && isset($r3[0]['value'])) {
+                $md = $r3[0]['value']['MdCfg'] ?? $r3[0]['value'];
+                $x = $md['sensitivity'] ?? $md['level'] ?? null;
+                if (is_numeric($x)) $val = (int)$x;
+            }
+        }
+
+        if ($val !== null) {
+            $this->SetValue("Sensitivity", max(0, min(100, $val)));
+        } else {
+            $this->dbg('SENS', 'Kein Sensitivity-Wert gefunden (alle Pfade leer).');
+        }
     }
 
-    private function SensitivityApply(int $value): bool 
+    private function SensitivityApply(int $value): bool
     {
         if (!$this->apiEnsureToken()) return false;
         $value = max(0, min(100, $value));
-        // Beispielhaft „md“ schreiben; je nach Wunsch auch auf people/vehicle/dog_cat verteilen
-        $payload = [[
-            "cmd"=>"SetAiCfg",
-            "param"=>["AiCfg" => ["channel"=>0, "md"=>["sensitivity"=>$value]]]
-        ]];
-        $r = $this->apiCall($payload, 'SENS', true);
-        return is_array($r) && (($r[0]['code'] ?? -1)===0);
+
+        // 1) Modern: SetAiCfg (unter AiCfg, auf "md" – alternativ könntest du hier auch people/vehicle/dog_cat mitschreiben)
+        $p1 = [[ "cmd" => "SetAiCfg", "param" => [ "AiCfg" => [ "channel" => 0, "md" => [ "sensitivity" => $value ] ] ] ]];
+        $r1 = $this->apiCall($p1, "SENS", true);
+        if (is_array($r1) && (($r1[0]['code'] ?? -1) === 0)) return true;
+
+        // 2) Alternative: SetAiSensitivity (falls FW das getrennt erwartet)
+        $p2 = [[ "cmd" => "SetAiSensitivity", "param" => [ "AiSensitivity" => [ "channel" => 0, "md" => $value ] ] ]];
+        $r2 = $this->apiCall($p2, "SENS", true);
+        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
+
+        // 3) Legacy: SetMdCfg (klassische Bewegungserkennung)
+        $p3 = [[ "cmd" => "SetMdCfg", "param" => [ "MdCfg" => [ "channel" => 0, "sensitivity" => $value ] ] ]];
+        $r3 = $this->apiCall($p3, "SENS", true);
+        if (is_array($r3) && (($r3[0]['code'] ?? -1) === 0)) return true;
+
+        $this->dbg('SENS', 'Sensitivity setzen fehlgeschlagen (alle Varianten).', ['value'=>$value]);
+        return false;
     }
 }
