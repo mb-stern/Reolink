@@ -36,6 +36,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiRecord", true);
         $this->RegisterPropertyBoolean("EnableApiFTP",    false);
         $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
+        $this->RegisterPropertyBoolean("EnableApiSiren",  false);
 
 
         // Archiv
