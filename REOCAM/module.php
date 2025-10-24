@@ -121,7 +121,7 @@ class Reolink extends IPSModule
         $enableSens  = $this->ReadPropertyBoolean("EnableApiSensitivity");
 
         $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ
-            || $enablePush || $enableRec || $enableFTP || $enableSens);
+            || $enablePush || $enableFTP || $enableSens);
 
         $this->SetTimerInterval("ApiRequestTimer", 0);
 
