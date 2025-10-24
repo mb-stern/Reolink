@@ -1118,15 +1118,7 @@ class Reolink extends IPSModule
     {
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
-        if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))   {$this->UpdateWhiteLedStatus(); }
-        if ($this->ReadPropertyBoolean("EnableApiEmail"))      {$this->EmailApply(null, null, null); }
-        if ($this->ReadPropertyBoolean("EnableApiPTZ"))        {$this->CreateOrUpdatePTZHtml(false); }
-        if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
-        if ($this->ReadPropertyBoolean("EnableApiRecord"))     { $this->UpdateRecordStatus(); }
-        if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
-        if ($this->ReadPropertyBoolean("EnableApiSiren"))      { $this->UpdateSirenStatus(); }
-        if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
-
+        $this->UpdateAllStatusesGeneric(); // einheitlicher Sync für alle Features
     }
 
     // ---------------------------
@@ -2137,4 +2129,245 @@ class Reolink extends IPSModule
             $this->dbg('SENS', 'Unverändert', ['value'=>$val], true);
         }
     }
+
+    // ==== Helpers (zentral) ====
+    private function apiGetFirst(array $cmds, string $topic): ?array {
+        foreach ($cmds as $c) {
+            $cmd   = is_array($c) ? ($c['cmd'] ?? '') : (string)$c;
+            $param = is_array($c) ? ($c['param'] ?? ["channel"=>0]) : ["channel"=>0];
+            if ($cmd === '') continue;
+            $r = $this->apiCall([[ "cmd"=>$cmd, "param"=>$param ]], $topic, /*suppress*/ true);
+            if (is_array($r) && isset($r[0]) && (($r[0]['code'] ?? 0) === 0)) return $r;
+        }
+        return null;
+    }
+
+    private function pick($arr, array $paths) {
+        foreach ($paths as $p) {
+            $node = $arr; $ok = true;
+            foreach (explode('.', $p) as $key) {
+                if (is_array($node) && array_key_exists($key, $node)) $node = $node[$key];
+                else { $ok = false; break; }
+            }
+            if ($ok) return $node;
+        }
+        return null;
+    }
+
+    private function toBool($v): ?bool {
+        if ($v === null) return null;
+        if (is_bool($v)) return $v;
+        if (is_numeric($v)) return ((int)$v) === 1;
+        if (is_string($v)) {
+            $s = strtolower(trim($v));
+            if (in_array($s, ['1','true','on','yes'], true))  return true;
+            if (in_array($s, ['0','false','off','no'], true))  return false;
+        }
+        return null;
+    }
+    private function toInt($v): ?int { return is_numeric($v) ? (int)$v : (is_string($v)&&is_numeric($v) ? (int)$v : null); }
+    private function clamp(?int $v, int $min, int $max): ?int { return $v===null?null:max($min, min($max, $v)); }
+
+    private function setVarIfExists(string $ident, $value): void {
+        $id = @$this->GetIDForIdent($ident);
+        if ($id !== false && $value !== null && GetValue($id) !== $value) {
+            $this->SetValue($ident, $value);
+        }
+    }
+
+    // bereits vorhanden bei dir – sicherstellen, dass dieser Helper da ist:
+    private function IntervalStringToSeconds(string $s): ?int {
+        $s = trim($s);
+        $map = [ "30 Seconds"=>30, "1 Minute"=>60, "5 Minutes"=>300, "10 Minutes"=>600, "30 Minutes"=>1800 ];
+        return $map[$s] ?? null;
+    }
+
+    // ==== Zentrale Status-Spezifikation ====
+    private function statusSpecs(): array {
+        return [
+            // Spotlight (WhiteLed)
+            [
+                'enabled_prop' => 'EnableApiWhiteLed',
+                'topic' => 'SPOTLIGHT',
+                'get_cmds' => [
+                    ['cmd'=>'GetWhiteLed','param'=>['channel'=>0]],
+                ],
+                'vars' => [
+                    ['ident'=>'WhiteLed', 'paths'=>['value.WhiteLed.state','value.state','state'], 'cast'=>'bool'],
+                    ['ident'=>'Mode',     'paths'=>['value.WhiteLed.mode','value.mode','mode'],    'cast'=>'int'],
+                    ['ident'=>'Bright',   'paths'=>['value.WhiteLed.bright','value.bright','bright'],'cast'=>'int','min'=>0,'max'=>100],
+                ],
+            ],
+
+            // Push
+            [
+                'enabled_prop' => 'EnableApiPush',
+                'topic' => 'PUSH',
+                'get_cmds' => [
+                    ['cmd'=>'GetPushV20','param'=>['channel'=>0]],
+                    ['cmd'=>'GetPush',   'param'=>['channel'=>0]],
+                ],
+                'vars' => [
+                    ['ident'=>'PushNotify', 'paths'=>[
+                        'value.Push.enable','value.push.enable','value.enable','enable','Enable'
+                    ], 'cast'=>'bool'],
+                ],
+            ],
+
+            // Aufnahme / Record
+            [
+                'enabled_prop' => 'EnableApiRecord',
+                'topic' => 'RECORD',
+                'get_cmds' => [
+                    ['cmd'=>'GetRec',     'param'=>['channel'=>0]],  // global
+                    ['cmd'=>'GetMdAlarm', 'param'=>['channel'=>0]],  // fallback
+                ],
+                'vars' => [
+                    ['ident'=>'RecordOnMotion', 'paths'=>[
+                        'value.Rec.enable','value.rec.enable','value.enable','enable',
+                        'value.MdAlarm.record','value.mdAlarm.record','value.record','record'
+                    ], 'cast'=>'bool'],
+                ],
+            ],
+
+            // FTP
+            [
+                'enabled_prop' => 'EnableApiFTP',
+                'topic' => 'FTP',
+                'get_cmds' => [
+                    ['cmd'=>'GetFtp','param'=>['channel'=>0]],
+                ],
+                'vars' => [
+                    ['ident'=>'FTPEnabled', 'paths'=>[
+                        'value.Ftp.enable','value.ftp.enable','value.enable','enable','Enable'
+                    ], 'cast'=>'bool'],
+                ],
+            ],
+
+            // Sirene
+            [
+                'enabled_prop' => 'EnableApiSiren',
+                'topic' => 'SIREN',
+                'get_cmds' => [
+                    ['cmd'=>'GetSiren','param'=>['channel'=>0]],
+                    ['cmd'=>'GetBuzzer','param'=>['channel'=>0]],
+                ],
+                'vars' => [
+                    ['ident'=>'Siren', 'paths'=>[
+                        'value.Siren.enable','value.siren.enable','value.Buzzer.enable','value.buzzer.enable','value.enable','enable'
+                    ], 'cast'=>'bool'],
+                ],
+            ],
+
+            // Sensitivity (0..100) – AI/MD automatisch
+            [
+                'enabled_prop' => 'EnableApiSensitivity',
+                'topic' => 'SENS',
+                'get_cmds' => [
+                    ['cmd'=>'GetAiSensitivity','param'=>['channel'=>0]],
+                    ['cmd'=>'GetMdSensitivity','param'=>['channel'=>0]],
+                ],
+                'vars' => [
+                    ['ident'=>'Sensitivity', 'paths'=>[
+                        'value.AiSensitivity.value','value.aiSensitivity.value',
+                        'value.MdSensitivity.value','value.mdSensitivity.value',
+                        'value.value','value.Value','value'
+                    ], 'cast'=>'int','min'=>0,'max'=>100],
+                ],
+            ],
+
+            // Email (3 Variablen)
+            [
+                'enabled_prop' => 'EnableApiEmail',
+                'topic' => 'EMAIL',
+                'get_cmds' => [
+                    ['cmd'=>'GetEmailV20','param'=>['channel'=>0]],
+                    ['cmd'=>'GetEmail',   'param'=>['channel'=>0]],
+                ],
+                'vars' => [
+                    ['ident'=>'EmailNotify', 'paths'=>[
+                        'value.Email.enable','value.enable',
+                        'value.Email.schedule.enable','value.schedule.enable'
+                    ], 'cast'=>'bool'],
+                    ['ident'=>'EmailInterval', 'paths'=>[
+                        'value.Email.intervalSec','value.intervalSec',
+                        'value.Email.interval','value.interval'
+                    ], 'cast'=>'email_interval'],
+                    ['ident'=>'EmailContent', 'paths'=>[
+                        'value.Email.attachmentType','value.attachmentType',
+                        'value.Email.textType','value.textType',
+                        'value.Email.attachment','value.attachment'
+                    ], 'cast'=>'email_content'],
+                ],
+            ],
+        ];
+    }
+
+    // ==== Casting / Mapping ====
+    private function castValue($raw, array $spec, array $fullResponse) {
+        $cast = $spec['cast'] ?? 'raw';
+        if ($cast === 'bool') return $this->toBool($raw);
+        if ($cast === 'int')  return $this->toInt($raw);
+
+        if ($cast === 'email_interval') {
+            if (is_numeric($raw)) return (int)$raw;
+            if (is_string($raw))  return $this->IntervalStringToSeconds($raw);
+            return null;
+        }
+
+        if ($cast === 'email_content') {
+            // V20: textType (0/1) + attachmentType (0/1/2) -> 0..3
+            $text = $this->pick($fullResponse[0], ['value.Email.textType','value.textType']);
+            $att  = $this->pick($fullResponse[0], ['value.Email.attachmentType','value.attachmentType']);
+            $legacyAtt = $this->pick($fullResponse[0], ['value.Email.attachment','value.attachment']);
+
+            if ($text !== null || $att !== null) {
+                $t = (int)($text ?? 1);
+                $a = (int)($att  ?? 0);
+                if (!$t && $a===1) return 1;     // Bild
+                if ($t  && $a===0) return 0;     // Text
+                if ($t  && $a===1) return 2;     // Text+Bild
+                if ($t  && $a===2) return 3;     // Text+Video
+                return 0;
+            }
+            if (is_string($legacyAtt)) {
+                switch ($legacyAtt) { case 'onlyPicture': return 1; case 'picture': return 2; case 'video': return 3; default: return 0; }
+            }
+            if (is_numeric($raw)) return (int)$raw;
+            return null;
+        }
+
+        return $raw; // fallback
+    }
+
+    // ==== Eine Spec-Sektion anwenden ====
+    private function applySpecSection(array $section): void {
+        $prop = $section['enabled_prop'] ?? null;
+        if ($prop && !$this->ReadPropertyBoolean($prop)) return;
+
+        $res = $this->apiGetFirst($section['get_cmds'] ?? [], $section['topic'] ?? 'API');
+        if (!is_array($res)) {
+            $this->dbg($section['topic'] ?? 'API', 'Kein gueltiges Response', $section['get_cmds'] ?? []);
+            return;
+        }
+
+        foreach ($section['vars'] as $vs) {
+            $raw = $this->pick($res[0], $vs['paths'] ?? []);
+            if (is_array($raw) && isset($raw[0]) && is_numeric($raw[0])) $raw = $raw[0];
+            $val = $this->castValue($raw, $vs, $res);
+
+            if (isset($vs['min']) || isset($vs['max'])) {
+                $val = $this->clamp(is_int($val) ? $val : null, $vs['min'] ?? PHP_INT_MIN, $vs['max'] ?? PHP_INT_MAX);
+            }
+            $this->setVarIfExists($vs['ident'], $val);
+        }
+    }
+
+    // ==== Gesamtsync ====
+    private function UpdateAllStatusesGeneric(): void {
+        foreach ($this->statusSpecs() as $sec) {
+            $this->applySpecSection($sec);
+        }
+    }
+
 }
