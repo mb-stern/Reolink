@@ -1119,6 +1119,21 @@ class Reolink extends IPSModule
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
         $this->UpdateAllStatusesGeneric(); // einheitlicher Sync für alle Features
+        // RECORD (Generic liefert nichts auf deinem Modell)
+        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
+            $this->UpdateRecordStatus();
+        }
+        // Diese vier sind je nach Modell/Antwort-Form gerne “zickig” – sauber frisch einlesen:
+        if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiSiren"))      { $this->UpdateSirenStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
+        if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))   { $this->UpdateWhiteLedStatus(); }
+        // Email konsolidiert lesen und auf Variablen mappen:
+        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
+            $st = $this->GetEmailState();
+            if (is_array($st)) { $this->ApplyEmailStateToVars($st); }
+        }
+
     }
 
     // ---------------------------
@@ -1193,7 +1208,7 @@ class Reolink extends IPSModule
         return $ver;
     }
 
-    private function IntervalSecondsToString(int $sec): ?string
+    private function EmailIntervalSecondsToString(int $sec): ?string
     {
         switch ($sec) {
             case 30: return "30 Seconds";
@@ -1204,7 +1219,7 @@ class Reolink extends IPSModule
         }
         return null;
     }
-    private function IntervalStringToSeconds(string $s): ?int
+    private function EmailIntervalStringToSeconds(string $s): ?int
     {
         $s = trim($s);
         $map = [ "30 Seconds" => 30, "1 Minute" => 60, "5 Minutes" => 300, "10 Minutes" => 600, "30 Minutes" => 1800 ];
@@ -1269,7 +1284,7 @@ class Reolink extends IPSModule
             if (isset($e['intervalSec']) && is_numeric($e['intervalSec'])) {
                 $intervalSec = (int)$e['intervalSec'];
             } elseif (isset($e['interval'])) {
-                $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
+                $intervalSec = $this->EmailIntervalStringToSeconds((string)$e['interval']);
             }
 
             // Content-Mode aus textType/attachmentType ableiten
@@ -1344,7 +1359,7 @@ class Reolink extends IPSModule
                 $email = [];
                 if ($enabled !== null)      $email['enable'] = $enabled ? 1 : 0;
                 if ($intervalSec !== null) {
-                    $str = $this->IntervalSecondsToString($intervalSec);
+                    $str = $this->EmailIntervalSecondsToString($intervalSec);
                     if ($str !== null)      $email['interval'] = $str;
                 }
                 if ($contentMode !== null) {
@@ -1365,7 +1380,7 @@ class Reolink extends IPSModule
                 $email = [];
                 if ($enabled !== null)      $email['schedule']['enable'] = $enabled ? 1 : 0;
                 if ($intervalSec !== null) {
-                    $str = $this->IntervalSecondsToString($intervalSec);
+                    $str = $this->EmailIntervalSecondsToString($intervalSec);
                     if ($str !== null)      $email['interval'] = $str;
                 }
                 if ($contentMode !== null) {
@@ -1384,7 +1399,7 @@ class Reolink extends IPSModule
                             $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
                         }
                         if ($intervalSec !== null) {
-                            $str = $this->IntervalSecondsToString($intervalSec);
+                            $str = $this->EmailIntervalSecondsToString($intervalSec);
                             if ($str !== null) {
                                 $r = $this->apiCall([[ "cmd"=>"SetEmail", "param"=>["Email"=>["interval"=>$str]] ]], 'EMAIL', true);
                                 $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
