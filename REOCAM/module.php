@@ -35,7 +35,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiPush",   true);
         $this->RegisterPropertyBoolean("EnableApiRecord", true);
         $this->RegisterPropertyBoolean("EnableApiFTP",    false);
-        $this->RegisterPropertyBoolean("EnableApiSiren",  false);
         $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
 
 
@@ -1999,41 +1998,36 @@ class Reolink extends IPSModule
         return "NONE";
     }
 
-    private function UpdateFtpStatus(): void 
-    {
-        $ver = $this->DetectFtpApiVersion();
-        $enabled = null;
-        $res = null;
-
-        if ($ver === "V20") {
-            $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
-            if (is_array($res)) {
-                $v = $res[0]['value'] ?? [];
-                $ftp = $v['Ftp'] ?? $v['ftp'] ?? $v;
-                // V20 liefert normalerweise Ftp.enable (0/1)
-                if (isset($ftp['enable'])) $enabled = ((int)$ftp['enable'] === 1);
+    private function UpdateFtpStatus(): void {
+        // 1) V20 direkt versuchen
+        $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            $this->WriteAttributeString("FtpApiVersion", "V20"); // cache
+            $ftp = $res[0]['value']['Ftp'] ?? null;
+            if (is_array($ftp) && array_key_exists('enable', $ftp)) {
+                $id = @$this->GetIDForIdent("FTPEnabled");
+                if ($id !== false) $this->SetValue("FTPEnabled", ((int)$ftp['enable'] === 1));
             }
-        } elseif ($ver === "LEGACY" || $ver === "LEGACY_A1") {
-            $payload = [ [ "cmd"=>"GetFtp", "param"=>["channel"=>0] ] ];
-            if ($ver === "LEGACY_A1") $payload[0]["action"] = 1;
-
-            $res = $this->apiCall($payload, 'FTP', true);
-            if (is_array($res)) {
-                $v = $res[0]['value'] ?? [];
-                $ftp = $v['Ftp'] ?? $v['ftp'] ?? $v;
-
-                // Manche FW: Ftp.enable, manche: Ftp.schedule.enable
-                if (isset($ftp['enable'])) {
-                    $enabled = ((int)$ftp['enable'] === 1);
-                } elseif (isset($ftp['schedule']['enable'])) {
-                    $enabled = ((int)$ftp['schedule']['enable'] === 1);
-                }
-            }
+            return; // fertig, nur 1 Call
         }
 
-        $id = @$this->GetIDForIdent("FTPEnabled");
-        if ($id !== false && $enabled !== null) {
-            $this->SetValue("FTPEnabled", (bool)$enabled);
+        // 2) Legacy als Fallback (nur wenn V20 nicht funktioniert)
+        $res2 = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1 ]], 'FTP', true);
+        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
+            $this->WriteAttributeString("FtpApiVersion", "LEGACY");
+            $node = $res2[0]['value']['Ftp'] ?? $res2[0]['value'] ?? null;
+            $enabled = null;
+            if (is_array($node)) {
+                // je nach Firmware: schedule.enable oder direkt enable
+                if (isset($node['schedule']['enable'])) {
+                    $enabled = ((int)$node['schedule']['enable'] === 1);
+                } elseif (isset($node['enable'])) {
+                    $enabled = ((int)$node['enable'] === 1);
+                }
+            }
+            if ($enabled !== null && ($id=@$this->GetIDForIdent("FTPEnabled"))!==false) {
+                $this->SetValue("FTPEnabled", $enabled);
+            }
         }
     }
 
