@@ -2175,13 +2175,6 @@ class Reolink extends IPSModule
         }
     }
 
-    // bereits vorhanden bei dir – sicherstellen, dass dieser Helper da ist:
-    private function IntervalStringToSeconds(string $s): ?int {
-        $s = trim($s);
-        $map = [ "30 Seconds"=>30, "1 Minute"=>60, "5 Minutes"=>300, "10 Minutes"=>600, "30 Minutes"=>1800 ];
-        return $map[$s] ?? null;
-    }
-
     // ==== Zentrale Status-Spezifikation ====
     private function statusSpecs(): array {
         return [
