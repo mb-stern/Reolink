@@ -2319,7 +2319,7 @@ class Reolink extends IPSModule
 
         if ($cast === 'email_interval') {
             if (is_numeric($raw)) return (int)$raw;
-            if (is_string($raw))  return $this->IntervalStringToSeconds($raw);
+            if (is_string($raw))  return $this->EmailIntervalStringToSeconds($raw);
             return null;
         }
 
