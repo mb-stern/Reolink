@@ -75,7 +75,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Instanz aktivieren** | Deaktiviert die Instanz temporär, um Fehlermeldungen zu vermeiden. |
 | **IP-Adresse** | IP-Adresse der Kamera. |
 | **Benutzername** | Benutzername für den Zugriff. |
-| **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
+| **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
 | **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
 | **API-Funktionen** | Aktiviert LED-, E-Mail- und PTZ-Steuerung. |
 | **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
