@@ -36,8 +36,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiRecord", true);
         $this->RegisterPropertyBoolean("EnableApiFTP",    false);
         $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
-        $this->RegisterPropertyBoolean("EnableApiSiren",  false);
-
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -122,11 +120,10 @@ class Reolink extends IPSModule
         $enablePush  = $this->ReadPropertyBoolean("EnableApiPush");
         $enableRec   = $this->ReadPropertyBoolean("EnableApiRecord");
         $enableFTP   = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSiren = $this->ReadPropertyBoolean("EnableApiSiren");
         $enableSens  = $this->ReadPropertyBoolean("EnableApiSensitivity");
 
         $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ
-            || $enablePush || $enableRec || $enableFTP || $enableSiren || $enableSens);
+            || $enablePush || $enableRec || $enableFTP || $enableSens);
 
         $this->SetTimerInterval("ApiRequestTimer", 0);
 
@@ -203,12 +200,6 @@ class Reolink extends IPSModule
                 $ok = $this->FtpApply((bool)$Value);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 else     $this->UpdateFtpStatus();
-                break;
-
-            case "Siren":
-                $ok = $this->SirenApply((bool)$Value);
-                if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
-                else     $this->UpdateSirenStatus();
                 break;
 
             case "Sensitivity":
@@ -1093,14 +1084,6 @@ class Reolink extends IPSModule
             }
         } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
 
-        // Sirene
-        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            if (!@$this->GetIDForIdent("Siren")) {
-                $this->RegisterVariableBoolean("Siren", "Sirene", "~Switch", 11);
-                $this->EnableAction("Siren");
-            }
-        } else { $id=@$this->GetIDForIdent("Siren"); if($id!==false) $this->UnregisterVariable("Siren"); }
-
         // Empfindlichkeit (0..100)
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
             if (!@$this->GetIDForIdent("Sensitivity")) {
@@ -1132,7 +1115,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiRecord"))     { $this->UpdateRecordStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiSiren"))      { $this->UpdateSirenStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
@@ -2124,77 +2106,6 @@ class Reolink extends IPSModule
         }
 
         return null;
-    }
-
-    private function UpdateSirenStatus(): void
-    {
-        if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Siren");
-        if ($id === false) return;
-
-        $variant = $this->DetectSirenApiVariant();
-        $res = null;
-
-        switch ($variant) {
-            case "AudioAlarm":
-                $res = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0] ]], 'SIREN', true);
-                break;
-            case "Siren":
-                // einige FWs benötigen "param"=>["channel"=>0], andere zusätzlich "action"=>0 – hier erst ohne
-                $res = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
-                if (!is_array($res) || (($res[0]['code'] ?? -1)!==0)) {
-                    $res = $this->apiCall([[ "cmd"=>"GetSiren", "action"=>0, "param"=>["channel"=>0] ]], 'SIREN', true);
-                }
-                break;
-            case "Buzzer":
-                $res = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
-                if (!is_array($res) || (($res[0]['code'] ?? -1)!==0)) {
-                    $res = $this->apiCall([[ "cmd"=>"GetBuzzer", "action"=>0, "param"=>["channel"=>0] ]], 'SIREN', true);
-                }
-                break;
-            default:
-                $this->dbg('SIREN', 'Kein passender Endpunkt verfügbar (AudioAlarm/Siren/Buzzer nicht unterstützt?)');
-                return;
-        }
-
-        $enabled = $this->ParseSirenEnabledFromResponse($res);
-        if ($enabled !== null) {
-            $this->SetValue("Siren", $enabled);
-            $this->dbg('SIREN', 'Status gelesen', ['enabled'=>$enabled, 'variant'=>$variant]);
-        } else {
-            $this->dbg('SIREN', 'Antwort ohne erkennbares enable-Feld', $res);
-        }
-    }
-
-    private function SirenApply(bool $on): bool
-    {
-        if (!$this->apiEnsureToken()) return false;
-        $variant = $this->DetectSirenApiVariant();
-        $payload = null;
-
-        switch ($variant) {
-            case "AudioAlarm":
-                $payload = [[ "cmd"=>"SetAudioAlarm", "param"=>[ "AudioAlarm"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
-                break;
-            case "Siren":
-                $payload = [[ "cmd"=>"SetSiren", "param"=>[ "Siren"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
-                break;
-            case "Buzzer":
-                $payload = [[ "cmd"=>"SetBuzzer", "param"=>[ "Buzzer"=>["enable"=>$on?1:0, "channel"=>0] ] ]];
-                break;
-            default:
-                $this->dbg('SIREN', 'Set nicht möglich – kein Endpunkt verfügbar');
-                return false;
-        }
-
-        $r = $this->apiCall($payload, 'SIREN', true);
-        $ok = is_array($r) && (($r[0]['code'] ?? -1)===0);
-
-        // Nachsetzen: neu einlesen, damit UI stimmt
-        if ($ok) $this->UpdateSirenStatus(); 
-        else     $this->dbg('SIREN', 'Set FAIL', $r);
-
-        return $ok;
     }
 
     private function DetectSensitivityApi(): string

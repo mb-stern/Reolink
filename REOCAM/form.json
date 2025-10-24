@@ -39,7 +39,6 @@
         { "type": "CheckBox", "name": "EnableApiPush",        "caption": "Push-Nachrichten" },
         { "type": "CheckBox", "name": "EnableApiRecord",      "caption": "Aufnahme (Bewegung)" },
         { "type": "CheckBox", "name": "EnableApiFTP",         "caption": "FTP-Upload" },
-        { "type": "CheckBox", "name": "EnableApiSiren",       "caption": "Sirene" },
         { "type": "CheckBox", "name": "EnableApiSensitivity", "caption": "Empfindlichkeit (Slider in Instanz-UI)" }
       ]
     },
