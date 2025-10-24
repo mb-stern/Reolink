@@ -1982,40 +1982,47 @@ class Reolink extends IPSModule
 
     //FTP EIN/AUS
 
-    private function DetectFtpApiVersion(): string
+    private function DetectFtpApiVersion(): string 
     {
-        $v = $this->ReadAttributeString("FtpApiVersion");
-        if ($v === "V20" || $v === "LEGACY") return $v;
-
+        // 1) V20?
         $r = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
-        if (is_array($r) && (($r[0]['code'] ?? -1)===0)) { $v = "V20"; }
-        else {
-            $r2 = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1 ]], 'FTP', true);
-            $v = (is_array($r2) && (($r2[0]['code'] ?? -1)===0)) ? "LEGACY" : "NONE";
-        }
-        $this->WriteAttributeString("FtpApiVersion", $v);
-        return $v;
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return "V20";
+
+        // 2) Legacy (ohne action)?
+        $r = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return "LEGACY";
+
+        // 3) Legacy (manche Firmwares brauchen action:1)
+        $r = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1, "param"=>["channel"=>0] ]], 'FTP', true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return "LEGACY_A1";
+
+        return "NONE";
     }
 
-    private function UpdateFtpStatus(): void
+    private function UpdateFtpStatus(): void 
     {
-        $id = @$this->GetIDForIdent("FTPEnabled");
-        if ($id === false) return;
-
         $ver = $this->DetectFtpApiVersion();
         $enabled = null;
+        $res = null;
 
         if ($ver === "V20") {
             $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
             if (is_array($res)) {
-                $ftp = $res[0]['value']['Ftp'] ?? $res[0]['value'] ?? [];
-                $enabled = isset($ftp['enable']) ? ((int)$ftp['enable'] === 1) : null;
+                $v = $res[0]['value'] ?? [];
+                $ftp = $v['Ftp'] ?? $v['ftp'] ?? $v;
+                // V20 liefert normalerweise Ftp.enable (0/1)
+                if (isset($ftp['enable'])) $enabled = ((int)$ftp['enable'] === 1);
             }
-        } elseif ($ver === "LEGACY") {
-            $res = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1 ]], 'FTP', true);
+        } elseif ($ver === "LEGACY" || $ver === "LEGACY_A1") {
+            $payload = [ [ "cmd"=>"GetFtp", "param"=>["channel"=>0] ] ];
+            if ($ver === "LEGACY_A1") $payload[0]["action"] = 1;
+
+            $res = $this->apiCall($payload, 'FTP', true);
             if (is_array($res)) {
-                $ftp = $res[0]['value']['Ftp'] ?? $res[0]['value'] ?? [];
-                // je nach Firmware: direkt 'enable' oder in schedule
+                $v = $res[0]['value'] ?? [];
+                $ftp = $v['Ftp'] ?? $v['ftp'] ?? $v;
+
+                // Manche FW: Ftp.enable, manche: Ftp.schedule.enable
                 if (isset($ftp['enable'])) {
                     $enabled = ((int)$ftp['enable'] === 1);
                 } elseif (isset($ftp['schedule']['enable'])) {
@@ -2023,12 +2030,56 @@ class Reolink extends IPSModule
                 }
             }
         }
-        if ($enabled !== null) $this->SetValue("FTPEnabled", (bool)$enabled);
+
+        $id = @$this->GetIDForIdent("FTPEnabled");
+        if ($id !== false && $enabled !== null) {
+            $this->SetValue("FTPEnabled", (bool)$enabled);
+        }
     }
 
-    private function FtpApply(bool $on): bool {
-        $res = $this->apiCall([[ "cmd"=>"SetFtp", "param"=>["Ftp"=>["enable"=>$on?1:0, "channel"=>0]] ]], 'FTP', true);
-        return is_array($res) && (($res[0]['code'] ?? -1)===0);
+    private function FtpApply(bool $on): bool 
+    {
+        $ver = $this->DetectFtpApiVersion();
+        $ok = false;
+
+        if ($ver === "V20") {
+            // Reolink V20: SetFtpV20
+            $r = $this->apiCall([[
+                "cmd" => "SetFtpV20",
+                "param" => [ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+            ]], 'FTP', true);
+            $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        } elseif ($ver === "LEGACY" || $ver === "LEGACY_A1") {
+            // 1) zuerst versuchen: Ftp.enable direkt
+            $payload = [[
+                "cmd"   => "SetFtp",
+                "param" => [ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+            ]];
+            if ($ver === "LEGACY_A1") $payload[0]["action"] = 1;
+
+            $r1 = $this->apiCall($payload, 'FTP', true);
+            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+
+            // 2) Fallback: schedule.enable (einige ältere FW-Versionen)
+            if (!$ok) {
+                $payload2 = [[
+                    "cmd"   => "SetFtp",
+                    "param" => [ "Ftp" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ]
+                ]];
+                if ($ver === "LEGACY_A1") $payload2[0]["action"] = 1;
+
+                $r2 = $this->apiCall($payload2, 'FTP', true);
+                $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+            }
+        }
+
+        if ($ok) {
+            // nach erfolgreichem Set -> Status zurücklesen (UI sync)
+            $this->UpdateFtpStatus();
+        } else {
+            $this->dbg('FTP', 'Setzen fehlgeschlagen – Firmware unterstützt die Schreibvariante nicht');
+        }
+        return $ok;
     }
 
     //Sirene EIN/AUS
