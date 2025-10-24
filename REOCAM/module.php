@@ -2022,81 +2022,63 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function UpdateSensitivityStatus(): void 
+    private function UpdateSensitivityStatus(): void
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Sensitivity");
-        if ($id === false) return;
+        $id = @$this->GetIDForIdent("Sensitivity"); if ($id === false) return;
 
-        // 1) neue MD-API (newSens / sensDef)
-        $res = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (is_array($res) && isset($res[0]['value']['MdAlarm'])) {
-            $md  = $res[0]['value']['MdAlarm'];
-            $val = null;
+        // Nur MD lesen
+        $res = $this->apiCall([[ "cmd" => "GetMdAlarm", "param" => ["channel" => 0] ]], "SENS", true);
+        if (!is_array($res) || !isset($res[0]["value"]["MdAlarm"])) return;
 
-            // bevorzugt der Default-Wert
-            if (isset($md['newSens']['sensDef']) && is_numeric($md['newSens']['sensDef'])) {
-                $val = (int)$md['newSens']['sensDef'];
-            }
-            // Fallback: aus den Slots (id 0..3) mitteln
-            if ($val === null && isset($md['newSens']['sens']) && is_array($md['newSens']['sens'])) {
-                $arr = array_column($md['newSens']['sens'], 'sensitivity');
-                $nums = array_filter($arr, 'is_numeric');
-                if (!empty($nums)) $val = (int)round(array_sum($nums)/count($nums));
-            }
-            // Alt-Firmware-Fallback (ohne newSens)
-            if ($val === null && isset($md['sens']) && is_array($md['sens'])) {
-                $arr = array_column($md['sens'], 'sensitivity');
-                $nums = array_filter($arr, 'is_numeric');
-                if (!empty($nums)) $val = (int)round(array_sum($nums)/count($nums));
-            }
+        $md  = $res[0]["value"]["MdAlarm"];
+        $val = null;
 
-            if ($val !== null) {
-                $val = max(0, min(100, (int)$val));
-                $this->SetValue("Sensitivity", $val);
-            }
-            return;
+        // 1) Bevorzugt der Default (globale MD-Empfindlichkeit)
+        if (isset($md["newSens"]["sensDef"]) && is_numeric($md["newSens"]["sensDef"])) {
+            $val = (int)$md["newSens"]["sensDef"];
         }
 
-        // Wenn alles fehlschlägt, nichts tun (kein Log-Spam)
+        // 2) Fallback: aus den vier Zeit-Slots mitteln
+        if ($val === null && isset($md["newSens"]["sens"]) && is_array($md["newSens"]["sens"])) {
+            $nums = [];
+            foreach ($md["newSens"]["sens"] as $slot) {
+                if (isset($slot["sensitivity"]) && is_numeric($slot["sensitivity"])) {
+                    $nums[] = (int)$slot["sensitivity"];
+                }
+            }
+            if ($nums) $val = (int)round(array_sum($nums)/count($nums));
+        }
+
+        // 3) Uralt-Firmware-Fallback (ohne newSens)
+        if ($val === null && isset($md["sens"]) && is_array($md["sens"])) {
+            $nums = [];
+            foreach ($md["sens"] as $slot) {
+                if (isset($slot["sensitivity"]) && is_numeric($slot["sensitivity"])) {
+                    $nums[] = (int)$slot["sensitivity"];
+                }
+            }
+            if ($nums) $val = (int)round(array_sum($nums)/count($nums));
+        }
+
+        if ($val !== null) {
+            $this->SetValue("Sensitivity", max(0, min(100, $val)));
+        }
     }
 
-    private function SensitivityApply(int $value): bool 
+    private function SensitivityApply(int $value): bool
     {
         if (!$this->apiEnsureToken()) return false;
         $value = max(0, min(100, (int)$value));
 
-        // versuche zuerst: nur den Default setzen (wenig Traffic)
-        $payload1 = [[
-            "cmd" => "SetMdAlarm",
+        // Am saubersten: nur den globalen Default setzen
+        $payload = [[
+            "cmd"   => "SetMdAlarm",
             "param" => [ "MdAlarm" => [ "channel" => 0, "newSens" => [ "sensDef" => $value ] ] ]
         ]];
-        $ok = is_array($this->apiCall($payload1, 'SENS', true));
-        if ($ok) { $this->UpdateSensitivityStatus(); return true; }
 
-        // Fallback: alle vier Slots angleichen (id 0..3)
-        $slots = [];
-        for ($i=0; $i<4; $i++) {
-            $slots[] = [
-                "id" => $i,
-                "beginHour" => [0,6,12,18][$i],
-                "beginMin"  => 0,
-                "endHour"   => [6,12,18,23][$i],
-                "endMin"    => ($i===3 ? 59 : 0),
-                "enable"    => 0,
-                "priority"  => 0,
-                "sensitivity" => $value
-            ];
-        }
-        $payload2 = [[
-            "cmd" => "SetMdAlarm",
-            "param" => [ "MdAlarm" => [ "channel" => 0, "newSens" => [ "sens" => $slots, "sensDef" => $value ] ] ]
-        ]];
-        $ok = is_array($this->apiCall($payload2, 'SENS', true));
+        $ok = is_array($this->apiCall($payload, "SENS", true));
         if ($ok) $this->UpdateSensitivityStatus();
-        else     $this->dbg('SENS', 'SetMdAlarm fehlgeschlagen');
-
         return (bool)$ok;
     }
-
 }
