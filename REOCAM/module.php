@@ -1111,7 +1111,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiPTZ"))        { $this->CreateOrUpdatePTZHtml(false); }
             if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateMdSensitivityStatus(); $this->UpdateAiSensitivityStatus();
 }
 
