@@ -596,6 +596,26 @@ class Reolink extends IPSModule
         }
     }
 
+    private function RemoveArchives()
+    {
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $cat) {
+            $archiveIdent = "Archive_" . $cat;
+            $cid = @$this->GetIDForIdent($archiveIdent);
+            if ($cid && IPS_ObjectExists($cid)) {
+                // alle Medien in der Kategorie löschen
+                foreach (IPS_GetChildrenIDs($cid) as $childID) {
+                    if (IPS_MediaExists($childID)) {
+                        IPS_DeleteMedia($childID, true);
+                    } else {
+                        @IPS_DeleteObject($childID);
+                    }
+                }
+                IPS_DeleteCategory($cid);
+                $this->dbg('SNAPSHOT', 'Archiv-Kategorie entfernt', ['ident' => $archiveIdent, 'id' => $cid]);
+            }
+        }
+    }
+
     private function RemoveSnapshots()
     {
         foreach (["Snapshot_Person","Snapshot_Tier","Snapshot_Fahrzeug","Snapshot_Test","Snapshot_Besucher","Snapshot_Bewegung"] as $ident) {
@@ -947,9 +967,10 @@ class Reolink extends IPSModule
     private function RemoveApiVariables(): void
     {
         foreach ([
-            "WhiteLed", "Mode", "Bright",
-            "EmailNotify", "EmailInterval", "EmailContent",
-            "PTZ_HTML"
+            "WhiteLed","Mode","Bright",
+            "EmailNotify","EmailInterval","EmailContent",
+            "PTZ_HTML",
+            "PushNotify","RecordOnMotion","FTPEnabled","Siren","Sensitivity"
         ] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
@@ -1854,6 +1875,40 @@ class Reolink extends IPSModule
             $this->CreateOrUpdatePTZHtml(true);
         }
         return $ok;
+    }
+
+    private function ptzSetPreset(int $id): bool
+    {
+        // Varianten: SetPtzPreset / PtzSetPreset / PtzCtrl op=SetPos
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id], 'SetPtzPreset', true));
+        if ($ok) return true;
+
+        $ok = is_array($this->postCmdDual('PtzSetPreset', ['channel'=>0, 'id'=>$id], 'PtzSetPreset', true));
+        if ($ok) return true;
+
+        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'SetPos', 'id'=>$id], 'PtzCtrl', true));
+        return (bool)$ok;
+    }
+
+    private function ptzRenamePreset(int $id, string $name): bool
+    {
+        $name = mb_substr($name, 0, 32, 'UTF-8');
+        $ok = is_array($this->postCmdDual('RenamePtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'RenamePtzPreset', true));
+        if ($ok) return true;
+
+        // Fallbacks, da Reolink je nach Modell variiert
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'SetPtzPreset', true));
+        return (bool)$ok;
+    }
+
+    private function ptzClearPreset(int $id): bool
+    {
+        $ok = is_array($this->postCmdDual('ClearPtzPreset', ['channel'=>0, 'id'=>$id], 'ClearPtzPreset', true));
+        if ($ok) return true;
+
+        // Alternative: disable/exists-Flag löschen
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'enable'=>0], 'SetPtzPreset', true));
+        return (bool)$ok;
     }
 
     //Push EIN/AUS
