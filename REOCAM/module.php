@@ -2025,64 +2025,78 @@ class Reolink extends IPSModule
     private function UpdateSensitivityStatus(): void 
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Sensitivity"); 
+        $id = @$this->GetIDForIdent("Sensitivity");
         if ($id === false) return;
 
-        // Variante 1: neue AI-API
-        $res = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (is_array($res) && isset($res[0]['value'])) {
-            $ai = $res[0]['value']['AiCfg'] ?? $res[0]['value'];
-            $val = $ai['md']['sensitivity'] 
-                ?? $ai['people']['sensitivity'] 
-                ?? $ai['vehicle']['sensitivity'] 
-                ?? $ai['dog_cat']['sensitivity'] 
-                ?? null;
-            if (is_numeric($val)) {
-                $this->SetValue("Sensitivity", (int)$val);
-                return;
+        // 1) neue MD-API (newSens / sensDef)
+        $res = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (is_array($res) && isset($res[0]['value']['MdAlarm'])) {
+            $md  = $res[0]['value']['MdAlarm'];
+            $val = null;
+
+            // bevorzugt der Default-Wert
+            if (isset($md['newSens']['sensDef']) && is_numeric($md['newSens']['sensDef'])) {
+                $val = (int)$md['newSens']['sensDef'];
             }
-        }
+            // Fallback: aus den Slots (id 0..3) mitteln
+            if ($val === null && isset($md['newSens']['sens']) && is_array($md['newSens']['sens'])) {
+                $arr = array_column($md['newSens']['sens'], 'sensitivity');
+                $nums = array_filter($arr, 'is_numeric');
+                if (!empty($nums)) $val = (int)round(array_sum($nums)/count($nums));
+            }
+            // Alt-Firmware-Fallback (ohne newSens)
+            if ($val === null && isset($md['sens']) && is_array($md['sens'])) {
+                $arr = array_column($md['sens'], 'sensitivity');
+                $nums = array_filter($arr, 'is_numeric');
+                if (!empty($nums)) $val = (int)round(array_sum($nums)/count($nums));
+            }
 
-        // Variante 2: Legacy MotionDetection
-        $res2 = $this->apiCall([[ "cmd"=>"GetMdState", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (is_array($res2) && isset($res2[0]['value']['state']['sensitivity'])) {
-            $val = (int)$res2[0]['value']['state']['sensitivity'];
-            $this->SetValue("Sensitivity", $val);
+            if ($val !== null) {
+                $val = max(0, min(100, (int)$val));
+                $this->SetValue("Sensitivity", $val);
+            }
             return;
         }
 
-        // Variante 3: Fallback über GetMdAlarm
-        $res3 = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (is_array($res3) && isset($res3[0]['value']['MdAlarm']['sensitivity'])) {
-            $val = (int)$res3[0]['value']['MdAlarm']['sensitivity'];
-            $this->SetValue("Sensitivity", $val);
-            return;
-        }
-
-        $this->dbg('SENS', 'Konnte Empfindlichkeit nicht abrufen (alle Varianten fehlgeschlagen)');
+        // Wenn alles fehlschlägt, nichts tun (kein Log-Spam)
     }
 
-    private function SensitivityApply(int $value): bool
+    private function SensitivityApply(int $value): bool 
     {
         if (!$this->apiEnsureToken()) return false;
-        $value = max(0, min(100, $value));
+        $value = max(0, min(100, (int)$value));
 
-        // 1) Modern: SetAiCfg (unter AiCfg, auf "md" – alternativ könntest du hier auch people/vehicle/dog_cat mitschreiben)
-        $p1 = [[ "cmd" => "SetAiCfg", "param" => [ "AiCfg" => [ "channel" => 0, "md" => [ "sensitivity" => $value ] ] ] ]];
-        $r1 = $this->apiCall($p1, "SENS", true);
-        if (is_array($r1) && (($r1[0]['code'] ?? -1) === 0)) return true;
+        // versuche zuerst: nur den Default setzen (wenig Traffic)
+        $payload1 = [[
+            "cmd" => "SetMdAlarm",
+            "param" => [ "MdAlarm" => [ "channel" => 0, "newSens" => [ "sensDef" => $value ] ] ]
+        ]];
+        $ok = is_array($this->apiCall($payload1, 'SENS', true));
+        if ($ok) { $this->UpdateSensitivityStatus(); return true; }
 
-        // 2) Alternative: SetAiSensitivity (falls FW das getrennt erwartet)
-        $p2 = [[ "cmd" => "SetAiSensitivity", "param" => [ "AiSensitivity" => [ "channel" => 0, "md" => $value ] ] ]];
-        $r2 = $this->apiCall($p2, "SENS", true);
-        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
+        // Fallback: alle vier Slots angleichen (id 0..3)
+        $slots = [];
+        for ($i=0; $i<4; $i++) {
+            $slots[] = [
+                "id" => $i,
+                "beginHour" => [0,6,12,18][$i],
+                "beginMin"  => 0,
+                "endHour"   => [6,12,18,23][$i],
+                "endMin"    => ($i===3 ? 59 : 0),
+                "enable"    => 0,
+                "priority"  => 0,
+                "sensitivity" => $value
+            ];
+        }
+        $payload2 = [[
+            "cmd" => "SetMdAlarm",
+            "param" => [ "MdAlarm" => [ "channel" => 0, "newSens" => [ "sens" => $slots, "sensDef" => $value ] ] ]
+        ]];
+        $ok = is_array($this->apiCall($payload2, 'SENS', true));
+        if ($ok) $this->UpdateSensitivityStatus();
+        else     $this->dbg('SENS', 'SetMdAlarm fehlgeschlagen');
 
-        // 3) Legacy: SetMdCfg (klassische Bewegungserkennung)
-        $p3 = [[ "cmd" => "SetMdCfg", "param" => [ "MdCfg" => [ "channel" => 0, "sensitivity" => $value ] ] ]];
-        $r3 = $this->apiCall($p3, "SENS", true);
-        if (is_array($r3) && (($r3[0]['code'] ?? -1) === 0)) return true;
-
-        $this->dbg('SENS', 'Sensitivity setzen fehlgeschlagen (alle Varianten).', ['value'=>$value]);
-        return false;
+        return (bool)$ok;
     }
+
 }
