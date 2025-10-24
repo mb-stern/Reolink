@@ -192,11 +192,18 @@ class Reolink extends IPSModule
                 else     $this->UpdateFtpStatus();
                 break;
 
-            case "Sensitivity":
-                $val = max(0, min(100, (int)$Value));
-                $ok  = $this->SensitivityApply($val);
+            case "SensitivityMD":
+                $val = max(1, min(100, (int)$Value));
+                $ok  = $this->MdSensitivityApply($val);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
-                else     $this->UpdateSensitivityStatus();
+                else     $this->UpdateMdSensitivityStatus();
+                break;
+
+            case "SensitivityAI":
+                $val = max(0, min(100, (int)$Value));
+                $ok  = $this->AiSensitivityApply($val); // hier „Person“
+                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
+                else     $this->UpdateAiSensitivityStatus();
                 break;
 
             default:
@@ -1067,16 +1074,23 @@ class Reolink extends IPSModule
             }
         } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
 
-        // Empfindlichkeit (0..100)
+        // Empfindlichkeiten
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-            if (!@$this->GetIDForIdent("Sensitivity")) {
-                $this->RegisterVariableInteger("Sensitivity", "Empfindlichkeit", "~Intensity.100", 12);
-                $this->EnableAction("Sensitivity");
-                // kein SetValue() – Wert wird via UpdateSensitivityStatus() vom Gerät gelesen
+
+            if (!@$this->GetIDForIdent("SensitivityMD")) {
+                $this->RegisterVariableInteger("SensitivityMD", "Empfindlichkeit (Bewegungserkennung)", "~Intensity.100", 12);
+                $this->EnableAction("SensitivityMD");
+            }
+
+            if (!@$this->GetIDForIdent("SensitivityAI")) {
+                $this->RegisterVariableInteger("SensitivityAI", "Empfindlichkeit (Intelligente Erkennung - Person)", "~Intensity.100", 13);
+                $this->EnableAction("SensitivityAI");
             }
         } else {
-            $id = @$this->GetIDForIdent("Sensitivity");
-            if ($id !== false) $this->UnregisterVariable("Sensitivity");
+            foreach (["SensitivityMD","SensitivityAI"] as $ident) {
+                $id = @$this->GetIDForIdent($ident);
+                if ($id !== false) $this->UnregisterVariable($ident);
+            }
         }
     }
 
@@ -1098,6 +1112,9 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiSensitivity")){ $this->UpdateSensitivityStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateMdSensitivityStatus(); $this->UpdateAiSensitivityStatus();
+}
+
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
@@ -2022,63 +2039,82 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function UpdateSensitivityStatus(): void
+    //Sensitivity
+
+    private function mdReadRaw(): ?array 
+    {
+        $r = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (!is_array($r) || !isset($r[0]['value'])) return null;
+        $v = $r[0]['value']['MdAlarm'] ?? $r[0]['value'] ?? null;
+        return is_array($v) ? $v : null;
+    }
+
+    private function mdPickCurrentSlot(array $rows): ?int 
+    {
+        $now = getdate(); $hm = $now['hours']*60 + $now['minutes'];
+        foreach ($rows as $row) {
+            $b = ($row['beginHour']??0)*60 + ($row['beginMin']??0);
+            $e = ($row['endHour']??23)*60 + ($row['endMin']??59);
+            if ($hm >= $b && $hm <= $e) return (int)($row['sensitivity'] ?? null);
+        }
+        return isset($rows[0]['sensitivity']) ? (int)$rows[0]['sensitivity'] : null;
+    }
+
+    private function mdMap(bool $toApp, int $val, array $rows): int 
+    {
+        // Skala anhand max-Wert erkennen (10er/50er → App 0..100)
+        $max = 0; foreach ($rows as $r) { $x = (int)($r['sensitivity'] ?? 0); if ($x > $max) $max = $x; }
+        if ($toApp) {
+            if ($max <= 10)   return max(1, min(100, $val*4 + 1));   // 10 → 41
+            if ($max <= 50)   return max(1, min(100, (int)round($val*2)));
+            return max(0, min(100, $val));
+        } else {
+            if ($max <= 10)   return max(0, min(10,  (int)round(($val-1)/4)));
+            if ($max <= 50)   return max(0, min(50, (int)round($val/2)));
+            return max(0, min(100, $val));
+        }
+    }
+
+    private function UpdateMdSensitivityStatus(): void 
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("Sensitivity"); if ($id === false) return;
+        $id = @$this->GetIDForIdent("SensitivityMD"); if ($id===false) return;
 
-        // Nur MD lesen
-        $res = $this->apiCall([[ "cmd" => "GetMdAlarm", "param" => ["channel" => 0] ]], "SENS", true);
-        if (!is_array($res) || !isset($res[0]["value"]["MdAlarm"])) return;
+        $raw = $this->mdReadRaw(); if (!$raw) return;
+        $useNew = (int)($raw['useNewSens'] ?? 0) === 1;
+        $list   = $useNew ? ($raw['newSens']['sens'] ?? []) : ($raw['sens'] ?? []);
+        if (!is_array($list) || empty($list)) return;
 
-        $md  = $res[0]["value"]["MdAlarm"];
-        $val = null;
+        $apiVal = $this->mdPickCurrentSlot($list);
+        if ($apiVal === null) return;
 
-        // 1) Bevorzugt der Default (globale MD-Empfindlichkeit)
-        if (isset($md["newSens"]["sensDef"]) && is_numeric($md["newSens"]["sensDef"])) {
-            $val = (int)$md["newSens"]["sensDef"];
-        }
-
-        // 2) Fallback: aus den vier Zeit-Slots mitteln
-        if ($val === null && isset($md["newSens"]["sens"]) && is_array($md["newSens"]["sens"])) {
-            $nums = [];
-            foreach ($md["newSens"]["sens"] as $slot) {
-                if (isset($slot["sensitivity"]) && is_numeric($slot["sensitivity"])) {
-                    $nums[] = (int)$slot["sensitivity"];
-                }
-            }
-            if ($nums) $val = (int)round(array_sum($nums)/count($nums));
-        }
-
-        // 3) Uralt-Firmware-Fallback (ohne newSens)
-        if ($val === null && isset($md["sens"]) && is_array($md["sens"])) {
-            $nums = [];
-            foreach ($md["sens"] as $slot) {
-                if (isset($slot["sensitivity"]) && is_numeric($slot["sensitivity"])) {
-                    $nums[] = (int)$slot["sensitivity"];
-                }
-            }
-            if ($nums) $val = (int)round(array_sum($nums)/count($nums));
-        }
-
-        if ($val !== null) {
-            $this->SetValue("Sensitivity", max(0, min(100, $val)));
-        }
+        $appVal = $this->mdMap(true, $apiVal, $list);
+        $this->SetValue("SensitivityMD", $appVal);
     }
 
-    private function SensitivityApply(int $value): bool
+    private function MdSensitivityApply(int $appVal): bool 
     {
         if (!$this->apiEnsureToken()) return false;
-        $value = max(0, min(100, (int)$value));
+        $appVal = max(1, min(100, $appVal));
 
-        // Am saubersten: nur den globalen Default setzen
-        $payload = [[
-            "cmd"   => "SetMdAlarm",
-            "param" => [ "MdAlarm" => [ "channel" => 0, "newSens" => [ "sensDef" => $value ] ] ]
-        ]];
+        $raw = $this->mdReadRaw(); if (!$raw) return false;
+        $useNew = (int)($raw['useNewSens'] ?? 0) === 1;
+        $list   = $useNew ? ($raw['newSens']['sens'] ?? []) : ($raw['sens'] ?? []);
+        if (!is_array($list) || empty($list)) return false;
 
-        $ok = is_array($this->apiCall($payload, "SENS", true));
-        if ($ok) $this->UpdateSensitivityStatus();
-        return (bool)$ok;
+        $apiVal = $this->mdMap(false, $appVal, $list);
+
+        // alle Slots angleichen (optional nur aktuellen Slot schreiben)
+        $dst = [];
+        foreach ($list as $row) { $row['sensitivity'] = $apiVal; $dst[] = $row; }
+
+        $param = $useNew ? ["newSens"=>["sens"=>$dst]] : ["sens"=>$dst];
+        $ok = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>$param + ["channel"=>0]] ]], 'SENS', true);
+        if (is_array($ok) && (($ok[0]['code'] ?? -1) === 0)) {
+            $this->UpdateMdSensitivityStatus();
+            return true;
+        }
+        return false;
     }
+
 }
