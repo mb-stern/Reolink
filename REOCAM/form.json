@@ -29,6 +29,7 @@
         { "caption": "Substream",  "value": "sub"  }
       ]
     },
+    {
       "type": "ExpansionPanel",
       "caption": "API-Funktionen",
       "items": [
