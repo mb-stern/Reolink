@@ -33,7 +33,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiPush",   true);
-        $this->RegisterPropertyBoolean("EnableApiRecord", true);
         $this->RegisterPropertyBoolean("EnableApiFTP",    false);
         $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
 
@@ -118,7 +117,6 @@ class Reolink extends IPSModule
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
         $enablePush  = $this->ReadPropertyBoolean("EnableApiPush");
-        $enableRec   = $this->ReadPropertyBoolean("EnableApiRecord");
         $enableFTP   = $this->ReadPropertyBoolean("EnableApiFTP");
         $enableSens  = $this->ReadPropertyBoolean("EnableApiSensitivity");
 
@@ -188,12 +186,6 @@ class Reolink extends IPSModule
                 $ok = $this->PushApply((bool)$Value);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 else     $this->UpdatePushStatus();
-                break;
-
-            case "RecordOnMotion":
-                $ok = $this->RecordApply((bool)$Value);
-                if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
-                else     $this->UpdateRecordStatus();
                 break;
 
             case "FTPEnabled":
@@ -1943,25 +1935,6 @@ class Reolink extends IPSModule
         return is_array($res) && (($res[0]['code'] ?? -1)===0);
     }
 
-    //Aufnahme (Bewegungsaufzeichnung) EIN/AUS
-
-    private function UpdateRecordStatus(): void 
-    {
-        $r = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'RECORD', true);
-        if (is_array($r) && isset($r[0]['value']['MdAlarm'])) {
-            $enabled = ((int)($r[0]['value']['MdAlarm']['record'] ?? 0)===1);
-            $id = @$this->GetIDForIdent("RecordOnMotion");
-            if ($id!==false) $this->SetValue("RecordOnMotion", $enabled);
-        }
-    }
-
-    private function RecordApply(bool $on): bool 
-    {
-        $r = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>["record"=>$on?1:0, "channel"=>0]] ]], 'RECORD', true);
-        return is_array($r) && (($r[0]['code'] ?? -1)===0);
-    }
-
-
     //FTP EIN/AUS
 
     private function DetectFtpApiVersion(): string 
@@ -2059,54 +2032,6 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    //Sirene EIN/AUS
-
-    private function DetectSirenApiVariant(): string
-    {
-        // Reihenfolge: neues AudioAlarm -> klassisches Siren -> Buzzer
-        $t1 = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0] ]], 'SIREN', true);
-        if (is_array($t1) && (($t1[0]['code'] ?? -1)===0)) return "AudioAlarm";
-
-        $t2 = $this->apiCall([[ "cmd"=>"GetSiren", "param"=>["channel"=>0] ]], 'SIREN', true);
-        if (is_array($t2) && (($t2[0]['code'] ?? -1)===0)) return "Siren";
-
-        $t3 = $this->apiCall([[ "cmd"=>"GetBuzzer", "param"=>["channel"=>0] ]], 'SIREN', true);
-        if (is_array($t3) && (($t3[0]['code'] ?? -1)===0)) return "Buzzer";
-
-        return "NONE";
-    }
-
-    private function ParseSirenEnabledFromResponse(?array $res): ?bool
-    {
-        if (!is_array($res) || !isset($res[0]['value'])) return null;
-        $v = $res[0]['value'];
-
-        // AudioAlarm-Form
-        if (isset($v['AudioAlarm']) || isset($v['audioAlarm'])) {
-            $aa = $v['AudioAlarm'] ?? $v['audioAlarm'];
-            // Manche FW: enable direkt, andere: schedule/enable
-            if (isset($aa['enable'])) return ((int)$aa['enable']===1);
-            if (isset($aa['schedule']['enable'])) return ((int)$aa['schedule']['enable']===1);
-        }
-
-        // Siren-Form
-        if (isset($v['Siren']) || isset($v['siren'])) {
-            $s = $v['Siren'] ?? $v['siren'];
-            if (isset($s['enable'])) return ((int)$s['enable']===1);
-            if (isset($s['Enable'])) return ((int)$s['Enable']===1);
-            if (isset($s['schedule']['enable'])) return ((int)$s['schedule']['enable']===1);
-        }
-
-        // Buzzer-Form (einige Modelle/NVR)
-        if (isset($v['Buzzer']) || isset($v['buzzer'])) {
-            $b = $v['Buzzer'] ?? $v['buzzer'];
-            if (isset($b['enable'])) return ((int)$b['enable']===1);
-            if (isset($b['Enable'])) return ((int)$b['Enable']===1);
-            if (isset($b['schedule']['enable'])) return ((int)$b['schedule']['enable']===1);
-        }
-
-        return null;
-    }
 
     private function DetectSensitivityApi(): string
     {
