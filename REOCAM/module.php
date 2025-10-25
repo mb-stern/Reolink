@@ -1856,93 +1856,135 @@ class Reolink extends IPSModule
     private function UpdatePushStatus(): void
     {
         $id = @$this->GetIDForIdent("PushNotify");
-        if ($id === false) return;
+        if ($id === false) {
+            $this->dbg('PUSH', 'Variable PushNotify existiert nicht – Abbruch');
+            return;
+        }
 
-        $ver = $this->DetectPushApiVersion();
+        // Erst versuchen wir V20; wenn das nicht klappt, Legacy (mit action:1)
         $enabled = null;
 
-        // 1) Antwort holen (V20 bevorzugt, sonst Legacy)
-        if ($ver === "V20") {
-            $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-        } else {
-            $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-        }
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
+        // --------- V20 ----------
+        $resV20 = $this->apiCall([[ "cmd" => "GetPushV20", "param" => ["channel" => 0] ]], 'PUSH', true);
+        if (is_array($resV20) && (($resV20[0]['code'] ?? -1) === 0)) {
+            $push = ($resV20[0]['value']['Push'] ?? $resV20[0]['value'] ?? []);
 
-        $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
-
-        // 2) Mehrere mögliche Quellen für "enabled" – in sinnvoller Reihenfolge prüfen
-
-        // a) Kanalspezifische Liste (chSchedule[{channel, enable}])
-        if ($enabled === null && isset($push['chSchedule']) && is_array($push['chSchedule'])) {
-            foreach ($push['chSchedule'] as $row) {
-                $ch = (int)($row['channel'] ?? $row['Channel'] ?? -1);
-                if ($ch === 0 && isset($row['enable'])) { $enabled = ((int)$row['enable'] === 1); break; }
-            }
-        }
-
-        // b) schedule.enable (manche Firmwares)
-        if ($enabled === null && isset($push['schedule']['enable'])) {
-            $enabled = ((int)$push['schedule']['enable'] === 1);
-        }
-
-        // c) schedule.table (Dein Fall): wir interpretieren "aktiv", wenn mind. ein Ereignistyp nicht nur Nullen hat
-        if ($enabled === null && isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
-            $anyOn = false;
-            foreach ($push['schedule']['table'] as $key => $bitstring) {
-                if (is_string($bitstring) && strpos($bitstring, '1') !== false) { $anyOn = true; break; }
-            }
-            // Zusätzlich globalen Schalter berücksichtigen, wenn vorhanden
+            // 1) Globaler Schalter, wenn vorhanden
             if (isset($push['enable'])) {
-                $enabled = $anyOn && ((int)$push['enable'] === 1);
-            } else {
-                $enabled = $anyOn;
+                $enabled = ((int)$push['enable'] === 1);
             }
-        }
 
-        // d) globaler Schalter (Fallback)
-        if ($enabled === null && isset($push['enable'])) {
-            $enabled = ((int)$push['enable'] === 1);
-        }
-
-        // 3) UI aktualisieren (nur wenn ermittelt)
-        if ($enabled !== null) {
-            $this->SetValue("PushNotify", (bool)$enabled);
-        }
-    }
-
-    private function PushApply(bool $on): bool {
-        $ver = $this->DetectPushApiVersion();
-        if ($ver === 'V20') {
-            // Erst versuchen: schedule.enable (global)
-            $payloads = [
-                [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "schedule" => [ "enable" => ($on?1:0), "channel"=>0 ] ] ] ]],
-                // Fallback (manche FW akzeptiert das globale enable weiterhin)
-                [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "enable" => ($on?1:0), "channel"=>0 ] ] ]],
-            ];
-            foreach ($payloads as $pl) {
-                $r = $this->apiCall($pl, 'PUSH', true);
-                if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
-                    $this->UpdatePushStatus();
-                    return true;
+            // 2) Channel Schedule (falls vorhanden und global nicht gesetzt)
+            if ($enabled === null && isset($push['chSchedule']) && is_array($push['chSchedule'])) {
+                foreach ($push['chSchedule'] as $row) {
+                    $ch = (int)($row['channel'] ?? $row['Channel'] ?? -1);
+                    if ($ch === 0 && isset($row['enable'])) {
+                        $enabled = ((int)$row['enable'] === 1);
+                        break;
+                    }
                 }
             }
-            // Letzter Fallback: chSchedule (wenn vorhanden) pro Kanal setzen
-            $pl3 = [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "chSchedule" => [ ["channel"=>0, "enable"=>($on?1:0)] ] ] ] ]];
-            $r3 = $this->apiCall($pl3, 'PUSH', true);
-            if (is_array($r3) && (($r3[0]['code'] ?? -1) === 0)) {
-                $this->UpdatePushStatus();
-                return true;
+
+            // 3) Aus Tabellen ableiten (wenn kein enable vorhanden)
+            if ($enabled === null) {
+                // Tabellen können u.a. unter $push['schedule']['table'] liegen,
+                // oder direkt unter Push mit Schlüsseln wie AI_PEOPLE, AI_VEHICLE, AI_DOG_CAT, MD ...
+                $tables = [];
+
+                if (isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
+                    // kompakte Sammelstruktur
+                    foreach ($push['schedule']['table'] as $k => $v) {
+                        if (is_string($v)) $tables[] = $v;
+                    }
+                }
+
+                // bekannte Typen direkt unter Push
+                foreach (['AI_PEOPLE','AI_VEHICLE','AI_DOG_CAT','MD','AI','HUMAN','VEHICLE','PET'] as $k) {
+                    if (isset($push[$k]) && is_string($push[$k])) $tables[] = $push[$k];
+                }
+
+                // als Fallback: alles String-Felder durchsuchen, die wie eine 168er-Wochentabelle aussehen
+                if (empty($tables)) {
+                    foreach ($push as $k => $v) {
+                        if (is_string($v) && strlen($v) >= 24) { // grob
+                            $tables[] = $v;
+                        } elseif (is_array($v)) {
+                            // eine Ebene tiefer auch Strings einsammeln
+                            foreach ($v as $vk => $vv) {
+                                if (is_string($vv) && strlen($vv) >= 24) $tables[] = $vv;
+                            }
+                        }
+                    }
+                }
+
+                $anyOn = false;
+                foreach ($tables as $t) {
+                    if (strpos($t, '1') !== false) { $anyOn = true; break; }
+                }
+                $enabled = $anyOn;
             }
-            $this->dbg('PUSH', 'SetPushV20: keine Variante akzeptiert');
-            return false;
+
+            if ($enabled !== null) {
+                $this->SetValue("PushNotify", (bool)$enabled);
+                $this->dbg('PUSH', 'V20-Status ermittelt', ['enabled' => $enabled]);
+                return; // V20 erfolgreich – fertig
+            }
+
+            // Wenn wir hier landen, gab es zwar V20, aber keine sinnvolle Info – wir versuchen Legacy zusätzlich
+            $this->dbg('PUSH', 'V20 lieferte keinen auswertbaren Status – versuche Legacy als Fallback');
         }
 
-        // Legacy unverändert:
-        $payload = [[ "cmd"=>"SetPush", "param"=>[ "Push" => ["enable"=>$on?1:0, "channel"=>0] ] ]];
-        $res = $this->apiCall($payload, 'PUSH', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1)===0)) { $this->UpdatePushStatus(); return true; }
-        return false;
+        // --------- Legacy ----------
+        // Viele Firmwares erwarten bei GetPush explizit action:1 und oftmals KEIN param
+        $resLegacy = $this->apiCall([[ "cmd" => "GetPush", "action" => 1 ]], 'PUSH', true);
+        if (is_array($resLegacy) && (($resLegacy[0]['code'] ?? -1) === 0)) {
+            $node = ($resLegacy[0]['value']['Push'] ?? $resLegacy[0]['value'] ?? null);
+
+            if (is_array($node)) {
+                // 1) schedule.enable (typisch Legacy)
+                if (isset($node['schedule']['enable'])) {
+                    $enabled = ((int)$node['schedule']['enable'] === 1);
+                }
+                // 2) Fallback: direktes enable (selten)
+                if ($enabled === null && isset($node['enable'])) {
+                    $enabled = ((int)$node['enable'] === 1);
+                }
+                // 3) Wenn kein enable vorhanden: aus Tabelle ableiten
+                if ($enabled === null) {
+                    $tables = [];
+                    // Legacy hat meist EINE 168er Tabelle
+                    foreach (['table','TABLE','md','MD','schedule','SCHEDULE'] as $k) {
+                        if (isset($node[$k]) && is_string($node[$k])) $tables[] = $node[$k];
+                        if (isset($node[$k]) && is_array($node[$k])) {
+                            foreach ($node[$k] as $vk => $vv) {
+                                if (is_string($vv)) $tables[] = $vv;
+                            }
+                        }
+                    }
+                    // generisches Einsammeln
+                    if (empty($tables)) {
+                        foreach ($node as $k => $v) {
+                            if (is_string($v) && strlen($v) >= 24) $tables[] = $v;
+                        }
+                    }
+
+                    $anyOn = false;
+                    foreach ($tables as $t) {
+                        if (strpos($t, '1') !== false) { $anyOn = true; break; }
+                    }
+                    $enabled = $anyOn;
+                }
+
+                if ($enabled !== null) {
+                    $this->SetValue("PushNotify", (bool)$enabled);
+                    $this->dbg('PUSH', 'Legacy-Status ermittelt', ['enabled' => $enabled]);
+                    return;
+                }
+            }
+        }
+
+        // Wenn weder V20 noch Legacy einen verwertbaren Status liefern:
+        $this->dbg('PUSH', 'Kein Push-Status ermittelbar (weder V20 noch Legacy)');
     }
 
     //FTP EIN/AUS
