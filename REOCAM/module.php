@@ -2148,4 +2148,187 @@ class Reolink extends IPSModule
 
         return $ok;
     }
+
+    private function aiProbeAndCache(): ?string
+    {
+        // 1) GetAiCfg versuchen (flat → nested)
+        $rFlat = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (is_array($rFlat) && (($rFlat[0]['code'] ?? -1) === 0)) {
+            $val = $rFlat[0]['value'] ?? [];
+            // flat: keys direkt auf oberster Ebene
+            if (isset($val['people']) || isset($val['dog_cat']) || isset($val['vehicle'])) {
+                $this->WriteAttributeString("AiSensApi", "AICFG_PLAIN");
+                return "AICFG_PLAIN";
+            }
+            // manche liefern trotzdem ein "AiCfg" Objekt zurück
+            if (isset($val['AiCfg'])) {
+                $this->WriteAttributeString("AiSensApi", "AICFG_V20");
+                return "AICFG_V20";
+            }
+        }
+        // nested-Variante (einige FW verlangen den Wrapper)
+        $rNest = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]], 'SENS', true);
+        if (is_array($rNest) && (($rNest[0]['code'] ?? -1) === 0) && isset(($rNest[0]['value'] ?? [])['AiCfg'])) {
+            $this->WriteAttributeString("AiSensApi", "AICFG_V20");
+            return "AICFG_V20";
+        }
+
+        // 2) SmartDetect – V20 (ein Erfolg reicht)
+        $tryV20 = [
+            [ "cmd"=>"GetHumanoidDetectV20", "param"=>["channel"=>0] ],
+            [ "cmd"=>"GetPetDetectV20",      "param"=>["channel"=>0] ],
+            [ "cmd"=>"GetVehicleDetectV20",  "param"=>["channel"=>0] ],
+        ];
+        foreach ($tryV20 as $t) {
+            $r = $this->apiCall([ $t ], 'SENS', true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $this->WriteAttributeString("AiSensApi", "SMARTDETECT_V20");
+                return "SMARTDETECT_V20";
+            }
+        }
+
+        // 3) SmartDetect – Legacy
+        $tryLEG = [
+            [ "cmd"=>"GetHumanoidDetect", "param"=>["channel"=>0] ],
+            [ "cmd"=>"GetPetDetect",      "param"=>["channel"=>0] ],
+            [ "cmd"=>"GetVehicleDetect",  "param"=>["channel"=>0] ],
+        ];
+        foreach ($tryLEG as $t) {
+            $r = $this->apiCall([ $t ], 'SENS', true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $this->WriteAttributeString("AiSensApi", "SMARTDETECT_LEG");
+                return "SMARTDETECT_LEG";
+            }
+        }
+
+        // 4) AiSensitivity (selten)
+        $rSens = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (is_array($rSens) && (($rSens[0]['code'] ?? -1) === 0)) {
+            $this->WriteAttributeString("AiSensApi", "AISENS_V20");
+            return "AISENS_V20";
+        }
+
+        // 5) Nichts gefunden
+        $this->WriteAttributeString("AiSensApi", "NONE");
+        $this->dbg('SENS', 'Keine AI-Sensitivitäts-API erkannt');
+        return "NONE";
+    }
+
+    /**
+     * Liest die drei Sensitivity-Werte und liefert:
+     *   ["people" => int|null, "dog_cat" => int|null, "vehicle" => int|null]
+     * Gibt null zurück, wenn gar nichts lesbar ist.
+     */
+    private function aiReadSensitivities(): ?array
+    {
+        $variant = $this->ReadAttributeString("AiSensApi");
+        if ($variant === "") $variant = $this->aiProbeAndCache() ?? "NONE";
+        $out = ["people"=>null, "dog_cat"=>null, "vehicle"=>null];
+
+        // --- Variante: AiCfg (bevorzugt, 1 Call) ---
+        if ($variant === "AICFG_PLAIN" || $variant === "AICFG_V20") {
+            // Reihenfolge: flat → nested → nested+action:1
+            $candidates = [
+                [[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]],
+                [[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]],
+                [[ "cmd"=>"GetAiCfg", "action"=>1, "param"=>["AiCfg"=>["channel"=>0]] ]],
+            ];
+            foreach ($candidates as $payload) {
+                $r = $this->apiCall($payload, 'SENS', true);
+                if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) continue;
+
+                $node = $r[0]['value'] ?? [];
+                if (isset($node['AiCfg'])) $node = $node['AiCfg'];
+
+                foreach (["people","dog_cat","vehicle"] as $k) {
+                    if (isset($node[$k]) && is_array($node[$k])) {
+                        $out[$k] = $this->aiExtractSensitivity($node[$k]);
+                    }
+                }
+                // Wenn wenigstens 1 Wert gefunden wurde → fertig
+                if ($out["people"]!==null || $out["dog_cat"]!==null || $out["vehicle"]!==null) {
+                    return $out;
+                }
+            }
+        }
+
+        // --- Variante: SmartDetect (je Typ 1 Call) ---
+        if ($variant === "SMARTDETECT_V20" || $variant === "SMARTDETECT_LEG") {
+            $map = [
+                "people"  => $variant==="SMARTDETECT_V20" ? "GetHumanoidDetectV20" : "GetHumanoidDetect",
+                "dog_cat" => $variant==="SMARTDETECT_V20" ? "GetPetDetectV20"      : "GetPetDetect",
+                "vehicle" => $variant==="SMARTDETECT_V20" ? "GetVehicleDetectV20"  : "GetVehicleDetect",
+            ];
+            foreach ($map as $cls => $cmd) {
+                // probiere 2 Param-Layouts: minimal (channel) und mit Wrapper (humanoid/pet/vehicle)
+                $wrp = ($cls === "people") ? "humanoid" : (($cls === "dog_cat") ? "pet" : "vehicle");
+                $tries = [
+                    [[ "cmd"=>$cmd, "param"=>["channel"=>0] ]],
+                    [[ "cmd"=>$cmd, "param"=>[ $wrp => ["channel"=>0] ] ]],
+                ];
+                foreach ($tries as $pl) {
+                    $r = $this->apiCall($pl, 'SENS', true);
+                    if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) continue;
+                    $val = $r[0]['value'] ?? [];
+                    // Suche robust nach einem "sensitivity"-Feld
+                    $out[$cls] = $this->aiSearchForSensitivityRecursive($val);
+                    if ($out[$cls] !== null) break;
+                }
+            }
+            if ($out["people"]!==null || $out["dog_cat"]!==null || $out["vehicle"]!==null) {
+                return $out;
+            }
+        }
+
+        // --- Variante: AiSensitivity (selten) ---
+        if ($variant === "AISENS_V20") {
+            $r = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $node = $r[0]['value']['AiSensitivity'] ?? $r[0]['value'] ?? [];
+                // Mappings: 'pet' ↔ dog_cat
+                $out["people"]  = $this->aiExtractSensitivity($node['people']  ?? []);
+                $out["vehicle"] = $this->aiExtractSensitivity($node['vehicle'] ?? []);
+                $out["dog_cat"] = $this->aiExtractSensitivity($node['pet']     ?? []);
+                if ($out["people"]!==null || $out["dog_cat"]!==null || $out["vehicle"]!==null) {
+                    return $out;
+                }
+            }
+        }
+
+        // Nichts gefunden
+        return null;
+    }
+
+    /** zieht 0..100 aus üblichen Feldern wie sensitivity/level/sense, sonst null */
+    private function aiExtractSensitivity(array $node): ?int
+    {
+        $candidates = ['sensitivity','level','sense','Sensitivity','Level','Sense'];
+        foreach ($candidates as $k) {
+            if (isset($node[$k]) && is_numeric($node[$k])) {
+                $v = (int)$node[$k];
+                if ($v >= 0 && $v <= 100) return $v;
+            }
+        }
+        // Fallback: rekursiv suchen
+        return $this->aiSearchForSensitivityRecursive($node);
+    }
+
+    /** rekursive Suche nach einem plausiblen 0..100-"sensitivity"-Wert */
+    private function aiSearchForSensitivityRecursive($node): ?int
+    {
+        if (!is_array($node)) return null;
+        foreach ($node as $k => $v) {
+            if (is_array($v)) {
+                $r = $this->aiSearchForSensitivityRecursive($v);
+                if ($r !== null) return $r;
+            } else {
+                $lk = strtolower((string)$k);
+                if (strpos($lk, 'sens') !== false && is_numeric($v)) {
+                    $iv = (int)$v;
+                    if ($iv >= 0 && $iv <= 100) return $iv;
+                }
+            }
+        }
+        return null;
+    }
 }
