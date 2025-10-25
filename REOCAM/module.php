@@ -34,6 +34,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiPush",   true);
         $this->RegisterPropertyBoolean("EnableApiFTP",    false);
+        $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -115,9 +116,10 @@ class Reolink extends IPSModule
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
         $enablePush  = $this->ReadPropertyBoolean("EnableApiPush");
         $enableFTP   = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSens  = $this->ReadPropertyBoolean("EnableApiSensitivity");
 
         $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ
-            || $enablePush || $enableFTP);
+            || $enablePush || $enableFTP || $enableSens);
 
         $this->SetTimerInterval("ApiRequestTimer", 0);
 
@@ -188,6 +190,20 @@ class Reolink extends IPSModule
                 $ok = $this->FtpApply((bool)$Value);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 else     $this->UpdateFtpStatus();
+                break;
+
+            case "SensitivityMD":
+                $val = max(1, min(100, (int)$Value));
+                $ok  = $this->MdSensitivityApply($val);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
+                else     $this->UpdateMdSensitivityStatus();
+                break;
+
+            case "SensitivityAI":
+                $val = max(0, min(100, (int)$Value));
+                $ok  = $this->AiSensitivityApply($val); // hier „Person“
+                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
+                else     $this->UpdateAiSensitivityStatus();
                 break;
 
             default:
@@ -1057,6 +1073,25 @@ class Reolink extends IPSModule
                 $this->EnableAction("FTPEnabled");
             }
         } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
+
+        // Empfindlichkeiten
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
+
+            if (!@$this->GetIDForIdent("SensitivityMD")) {
+                $this->RegisterVariableInteger("SensitivityMD", "Empfindlichkeit (Bewegungserkennung)", "~Intensity.100", 12);
+                $this->EnableAction("SensitivityMD");
+            }
+
+            if (!@$this->GetIDForIdent("SensitivityAI")) {
+                $this->RegisterVariableInteger("SensitivityAI", "Empfindlichkeit (Intelligente Erkennung - Person)", "~Intensity.100", 13);
+                $this->EnableAction("SensitivityAI");
+            }
+        } else {
+            foreach (["SensitivityMD","SensitivityAI"] as $ident) {
+                $id = @$this->GetIDForIdent($ident);
+                if ($id !== false) $this->UnregisterVariable($ident);
+            }
+        }
     }
 
     public function ExecuteApiRequests()
@@ -1076,6 +1111,8 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiPTZ"))        { $this->CreateOrUpdatePTZHtml(false); }
             if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateMdSensitivityStatus(); $this->UpdateAiSensitivityStatus();
+}
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
@@ -1855,93 +1892,53 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
-        $varID = @$this->GetIDForIdent("PushNotify");
-        if ($varID === false) {
-            return;
-        }
+        $id = @$this->GetIDForIdent("PushNotify");
+        if ($id === false) return;
 
-        // --- kleine Helfer ---
-        $anyOne = function($v) {
-            // true, wenn irgendwo in einem 168er String eine '1' steht
-            if (!is_string($v)) return false;
-            return (strpos($v, '1') !== false);
-        };
-        $tablesAnyOn = function($tableNode) use ($anyOne) {
-            // tableNode kann ein Assoc-Array mit AI_* / MD Keys sein
-            if (!is_array($tableNode)) return null; // unbekannt
-            foreach ($tableNode as $k => $v) {
-                if ($anyOne($v)) return true; // mind. ein Zeitfenster aktiv
-            }
-            // alle Tabellen nur Nullen => effektiv aus
-            return false;
-        };
+        $ver = $this->DetectPushApiVersion();
+        $enabled = null;
 
-        // 1) V20 versuchen (ohne sich auf "enable" zu verlassen)
-        $resV20 = $this->apiCall([[ "cmd" => "GetPushV20", "param" => ["channel" => 0] ]], 'PUSH', /*suppress*/ true);
-        if (is_array($resV20) && (($resV20[0]['code'] ?? -1) === 0)) {
-            // Es gibt mehrere mögliche Shapes; robust entpacken:
-            $push = $resV20[0]['value']['Push'] ?? ($resV20[0]['value'] ?? null);
-            $enabled = null;
-
-            if (is_array($push)) {
-                // 1a) Kanalspezifischer Schedule?
-                // Manche Firmwares liefern chSchedule = [ {channel:0, enable:0/1, table:{...}} , ...]
+        if ($ver === "V20") {
+            $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
+            if (is_array($res)) {
+                $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
+                // 1) Channel schedule
                 if (isset($push['chSchedule']) && is_array($push['chSchedule'])) {
                     foreach ($push['chSchedule'] as $row) {
                         $ch = (int)($row['channel'] ?? $row['Channel'] ?? -1);
-                        if ($ch === 0) {
-                            // Wenn "table" vorhanden, werten wir die 168er Tabellen aus;
-                            // falls nicht vorhanden, nehmen wir das enable-Flag der Zeile.
-                            if (isset($row['table'])) {
-                                $enabled = $tablesAnyOn($row['table']);
-                            } elseif (isset($row['enable'])) {
-                                $enabled = ((int)$row['enable'] === 1);
-                            }
-                            break;
-                        }
+                        if ($ch === 0) { $enabled = ((int)($row['enable'] ?? 0) === 1); break; }
                     }
                 }
-
-                // 1b) Falls kein chSchedule: globaler schedule.table
-                if ($enabled === null && isset($push['schedule']['table'])) {
-                    $enabled = $tablesAnyOn($push['schedule']['table']);
-                }
-
-                // 1c) Fallback: wenn weiterhin unbekannt, letzter Notanker – aber NICHT bevorzugen:
+                // 2) Global schedule
                 if ($enabled === null && isset($push['schedule']['enable'])) {
-                    // Bei manchen Builds existiert das doch noch
                     $enabled = ((int)$push['schedule']['enable'] === 1);
                 }
+                // 3) Global enable (nicht zuverlässig, aber als Fallback)
+                if ($enabled === null && isset($push['enable'])) {
+                    $enabled = ((int)$push['enable'] === 1);
+                }
             }
-
-            if ($enabled !== null) {
-                $this->SetValue("PushNotify", (bool)$enabled);
-                return;
-            }
-            // Wenn wir hier landen, konnten wir aus V20 nichts Verwertbares lesen -> Legacy versuchen
-        }
-
-        // 2) Legacy versuchen – zuerst mit action:1 (gemäß Doku), dann ohne
-        //    Hier ist schedule.enable definiert und aussagekräftig.
-        $payloadLegacy = [[ "cmd" => "GetPush", "action" => 1, "param" => ["channel" => 0] ]];
-        $resLegacy = $this->apiCall($payloadLegacy, 'PUSH', /*suppress*/ true);
-
-        if (!(is_array($resLegacy) && (($resLegacy[0]['code'] ?? -1) === 0))) {
-            // zweiter Versuch ohne "action"
-            $payloadLegacy = [[ "cmd" => "GetPush", "param" => ["channel" => 0] ]];
-            $resLegacy = $this->apiCall($payloadLegacy, 'PUSH', /*suppress*/ true);
-        }
-
-        if (is_array($resLegacy) && (($resLegacy[0]['code'] ?? -1) === 0)) {
-            $push = $resLegacy[0]['value']['Push'] ?? ($resLegacy[0]['value'] ?? null);
-            if (isset($push['schedule']['enable'])) {
-                $this->SetValue("PushNotify", ((int)$push['schedule']['enable'] === 1));
-                return;
+        } else {
+            $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
+            if (is_array($res)) {
+                $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
+                if (isset($push['schedule']['enable'])) {
+                    $enabled = ((int)$push['schedule']['enable'] === 1);
+                } elseif (isset($push['enable'])) {
+                    $enabled = ((int)$push['enable'] === 1);
+                }
             }
         }
 
-        // 3) Wenn nichts davon klappt, Status unbekannt lassen und loggen
-        $this->dbg('PUSH', 'Status konnte nicht ermittelt werden (keine verwertbaren Felder).');
+        if ($enabled !== null) $this->SetValue("PushNotify", (bool)$enabled);
+    }
+
+    private function PushApply(bool $on): bool {
+        $ver = $this->DetectPushApiVersion();
+        $cmd = ($ver==='V20') ? "SetPushV20" : "SetPush";
+        $payload = [[ "cmd"=>$cmd, "param"=>[ "Push" => ["enable"=>$on?1:0, "channel"=>0] ] ]];
+        $res = $this->apiCall($payload, 'PUSH', true);
+        return is_array($res) && (($res[0]['code'] ?? -1)===0);
     }
 
     //FTP EIN/AUS
@@ -2040,4 +2037,116 @@ class Reolink extends IPSModule
         }
         return $ok;
     }
+
+    //Sensitivity
+
+    private function mdReadRaw(): ?array 
+    {
+        $r = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (!is_array($r) || !isset($r[0]['value'])) return null;
+        $v = $r[0]['value']['MdAlarm'] ?? $r[0]['value'] ?? null;
+        return is_array($v) ? $v : null;
+    }
+
+    private function mdPickCurrentSlot(array $rows): ?int 
+    {
+        $now = getdate(); $hm = $now['hours']*60 + $now['minutes'];
+        foreach ($rows as $row) {
+            $b = ($row['beginHour']??0)*60 + ($row['beginMin']??0);
+            $e = ($row['endHour']??23)*60 + ($row['endMin']??59);
+            if ($hm >= $b && $hm <= $e) return (int)($row['sensitivity'] ?? null);
+        }
+        return isset($rows[0]['sensitivity']) ? (int)$rows[0]['sensitivity'] : null;
+    }
+
+    private function mdMap(bool $toApp, int $val, array $rows): int 
+    {
+        // Skala anhand max-Wert erkennen (10er/50er → App 0..100)
+        $max = 0; foreach ($rows as $r) { $x = (int)($r['sensitivity'] ?? 0); if ($x > $max) $max = $x; }
+        if ($toApp) {
+            if ($max <= 10)   return max(1, min(100, $val*4 + 1));   // 10 → 41
+            if ($max <= 50)   return max(1, min(100, (int)round($val*2)));
+            return max(0, min(100, $val));
+        } else {
+            if ($max <= 10)   return max(0, min(10,  (int)round(($val-1)/4)));
+            if ($max <= 50)   return max(0, min(50, (int)round($val/2)));
+            return max(0, min(100, $val));
+        }
+    }
+
+    private function UpdateMdSensitivityStatus(): void 
+    {
+        if (!$this->apiEnsureToken()) return;
+        $id = @$this->GetIDForIdent("SensitivityMD"); if ($id===false) return;
+
+        $raw = $this->mdReadRaw(); if (!$raw) return;
+        $useNew = (int)($raw['useNewSens'] ?? 0) === 1;
+        $list   = $useNew ? ($raw['newSens']['sens'] ?? []) : ($raw['sens'] ?? []);
+        if (!is_array($list) || empty($list)) return;
+
+        $apiVal = $this->mdPickCurrentSlot($list);
+        if ($apiVal === null) return;
+
+        $appVal = $this->mdMap(true, $apiVal, $list);
+        $this->SetValue("SensitivityMD", $appVal);
+    }
+
+    private function MdSensitivityApply(int $appVal): bool 
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $appVal = max(1, min(100, $appVal));
+
+        $raw = $this->mdReadRaw(); if (!$raw) return false;
+        $useNew = (int)($raw['useNewSens'] ?? 0) === 1;
+        $list   = $useNew ? ($raw['newSens']['sens'] ?? []) : ($raw['sens'] ?? []);
+        if (!is_array($list) || empty($list)) return false;
+
+        $apiVal = $this->mdMap(false, $appVal, $list);
+
+        // alle Slots angleichen (optional nur aktuellen Slot schreiben)
+        $dst = [];
+        foreach ($list as $row) { $row['sensitivity'] = $apiVal; $dst[] = $row; }
+
+        $param = $useNew ? ["newSens"=>["sens"=>$dst]] : ["sens"=>$dst];
+        $ok = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>$param + ["channel"=>0]] ]], 'SENS', true);
+        if (is_array($ok) && (($ok[0]['code'] ?? -1) === 0)) {
+            $this->UpdateMdSensitivityStatus();
+            return true;
+        }
+        return false;
+    }
+
+    private function aiRead(): ?array 
+    {
+    $r = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
+    if (!is_array($r) || !isset($r[0]['value'])) return null;
+    return $r[0]['value']['AiCfg'] ?? $r[0]['value'] ?? null;
+    }
+
+    private function UpdateAiSensitivityStatus(): void 
+    {
+        if (!$this->apiEnsureToken()) return;
+        $id = @$this->GetIDForIdent("SensitivityAI"); if ($id===false) return;
+
+        $ai = $this->aiRead(); if (!$ai) return;
+        $v  = $ai['people']['sensitivity'] ?? null; // alternativ vehicle/dog_cat
+        if (is_numeric($v)) $this->SetValue("SensitivityAI", max(0, min(100, (int)$v)));
+    }
+
+    private function AiSensitivityApply(int $val): bool 
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $val = max(0, min(100, (int)$val));
+        $payload = [[
+            "cmd"=>"SetAiCfg",
+            "param"=>["AiCfg" => ["channel"=>0, "people"=>["sensitivity"=>$val]]]
+        ]];
+        $r = $this->apiCall($payload, 'SENS', true);
+        if (is_array($r) && (($r[0]['code'] ?? -1)===0)) {
+            $this->UpdateAiSensitivityStatus();
+            return true;
+        }
+        return false;
+    }
+
 }
