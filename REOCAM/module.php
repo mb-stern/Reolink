@@ -1883,14 +1883,15 @@ class Reolink extends IPSModule
         $deriveFromTable = function(array $tableNode): ?bool {
             if (!is_array($tableNode)) return null;
             // Wenn in irgendeiner Tabelle (AI_PEOPLE / AI_VEHICLE / AI_DOG_CAT / MD) mind. eine „1“ vorkommt → aktiv
-            foreach ($tableNode as $k => $v) {
-                if (!is_string($v)) continue;
-                if (strpos($v, '1') !== false) return true;
+            foreach ($tableNode as $v) {
+                if (is_string($v) && strpos($v, '1') !== false) {
+                    return true;
+                }
             }
             return null; // nichts ableitbar
         };
 
-        $pickEnabled = function(?array $root): ?bool use ($extractEnabled, $deriveFromTable) {
+        $pickEnabled = function(?array $root) use ($extractEnabled, $deriveFromTable): ?bool {
             if (!$root) return null;
 
             // Manche Firmwares legen alles unter value.Push, andere direkt unter value
@@ -1915,7 +1916,7 @@ class Reolink extends IPSModule
         $res = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
             $node = $res[0]['value']['Push'] ?? $res[0]['value'] ?? null;
-            $enabled = $pickEnabled(is_array($node) ? ['Push'=>$node] : $res[0]['value'] ?? null);
+            $enabled = $pickEnabled(is_array($node) ? ['Push'=>$node] : ($res[0]['value'] ?? null));
             if ($enabled !== null) {
                 $this->WriteAttributeString("PushApiVersion", "LEGACY");
             }
@@ -1926,7 +1927,7 @@ class Reolink extends IPSModule
             $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
             if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
                 $node = $res[0]['value']['Push'] ?? $res[0]['value'] ?? null;
-                $enabled = $pickEnabled(is_array($node) ? ['Push'=>$node] : $res[0]['value'] ?? null);
+                $enabled = $pickEnabled(is_array($node) ? ['Push'=>$node] : ($res[0]['value'] ?? null));
                 if ($enabled !== null) {
                     $this->WriteAttributeString("PushApiVersion", "LEGACY");
                 }
