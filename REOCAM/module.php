@@ -1359,6 +1359,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ / Zoom
     // ---------------------------
+    // ====== PTZ/Zoom ==================================================================
  
     private function CreateOrUpdatePTZHtml(): void
     {
@@ -1997,6 +1998,7 @@ class Reolink extends IPSModule
         }
         return $okAny;
     }
+
 
     // ---------------------------
     // FTP EIN/AUS
