@@ -2051,20 +2051,7 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    //Sensitivity
-
-    // --- Lies die AI-Sensitivitäten ---
-    private function aiReadSens(): ?array
-    {
-        $r = $this->apiCall([[ "cmd" => "GetAiSensitivity", "param" => ["channel" => 0] ]], 'SENS', true);
-        if (!is_array($r) || !isset($r[0]['value']['AiSensitivity'])) return null;
-        $ai = $r[0]['value']['AiSensitivity'];
-        return [
-            "people"  => (int)($ai['people']['sensitivity']  ?? 0),
-            "dog_cat" => (int)($ai['pet']['sensitivity']     ?? 0),
-            "vehicle" => (int)($ai['vehicle']['sensitivity'] ?? 0)
-        ];
-    }
+    //Sensitiviti
 
     private function UpdateAiSensitivityStatus(): void
     {
@@ -2075,17 +2062,18 @@ class Reolink extends IPSModule
             "dog_cat" => @$this->GetIDForIdent("SensitivityDogCat"),
             "vehicle" => @$this->GetIDForIdent("SensitivityVehicle")
         ];
-        $vals = $this->aiReadSens();
-        if (!$vals) return;
+
+        // ← nutzt die bereits vorhandene Auto-Erkennung
+        $vals = $this->aiReadSensitivities();
+        if (!$vals) { $this->dbg('SENS', 'Keine Sensitivitäten lesbar'); return; }
 
         foreach ($vals as $k => $v) {
+            $ident =
+                $k === "people"  ? "SensitivityPeople" :
+                ($k === "dog_cat" ? "SensitivityDogCat" : "SensitivityVehicle");
             $id = $ids[$k];
-            if ($id !== false && GetValue($id) !== $v) {
-                $this->SetValue(
-                    $k === "people" ? "SensitivityPeople" :
-                    ($k === "dog_cat" ? "SensitivityDogCat" : "SensitivityVehicle"),
-                    $v
-                );
+            if ($id !== false && $v !== null && GetValue($id) !== (int)$v) {
+                $this->SetValue($ident, (int)$v);
             }
         }
     }
@@ -2094,27 +2082,70 @@ class Reolink extends IPSModule
     private function AiSensitivityApply(string $cls, int $value): bool
     {
         if (!$this->apiEnsureToken()) return false;
-        if (!in_array($cls, ["people", "dog_cat", "vehicle"], true)) return false;
+        if (!in_array($cls, ["people","dog_cat","vehicle"], true)) return false;
 
-        // vorhandene Werte holen, um nur den geänderten zu überschreiben
-        $current = $this->aiReadSens() ?? ["people"=>50,"dog_cat"=>50,"vehicle"=>50];
-        $current[$cls] = max(0, min(100, $value));
+        // Aktuelle Werte (über Auto-Erkennung) lesen
+        $current = $this->aiReadSensitivities() ?? ["people"=>50,"dog_cat"=>50,"vehicle"=>50];
+        $current[$cls] = max(0, min(100, (int)$value));
 
-        $payload = [[
-            "cmd"   => "SetAiSensitivity",
-            "param" => [
-                "AiSensitivity" => [
-                    "channel" => 0,
-                    "people"  => ["sensitivity" => $current["people"]],
-                    "vehicle" => ["sensitivity" => $current["vehicle"]],
-                    "pet"     => ["sensitivity" => $current["dog_cat"]],
+        // Welche API-Variante wird von deiner Cam unterstützt?
+        $variant = $this->ReadAttributeString("AiSensApi");
+        if ($variant === "") $variant = $this->aiProbeAndCache() ?? "";
+
+        $ok = false;
+
+        // 1) Versuche SetAiCfg (flat/nested)
+        if (in_array($variant, ["AICFG_V20","AICFG_PLAIN"], true)) {
+            $body = [
+                "channel" => 0,
+                "people"  => ["sensitivity"=>$current["people"]],
+                "dog_cat" => ["sensitivity"=>$current["dog_cat"]],
+                "vehicle" => ["sensitivity"=>$current["vehicle"]],
+            ];
+            // flat
+            $r1 = $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>$body ]], 'SENS', true);
+            // nested (AiCfg-Wrapper)
+            $r2 = $ok = (is_array($r1) && (($r1[0]['code']??-1)===0))
+                ? $r1
+                : $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>["AiCfg"=>$body] ]], 'SENS', true);
+            $ok = is_array($r2) && (($r2[0]['code']??-1)===0);
+        }
+
+        // 2) Fallback: SmartDetect-Einzeldienste (manche FW-Versionen)
+        if (!$ok && in_array($variant, ["SMARTDETECT_V20","SMARTDETECT_LEG"], true)) {
+            $map = [
+                "people"  => ["cmdV20"=>"SetHumanoidDetectV20", "cmd"=>"SetHumanoidDetect"],
+                "dog_cat" => ["cmdV20"=>"SetPetDetectV20",      "cmd"=>"SetPetDetect"],
+                "vehicle" => ["cmdV20"=>"SetVehicleDetectV20",  "cmd"=>"SetVehicleDetect"],
+            ];
+            $pair = $map[$cls];
+
+            $payloadV20 = [[ "cmd"=>$pair["cmdV20"], "param"=>[ $cls==="dog_cat" ? "pet":"humanoid" => ["sensitivity"=>$current[$cls], "channel"=>0] ] ]];
+            $payloadLEG = [[ "cmd"=>$pair["cmd"],    "param"=>[ $cls==="dog_cat" ? "pet":"humanoid" => ["sensitivity"=>$current[$cls], "channel"=>0] ] ]];
+
+            $r = $this->apiCall($payloadV20, 'SENS', true);
+            if (!is_array($r) || (($r[0]['code']??-1)!==0)) {
+                $r = $this->apiCall($payloadLEG, 'SENS', true);
+            }
+            $ok = is_array($r) && (($r[0]['code']??-1)===0);
+        }
+
+        // 3) Nur falls wirklich vorhanden: SetAiSensitivity (bei dir „not support“)
+        if (!$ok && $variant === "AISENS_V20") {
+            $r = $this->apiCall([[ "cmd"=>"SetAiSensitivity", "param"=>[
+                "AiSensitivity"=>[
+                    "channel"=>0,
+                    "people"  =>["sensitivity"=>$current["people"]],
+                    "vehicle" =>["sensitivity"=>$current["vehicle"]],
+                    "pet"     =>["sensitivity"=>$current["dog_cat"]],
                 ]
-            ]
-        ]];
+            ]]], 'SENS', true);
+            $ok = is_array($r) && (($r[0]['code']??-1)===0);
+        }
 
-        $r = $this->apiCall($payload, 'SENS', true);
-        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-        if ($ok) $this->UpdateAiSensitivityStatus();
+        if ($ok) { $this->UpdateAiSensitivityStatus(); }
+        else     { $this->dbg('SENS', 'Setzen fehlgeschlagen – keine passende SET-Variante'); }
+
         return $ok;
     }
 }
