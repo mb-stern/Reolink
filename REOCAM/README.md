@@ -139,6 +139,7 @@ Je nach Konfiguration werden automatisch angelegt:
 ### Version 2.9 (24.10.2025)
 - Verbesserte Erkennung der Server-IP-Adresse im Konfigurationsformular
 - Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden
+- API-Punkt FTP-Upload hinzugefügt
 
 ### Version 2.8 (30.09.2025)
 - Neuer Schalter *Instanz deaktivieren*  

@@ -36,7 +36,6 @@
         { "type": "CheckBox", "name": "EnableApiWhiteLed",    "caption": "LED-Scheinwerfer (Spotlight)" },
         { "type": "CheckBox", "name": "EnableApiEmail",       "caption": "E-Mail-Alarm" },
         { "type": "CheckBox", "name": "EnableApiPTZ",         "caption": "PTZ / Presets / Zoom" },
-        { "type": "CheckBox", "name": "EnableApiPush",        "caption": "Push-Nachrichten" },
         { "type": "CheckBox", "name": "EnableApiFTP",         "caption": "FTP-Upload" }
       ]
     },
