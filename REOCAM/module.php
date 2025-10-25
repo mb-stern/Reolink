@@ -192,16 +192,23 @@ class Reolink extends IPSModule
                 else     $this->UpdateFtpStatus();
                 break;
 
-            case "SensitivityMD":
-                $val = max(1, min(100, (int)$Value));
-                $ok  = $this->MdSensitivityApply($val);
+            case "SensitivityPeople":
+                $val = max(0, min(100, (int)$Value));
+                $ok  = $this->AiSensitivityApply("people", $val);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
-                else     $this->UpdateMdSensitivityStatus();
+                else     $this->UpdateAiSensitivityStatus();
                 break;
 
-            case "SensitivityAI":
+            case "SensitivityDogCat":
                 $val = max(0, min(100, (int)$Value));
-                $ok  = $this->AiSensitivityApply($val); // hier „Person“
+                $ok  = $this->AiSensitivityApply("dog_cat", $val);
+                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
+                else     $this->UpdateAiSensitivityStatus();
+                break;
+
+            case "SensitivityVehicle":
+                $val = max(0, min(100, (int)$Value));
+                $ok  = $this->AiSensitivityApply("vehicle", $val);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
                 else     $this->UpdateAiSensitivityStatus();
                 break;
@@ -1074,20 +1081,28 @@ class Reolink extends IPSModule
             }
         } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
 
-        // Empfindlichkeiten
+        // --- AI Sensitivities (0..100) ---
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
 
-            if (!@$this->GetIDForIdent("SensitivityMD")) {
-                $this->RegisterVariableInteger("SensitivityMD", "Empfindlichkeit (Bewegungserkennung)", "~Intensity.100", 12);
-                $this->EnableAction("SensitivityMD");
+            // optional: eigenes Profil, sonst "~Intensity.100" verwenden
+            if (!IPS_VariableProfileExists("REOCAM.AI100")) {
+                IPS_CreateVariableProfile("REOCAM.AI100", 1);
+                IPS_SetVariableProfileValues("REOCAM.AI100", 0, 100, 1);
             }
 
-            if (!@$this->GetIDForIdent("SensitivityAI")) {
-                $this->RegisterVariableInteger("SensitivityAI", "Empfindlichkeit (Intelligente Erkennung - Person)", "~Intensity.100", 13);
-                $this->EnableAction("SensitivityAI");
+            $defs = [
+                ["SensitivityPeople",  "Empfindlichkeit – Person"],
+                ["SensitivityDogCat",  "Empfindlichkeit – Tier"],
+                ["SensitivityVehicle", "Empfindlichkeit – Fahrzeug"],
+            ];
+            foreach ($defs as [$ident, $name]) {
+                if (!@$this->GetIDForIdent($ident)) {
+                    $this->RegisterVariableInteger($ident, $name, "REOCAM.AI100", 12);
+                    $this->EnableAction($ident);
+                }
             }
         } else {
-            foreach (["SensitivityMD","SensitivityAI"] as $ident) {
+            foreach (["SensitivityPeople","SensitivityDogCat","SensitivityVehicle"] as $ident) {
                 $id = @$this->GetIDForIdent($ident);
                 if ($id !== false) $this->UnregisterVariable($ident);
             }
@@ -1106,14 +1121,12 @@ class Reolink extends IPSModule
             return;
         }
         try {
-            if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))   { $this->UpdateWhiteLedStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiEmail"))      { $this->EmailApply(null, null, null); } // nur GET
-            if ($this->ReadPropertyBoolean("EnableApiPTZ"))        { $this->CreateOrUpdatePTZHtml(false); }
-            if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateMdSensitivityStatus(); $this->UpdateAiSensitivityStatus();
-}
-
+            if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))    { $this->UpdateWhiteLedStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiEmail"))       { $this->EmailApply(null, null, null); } // nur GET
+            if ($this->ReadPropertyBoolean("EnableApiPTZ"))         { $this->CreateOrUpdatePTZHtml(false); }
+            if ($this->ReadPropertyBoolean("EnableApiPush"))        { $this->UpdatePushStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiFTP"))         { $this->UpdateFtpStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateAiSensitivityStatus(); }
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
@@ -2040,82 +2053,6 @@ class Reolink extends IPSModule
 
     //Sensitivity
 
-    private function mdReadRaw(): ?array 
-    {
-        $r = $this->apiCall([[ "cmd"=>"GetMdAlarm", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (!is_array($r) || !isset($r[0]['value'])) return null;
-        $v = $r[0]['value']['MdAlarm'] ?? $r[0]['value'] ?? null;
-        return is_array($v) ? $v : null;
-    }
-
-    private function mdPickCurrentSlot(array $rows): ?int 
-    {
-        $now = getdate(); $hm = $now['hours']*60 + $now['minutes'];
-        foreach ($rows as $row) {
-            $b = ($row['beginHour']??0)*60 + ($row['beginMin']??0);
-            $e = ($row['endHour']??23)*60 + ($row['endMin']??59);
-            if ($hm >= $b && $hm <= $e) return (int)($row['sensitivity'] ?? null);
-        }
-        return isset($rows[0]['sensitivity']) ? (int)$rows[0]['sensitivity'] : null;
-    }
-
-    private function mdMap(bool $toApp, int $val, array $rows): int 
-    {
-        // Skala anhand max-Wert erkennen (10er/50er → App 0..100)
-        $max = 0; foreach ($rows as $r) { $x = (int)($r['sensitivity'] ?? 0); if ($x > $max) $max = $x; }
-        if ($toApp) {
-            if ($max <= 10)   return max(1, min(100, $val*4 + 1));   // 10 → 41
-            if ($max <= 50)   return max(1, min(100, (int)round($val*2)));
-            return max(0, min(100, $val));
-        } else {
-            if ($max <= 10)   return max(0, min(10,  (int)round(($val-1)/4)));
-            if ($max <= 50)   return max(0, min(50, (int)round($val/2)));
-            return max(0, min(100, $val));
-        }
-    }
-
-    private function UpdateMdSensitivityStatus(): void 
-    {
-        if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("SensitivityMD"); if ($id===false) return;
-
-        $raw = $this->mdReadRaw(); if (!$raw) return;
-        $useNew = (int)($raw['useNewSens'] ?? 0) === 1;
-        $list   = $useNew ? ($raw['newSens']['sens'] ?? []) : ($raw['sens'] ?? []);
-        if (!is_array($list) || empty($list)) return;
-
-        $apiVal = $this->mdPickCurrentSlot($list);
-        if ($apiVal === null) return;
-
-        $appVal = $this->mdMap(true, $apiVal, $list);
-        $this->SetValue("SensitivityMD", $appVal);
-    }
-
-    private function MdSensitivityApply(int $appVal): bool 
-    {
-        if (!$this->apiEnsureToken()) return false;
-        $appVal = max(1, min(100, $appVal));
-
-        $raw = $this->mdReadRaw(); if (!$raw) return false;
-        $useNew = (int)($raw['useNewSens'] ?? 0) === 1;
-        $list   = $useNew ? ($raw['newSens']['sens'] ?? []) : ($raw['sens'] ?? []);
-        if (!is_array($list) || empty($list)) return false;
-
-        $apiVal = $this->mdMap(false, $appVal, $list);
-
-        // alle Slots angleichen (optional nur aktuellen Slot schreiben)
-        $dst = [];
-        foreach ($list as $row) { $row['sensitivity'] = $apiVal; $dst[] = $row; }
-
-        $param = $useNew ? ["newSens"=>["sens"=>$dst]] : ["sens"=>$dst];
-        $ok = $this->apiCall([[ "cmd"=>"SetMdAlarm", "param"=>["MdAlarm"=>$param + ["channel"=>0]] ]], 'SENS', true);
-        if (is_array($ok) && (($ok[0]['code'] ?? -1) === 0)) {
-            $this->UpdateMdSensitivityStatus();
-            return true;
-        }
-        return false;
-    }
-
     private function aiRead(): ?array 
     {
     $r = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
@@ -2123,30 +2060,53 @@ class Reolink extends IPSModule
     return $r[0]['value']['AiCfg'] ?? $r[0]['value'] ?? null;
     }
 
-    private function UpdateAiSensitivityStatus(): void 
+    private function UpdateAiSensitivityStatus(): void
     {
         if (!$this->apiEnsureToken()) return;
-        $id = @$this->GetIDForIdent("SensitivityAI"); if ($id===false) return;
 
-        $ai = $this->aiRead(); if (!$ai) return;
-        $v  = $ai['people']['sensitivity'] ?? null; // alternativ vehicle/dog_cat
-        if (is_numeric($v)) $this->SetValue("SensitivityAI", max(0, min(100, (int)$v)));
+        // prüfe, ob die Variablen existieren – sonst keine Arbeit
+        $ids = [
+            "people"  => @$this->GetIDForIdent("SensitivityPeople"),
+            "dog_cat" => @$this->GetIDForIdent("SensitivityDogCat"),
+            "vehicle" => @$this->GetIDForIdent("SensitivityVehicle")
+        ];
+        if ($ids["people"]===false && $ids["dog_cat"]===false && $ids["vehicle"]===false) return;
+
+        $res = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (!is_array($res) || !isset($res[0]['value'])) return;
+        $ai = $res[0]['value']['AiCfg'] ?? $res[0]['value'];
+
+        $vals = [
+            "people"  => isset($ai["people"]["sensitivity"])  ? (int)$ai["people"]["sensitivity"]  : null,
+            "dog_cat" => isset($ai["dog_cat"]["sensitivity"]) ? (int)$ai["dog_cat"]["sensitivity"] : null,
+            "vehicle" => isset($ai["vehicle"]["sensitivity"]) ? (int)$ai["vehicle"]["sensitivity"] : null,
+        ];
+
+        foreach ($vals as $k => $v) {
+            if ($v === null) continue;
+            $id = $ids[$k];
+            if ($id === false) continue;
+            $v = max(0, min(100, $v));
+            if (GetValue($id) !== $v) {
+                $this->SetValue(($k==="people" ? "SensitivityPeople" : ($k==="dog_cat" ? "SensitivityDogCat" : "SensitivityVehicle")), $v);
+            }
+        }
     }
 
-    private function AiSensitivityApply(int $val): bool 
+    private function AiSensitivityApply(string $cls, int $value): bool
     {
         if (!$this->apiEnsureToken()) return false;
-        $val = max(0, min(100, (int)$val));
-        $payload = [[
-            "cmd"=>"SetAiCfg",
-            "param"=>["AiCfg" => ["channel"=>0, "people"=>["sensitivity"=>$val]]]
-        ]];
-        $r = $this->apiCall($payload, 'SENS', true);
-        if (is_array($r) && (($r[0]['code'] ?? -1)===0)) {
-            $this->UpdateAiSensitivityStatus();
-            return true;
-        }
-        return false;
-    }
+        if (!in_array($cls, ["people","dog_cat","vehicle"], true)) return false;
 
+        $v = max(0, min(100, $value));
+        $payload = [[
+            "cmd"   => "SetAiCfg",
+            "param" => ["AiCfg" => ["channel"=>0, $cls => ["sensitivity"=>$v]]]
+        ]];
+
+        $r = $this->apiCall($payload, 'SENS', true);
+        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        if ($ok) $this->UpdateAiSensitivityStatus();
+        return $ok;
+    }
 }
