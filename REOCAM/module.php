@@ -49,6 +49,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("PtzPresetsCache", "");
         $this->RegisterAttributeString("PushApiVersion", "");
         $this->RegisterAttributeString("FtpApiVersion", "");
+        $this->RegisterAttributeString("AiSensApi", "");
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -2350,5 +2351,143 @@ class Reolink extends IPSModule
             $this->WriteAttributeString("AiSensApi", "");
         }
         return $this->GetAiSensApi();
+    }
+
+    // Liefert die erkannte AI-Sensitivity-API-Variante (probt bei Bedarf einmalig)
+    public function GetAiSensApi(): string
+    {
+        $v = $this->ReadAttributeString("AiSensApi");
+        if ($v === "" || $v === "NONE") {
+            $v = $this->aiProbeAndCache() ?? "NONE";
+        }
+        $this->dbg('SENS', 'AiSensApi', $v);
+        return $v;
+    }
+
+    // Optional: Cache resetten und erneut erkennen
+    public function ProbeAiSensApi(bool $force = true): string
+    {
+        if ($force) {
+            $this->WriteAttributeString("AiSensApi", "");
+        }
+        return $this->GetAiSensApi();
+    }
+
+    // Ermittelt einmalig die unterstützte API-Variante und cached das Ergebnis im Attribut "AiSensApi".
+    private function aiProbeAndCache(): ?string
+    {
+        if (!$this->apiEnsureToken()) return null;
+
+        // 1) GetAiCfg – zwei Stile (flat / nested)
+        $rFlat   = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (is_array($rFlat) && (($rFlat[0]['code'] ?? -1) === 0)) {
+            $this->WriteAttributeString("AiSensApi", "AICFG_PLAIN");
+            return "AICFG_PLAIN";
+        }
+        $rNest   = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]], 'SENS', true);
+        if (is_array($rNest) && (($rNest[0]['code'] ?? -1) === 0)) {
+            $this->WriteAttributeString("AiSensApi", "AICFG_V20");
+            return "AICFG_V20";
+        }
+
+        // 2) SmartDetect – V20
+        $rH20 = $this->apiCall([[ "cmd"=>"GetHumanoidDetectV20", "param"=>["humanoid"=>["channel"=>0]] ]], 'SENS', true);
+        $rP20 = $this->apiCall([[ "cmd"=>"GetPetDetectV20",      "param"=>["pet"=>["channel"=>0]] ]], 'SENS', true);
+        $rV20 = $this->apiCall([[ "cmd"=>"GetVehicleDetectV20",  "param"=>["vehicle"=>["channel"=>0]] ]], 'SENS', true);
+        if (
+            (is_array($rH20) && (($rH20[0]['code'] ?? -1) === 0)) ||
+            (is_array($rP20) && (($rP20[0]['code'] ?? -1) === 0)) ||
+            (is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0))
+        ) {
+            $this->WriteAttributeString("AiSensApi", "SMARTDETECT_V20");
+            return "SMARTDETECT_V20";
+        }
+
+        // 3) SmartDetect – Legacy
+        $rH = $this->apiCall([[ "cmd"=>"GetHumanoidDetect", "param"=>["humanoid"=>["channel"=>0]] ]], 'SENS', true);
+        $rP = $this->apiCall([[ "cmd"=>"GetPetDetect",      "param"=>["pet"=>["channel"=>0]] ]], 'SENS', true);
+        $rV = $this->apiCall([[ "cmd"=>"GetVehicleDetect",  "param"=>["vehicle"=>["channel"=>0]] ]], 'SENS', true);
+        if (
+            (is_array($rH) && (($rH[0]['code'] ?? -1) === 0)) ||
+            (is_array($rP) && (($rP[0]['code'] ?? -1) === 0)) ||
+            (is_array($rV) && (($rV[0]['code'] ?? -1) === 0))
+        ) {
+            $this->WriteAttributeString("AiSensApi", "SMARTDETECT_LEG");
+            return "SMARTDETECT_LEG";
+        }
+
+        // 4) (selten) AiSensitivity (kompakt, bei dir kam "not support" – wir probieren dennoch)
+        $rS = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
+        if (is_array($rS) && (($rS[0]['code'] ?? -1) === 0)) {
+            $this->WriteAttributeString("AiSensApi", "AISENS_V20");
+            return "AISENS_V20";
+        }
+
+        $this->WriteAttributeString("AiSensApi", "NONE");
+        return "NONE";
+    }
+
+    // Liest die aktuellen AI-Sensitivitäten (people, dog_cat, vehicle) je nach erkannter Variante.
+    private function aiReadSensitivities(): ?array
+    {
+        $variant = $this->ReadAttributeString("AiSensApi");
+        if ($variant === "" || $variant === "NONE") {
+            $variant = $this->aiProbeAndCache() ?? "NONE";
+        }
+        if ($variant === "NONE") return null;
+
+        // helper zum Extrahieren eines int 0..100
+        $get = function($node, array $path): ?int {
+            $v = $node;
+            foreach ($path as $k) { $v = is_array($v) ? ($v[$k] ?? null) : null; }
+            if ($v === null || !is_numeric($v)) return null;
+            $iv = (int)$v;
+            return max(0, min(100, $iv));
+        };
+
+        if ($variant === "AICFG_PLAIN" || $variant === "AICFG_V20") {
+            $payload = ($variant === "AICFG_PLAIN")
+                ? [[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]]
+                : [[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]];
+
+            $r = $this->apiCall($payload, 'SENS', true);
+            if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) return null;
+
+            $v = $r[0]['value'] ?? [];
+            $cfg = $v['AiCfg'] ?? $v; // je nach Stil
+            return [
+                "people"  => $get($cfg, ['people','sensitivity']),
+                "dog_cat" => $get($cfg, ['dog_cat','sensitivity']),
+                "vehicle" => $get($cfg, ['vehicle','sensitivity']),
+            ];
+        }
+
+        if ($variant === "SMARTDETECT_V20" || $variant === "SMARTDETECT_LEG") {
+            $suffix = ($variant === "SMARTDETECT_V20") ? "V20" : "";
+
+            $h = $this->apiCall([[ "cmd"=>"GetHumanoidDetect{$suffix}", "param"=>["humanoid"=>["channel"=>0]] ]], 'SENS', true);
+            $p = $this->apiCall([[ "cmd"=>"GetPetDetect{$suffix}",      "param"=>["pet"=>["channel"=>0]] ]],       'SENS', true);
+            $v = $this->apiCall([[ "cmd"=>"GetVehicleDetect{$suffix}",  "param"=>["vehicle"=>["channel"=>0]] ]],   'SENS', true);
+
+            return [
+                "people"  => is_array($h) && (($h[0]['code'] ?? -1)===0) ? $get($h[0]['value'] ?? [], ['humanoid','sensitivity']) : null,
+                "dog_cat" => is_array($p) && (($p[0]['code'] ?? -1)===0) ? $get($p[0]['value'] ?? [], ['pet','sensitivity'])      : null,
+                "vehicle" => is_array($v) && (($v[0]['code'] ?? -1)===0) ? $get($v[0]['value'] ?? [], ['vehicle','sensitivity'])  : null,
+            ];
+        }
+
+        if ($variant === "AISENS_V20") {
+            $r = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
+            if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) return null;
+
+            $n = $r[0]['value']['AiSensitivity'] ?? [];
+            return [
+                "people"  => $get($n, ['people','sensitivity']),
+                "dog_cat" => $get($n, ['pet','sensitivity']),
+                "vehicle" => $get($n, ['vehicle','sensitivity']),
+            ];
+        }
+
+        return null;
     }
 }
