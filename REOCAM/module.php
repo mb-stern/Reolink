@@ -1057,25 +1057,6 @@ class Reolink extends IPSModule
                 $this->EnableAction("FTPEnabled");
             }
         } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
-
-        // Empfindlichkeiten
-        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-
-            if (!@$this->GetIDForIdent("SensitivityMD")) {
-                $this->RegisterVariableInteger("SensitivityMD", "Empfindlichkeit (Bewegungserkennung)", "~Intensity.100", 12);
-                $this->EnableAction("SensitivityMD");
-            }
-
-            if (!@$this->GetIDForIdent("SensitivityAI")) {
-                $this->RegisterVariableInteger("SensitivityAI", "Empfindlichkeit (Intelligente Erkennung - Person)", "~Intensity.100", 13);
-                $this->EnableAction("SensitivityAI");
-            }
-        } else {
-            foreach (["SensitivityMD","SensitivityAI"] as $ident) {
-                $id = @$this->GetIDForIdent($ident);
-                if ($id !== false) $this->UnregisterVariable($ident);
-            }
-        }
     }
 
     public function ExecuteApiRequests()
