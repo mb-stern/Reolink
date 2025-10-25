@@ -1036,7 +1036,7 @@ class Reolink extends IPSModule
         // FTP
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
             if (!@$this->GetIDForIdent("FTPEnabled")) {
-                $this->RegisterVariableBoolean("FTPEnabled", "FTP-Upload", "~Switch", 9);
+                $this->RegisterVariableBoolean("FTPEnabled", "FTP-Upload", "~Switch", 6);
                 $this->EnableAction("FTPEnabled");
             }
         } else {
