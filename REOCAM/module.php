@@ -1861,47 +1861,54 @@ class Reolink extends IPSModule
         $ver = $this->DetectPushApiVersion();
         $enabled = null;
 
+        // 1) Antwort holen (V20 bevorzugt, sonst Legacy)
         if ($ver === "V20") {
             $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-            if (is_array($res)) {
-                $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
-                // 1) Kanalbasierte Schedules (bevorzugt)
-                if (isset($push['chSchedule']) && is_array($push['chSchedule'])) {
-                    foreach ($push['chSchedule'] as $row) {
-                        $ch = (int)($row['channel'] ?? $row['Channel'] ?? -1);
-                        if ($ch === 0 && isset($row['enable'])) { $enabled = ((int)$row['enable'] === 1); break; }
-                    }
-                }
-                // 2) Globales schedule.enable
-                if ($enabled === null && isset($push['schedule']['enable'])) {
-                    $enabled = ((int)$push['schedule']['enable'] === 1);
-                }
-                // 3) Aus Tabellen ableiten (falls kein enable-Feld existiert)
-                if ($enabled === null && isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
-                    $tbl = $push['schedule']['table'];
-                    $anyOn = false;
-                    foreach ($tbl as $k => $v) {
-                        if (!is_string($v)) continue;
-                        // Wenn irgendwo mindestens ein '1' vorkommt → effektiv EIN
-                        if (strpos($v, '1') !== false) { $anyOn = true; break; }
-                    }
-                    $enabled = $anyOn;
-                }
-                // 4) Fallback: globales enable
-                if ($enabled === null && isset($push['enable'])) {
-                    $enabled = ((int)$push['enable'] === 1);
-                }
-            }
         } else {
             $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-            if (is_array($res)) {
-                $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
-                if (isset($push['schedule']['enable']))       $enabled = ((int)$push['schedule']['enable'] === 1);
-                elseif (isset($push['enable']))               $enabled = ((int)$push['enable'] === 1);
+        }
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
+
+        $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
+
+        // 2) Mehrere mögliche Quellen für "enabled" – in sinnvoller Reihenfolge prüfen
+
+        // a) Kanalspezifische Liste (chSchedule[{channel, enable}])
+        if ($enabled === null && isset($push['chSchedule']) && is_array($push['chSchedule'])) {
+            foreach ($push['chSchedule'] as $row) {
+                $ch = (int)($row['channel'] ?? $row['Channel'] ?? -1);
+                if ($ch === 0 && isset($row['enable'])) { $enabled = ((int)$row['enable'] === 1); break; }
             }
         }
 
-        if ($enabled !== null) $this->SetValue("PushNotify", (bool)$enabled);
+        // b) schedule.enable (manche Firmwares)
+        if ($enabled === null && isset($push['schedule']['enable'])) {
+            $enabled = ((int)$push['schedule']['enable'] === 1);
+        }
+
+        // c) schedule.table (Dein Fall): wir interpretieren "aktiv", wenn mind. ein Ereignistyp nicht nur Nullen hat
+        if ($enabled === null && isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
+            $anyOn = false;
+            foreach ($push['schedule']['table'] as $key => $bitstring) {
+                if (is_string($bitstring) && strpos($bitstring, '1') !== false) { $anyOn = true; break; }
+            }
+            // Zusätzlich globalen Schalter berücksichtigen, wenn vorhanden
+            if (isset($push['enable'])) {
+                $enabled = $anyOn && ((int)$push['enable'] === 1);
+            } else {
+                $enabled = $anyOn;
+            }
+        }
+
+        // d) globaler Schalter (Fallback)
+        if ($enabled === null && isset($push['enable'])) {
+            $enabled = ((int)$push['enable'] === 1);
+        }
+
+        // 3) UI aktualisieren (nur wenn ermittelt)
+        if ($enabled !== null) {
+            $this->SetValue("PushNotify", (bool)$enabled);
+        }
     }
 
     private function PushApply(bool $on): bool {
