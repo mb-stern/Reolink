@@ -587,6 +587,26 @@ class Reolink extends IPSModule
         }
     }
 
+    private function RemoveArchives()
+    {
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $cat) {
+            $archiveIdent = "Archive_" . $cat;
+            $cid = @$this->GetIDForIdent($archiveIdent);
+            if ($cid && IPS_ObjectExists($cid)) {
+                // alle Medien in der Kategorie löschen
+                foreach (IPS_GetChildrenIDs($cid) as $childID) {
+                    if (IPS_MediaExists($childID)) {
+                        IPS_DeleteMedia($childID, true);
+                    } else {
+                        @IPS_DeleteObject($childID);
+                    }
+                }
+                IPS_DeleteCategory($cid);
+                $this->dbg('SNAPSHOT', 'Archiv-Kategorie entfernt', ['ident' => $archiveIdent, 'id' => $cid]);
+            }
+        }
+    }
+
     private function CreateOrGetArchiveCategory(string $booleanIdent)
     {
         $archiveIdent = "Archive_" . $booleanIdent;
