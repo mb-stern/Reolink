@@ -1097,7 +1097,7 @@ class Reolink extends IPSModule
             ];
             foreach ($defs as [$ident, $name]) {
                 if (!@$this->GetIDForIdent($ident)) {
-                    $this->RegisterVariableInteger($ident, $name, "REOCAM.AI100", 12);
+                    $this->RegisterVariableInteger($ident, $name, "REOCAM.AI100", 7);
                     $this->EnableAction($ident);
                 }
             }
@@ -2060,11 +2060,61 @@ class Reolink extends IPSModule
     return $r[0]['value']['AiCfg'] ?? $r[0]['value'] ?? null;
     }
 
+    // --- NEU: robuster Reader für AI-Config inkl. Sensitivities ---
+    private function aiReadAll(): ?array {
+        if (!$this->apiEnsureToken()) return null;
+
+        // Wir probieren mehrere Payload-Varianten (flat/nested, mit/ohne action)
+        $candidates = [
+            [ [ ["cmd"=>"GetAiCfg", "param"=>["channel"=>0]] ] ],
+            [ [ ["cmd"=>"GetAiCfg", "action"=>1, "param"=>["channel"=>0]] ] ],
+            [ [ ["cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]]] ] ],
+            [ [ ["cmd"=>"GetAiCfg", "action"=>1, "param"=>["AiCfg"=>["channel"=>0]]] ] ],
+        ];
+
+        foreach ($candidates as $payload) {
+            $res = $this->apiCall($payload[0], 'SENS', /*suppress*/ true);
+            if (!is_array($res) || !isset($res[0]['code']) || (int)$res[0]['code'] !== 0) continue;
+
+            // Mögliche Wurzelknoten
+            $root = $res[0]['value'] ?? null;
+            if (!is_array($root)) continue;
+            $ai   = $root['AiCfg'] ?? $root;  // je nach FW ist AiCfg noch einmal verschachtelt
+
+            // Schlüssel, die es je nach Modell gibt
+            $keys = [
+                'people'  => ['people','human','person'],
+                'dog_cat' => ['dog_cat','pet','animal'],
+                'vehicle' => ['vehicle','car'],
+            ];
+
+            $out = [];
+            foreach ($keys as $canon => $alts) {
+                $node = null;
+                foreach ($alts as $k) {
+                    if (isset($ai[$k]) && is_array($ai[$k])) { $node = $ai[$k]; break; }
+                }
+                if (!$node) continue;
+
+                // mögliche Sens-Felder
+                $candFields = ['sensitivity','sens','Sensitivity','Sens'];
+                $val = null;
+                foreach ($candFields as $f) {
+                    if (isset($node[$f]) && is_numeric($node[$f])) { $val = (int)$node[$f]; break; }
+                }
+                if ($val !== null) $out[$canon] = max(0, min(100, $val));
+            }
+
+            if (!empty($out)) return $out;   // Erfolg: wir haben Sensitivities
+            // Wenn noch keine Sens gefunden, trotzdem nächste Variante probieren
+        }
+        return null; // keine Variante lieferte Sensitivities
+    }
+
     private function UpdateAiSensitivityStatus(): void
     {
         if (!$this->apiEnsureToken()) return;
 
-        // prüfe, ob die Variablen existieren – sonst keine Arbeit
         $ids = [
             "people"  => @$this->GetIDForIdent("SensitivityPeople"),
             "dog_cat" => @$this->GetIDForIdent("SensitivityDogCat"),
@@ -2072,22 +2122,15 @@ class Reolink extends IPSModule
         ];
         if ($ids["people"]===false && $ids["dog_cat"]===false && $ids["vehicle"]===false) return;
 
-        $res = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (!is_array($res) || !isset($res[0]['value'])) return;
-        $ai = $res[0]['value']['AiCfg'] ?? $res[0]['value'];
-
-        $vals = [
-            "people"  => isset($ai["people"]["sensitivity"])  ? (int)$ai["people"]["sensitivity"]  : null,
-            "dog_cat" => isset($ai["dog_cat"]["sensitivity"]) ? (int)$ai["dog_cat"]["sensitivity"] : null,
-            "vehicle" => isset($ai["vehicle"]["sensitivity"]) ? (int)$ai["vehicle"]["sensitivity"] : null,
-        ];
+        $vals = $this->aiReadAll();
+        if (!$vals) {
+            $this->dbg('SENS', 'GetAiCfg lieferte keine Sensitivities – andere FW-Variante.');
+            return;
+        }
 
         foreach ($vals as $k => $v) {
-            if ($v === null) continue;
-            $id = $ids[$k];
-            if ($id === false) continue;
-            $v = max(0, min(100, $v));
-            if (GetValue($id) !== $v) {
+            $id = $ids[$k] ?? false;
+            if ($id !== false && GetValue($id) !== $v) {
                 $this->SetValue(($k==="people" ? "SensitivityPeople" : ($k==="dog_cat" ? "SensitivityDogCat" : "SensitivityVehicle")), $v);
             }
         }
@@ -2098,15 +2141,26 @@ class Reolink extends IPSModule
         if (!$this->apiEnsureToken()) return false;
         if (!in_array($cls, ["people","dog_cat","vehicle"], true)) return false;
 
-        $v = max(0, min(100, $value));
-        $payload = [[
-            "cmd"   => "SetAiCfg",
-            "param" => ["AiCfg" => ["channel"=>0, $cls => ["sensitivity"=>$v]]]
-        ]];
+        $v = max(0, min(100, (int)$value));
 
-        $r = $this->apiCall($payload, 'SENS', true);
-        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-        if ($ok) $this->UpdateAiSensitivityStatus();
-        return $ok;
+        $variants = [
+            // flat
+            [[["cmd"=>"SetAiCfg", "param"=>["AiCfg"=>["channel"=>0, $cls=>["sensitivity"=>$v]]]]]],
+            [[["cmd"=>"SetAiCfg", "action"=>1, "param"=>["AiCfg"=>["channel"=>0, $cls=>["sensitivity"=>$v]]]]]],
+            // nested möglich: manche Firmwares akzeptieren auch ohne "AiCfg" auf Ebene drüber
+            [[["cmd"=>"SetAiCfg", "param"=>["channel"=>0, $cls=>["sensitivity"=>$v]]]]],
+            [[["cmd"=>"SetAiCfg", "action"=>1, "param"=>["channel"=>0, $cls=>["sensitivity"=>$v]]]]],
+            // alternative Feldnamen für sens
+            [[["cmd"=>"SetAiCfg", "param"=>["AiCfg"=>["channel"=>0, $cls=>["sens"=>$v]]]]]],
+        ];
+        foreach ($variants as $payload) {
+            $r = $this->apiCall($payload[0], 'SENS', true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $this->UpdateAiSensitivityStatus();
+                return true;
+            }
+        }
+        $this->dbg('SENS', 'SetAiCfg: Keine der Varianten akzeptiert.');
+        return false;
     }
 }
