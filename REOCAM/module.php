@@ -34,7 +34,6 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiPush",   true);
         $this->RegisterPropertyBoolean("EnableApiFTP",    false);
-        $this->RegisterPropertyBoolean("EnableApiSensitivity", true);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -49,7 +48,6 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("PtzPresetsCache", "");
         $this->RegisterAttributeString("PushApiVersion", "");
         $this->RegisterAttributeString("FtpApiVersion", "");
-        $this->RegisterAttributeString("AiSensApi", "");
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -117,10 +115,9 @@ class Reolink extends IPSModule
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
         $enablePush  = $this->ReadPropertyBoolean("EnableApiPush");
         $enableFTP   = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSens  = $this->ReadPropertyBoolean("EnableApiSensitivity");
 
         $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ
-            || $enablePush || $enableFTP || $enableSens);
+            || $enablePush || $enableFTP);
 
         $this->SetTimerInterval("ApiRequestTimer", 0);
 
@@ -191,27 +188,6 @@ class Reolink extends IPSModule
                 $ok = $this->FtpApply((bool)$Value);
                 if ($ok) SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 else     $this->UpdateFtpStatus();
-                break;
-
-            case "SensitivityPeople":
-                $val = max(0, min(100, (int)$Value));
-                $ok  = $this->AiSensitivityApply("people", $val);
-                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
-                else     $this->UpdateAiSensitivityStatus();
-                break;
-
-            case "SensitivityDogCat":
-                $val = max(0, min(100, (int)$Value));
-                $ok  = $this->AiSensitivityApply("dog_cat", $val);
-                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
-                else     $this->UpdateAiSensitivityStatus();
-                break;
-
-            case "SensitivityVehicle":
-                $val = max(0, min(100, (int)$Value));
-                $ok  = $this->AiSensitivityApply("vehicle", $val);
-                if ($ok) SetValue($this->GetIDForIdent($Ident), $val);
-                else     $this->UpdateAiSensitivityStatus();
                 break;
 
             default:
@@ -491,10 +467,7 @@ class Reolink extends IPSModule
 
     private function CreateTestElements()
     {
-        // Boolean nur anlegen, wenn er NICHT schon aus CreateMoveVariables() existiert
-        if (@$this->GetIDForIdent("Test") === false) {
-            $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
-        }
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -531,10 +504,7 @@ class Reolink extends IPSModule
 
     private function CreateVisitorElements()
     {
-        // Boolean nur anlegen, wenn er NICHT schon aus CreateMoveVariables() existiert
-        if (@$this->GetIDForIdent("Besucher") === false) {
-            $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
-        }
+        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -982,12 +952,12 @@ class Reolink extends IPSModule
         foreach ([
             "WhiteLed", "Mode", "Bright",
             "EmailNotify", "EmailInterval", "EmailContent",
+            "PTZ_HTML"
         ] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
     }
-
 
     private function CreateApiVariables(): void
     {
@@ -1088,28 +1058,20 @@ class Reolink extends IPSModule
             }
         } else { $id=@$this->GetIDForIdent("FTPEnabled"); if($id!==false) $this->UnregisterVariable("FTPEnabled"); }
 
-        // --- AI Sensitivities (0..100) ---
+        // Empfindlichkeiten
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
 
-            // optional: eigenes Profil, sonst "~Intensity.100" verwenden
-            if (!IPS_VariableProfileExists("REOCAM.AI100")) {
-                IPS_CreateVariableProfile("REOCAM.AI100", 1);
-                IPS_SetVariableProfileValues("REOCAM.AI100", 0, 100, 1);
+            if (!@$this->GetIDForIdent("SensitivityMD")) {
+                $this->RegisterVariableInteger("SensitivityMD", "Empfindlichkeit (Bewegungserkennung)", "~Intensity.100", 12);
+                $this->EnableAction("SensitivityMD");
             }
 
-            $defs = [
-                ["SensitivityPeople",  "Empfindlichkeit – Person"],
-                ["SensitivityDogCat",  "Empfindlichkeit – Tier"],
-                ["SensitivityVehicle", "Empfindlichkeit – Fahrzeug"],
-            ];
-            foreach ($defs as [$ident, $name]) {
-                if (!@$this->GetIDForIdent($ident)) {
-                    $this->RegisterVariableInteger($ident, $name, "REOCAM.AI100", 7);
-                    $this->EnableAction($ident);
-                }
+            if (!@$this->GetIDForIdent("SensitivityAI")) {
+                $this->RegisterVariableInteger("SensitivityAI", "Empfindlichkeit (Intelligente Erkennung - Person)", "~Intensity.100", 13);
+                $this->EnableAction("SensitivityAI");
             }
         } else {
-            foreach (["SensitivityPeople","SensitivityDogCat","SensitivityVehicle"] as $ident) {
+            foreach (["SensitivityMD","SensitivityAI"] as $ident) {
                 $id = @$this->GetIDForIdent($ident);
                 if ($id !== false) $this->UnregisterVariable($ident);
             }
@@ -1128,12 +1090,14 @@ class Reolink extends IPSModule
             return;
         }
         try {
-            if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))    { $this->UpdateWhiteLedStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiEmail"))       { $this->EmailApply(null, null, null); } // nur GET
-            if ($this->ReadPropertyBoolean("EnableApiPTZ"))         { $this->CreateOrUpdatePTZHtml(false); }
-            if ($this->ReadPropertyBoolean("EnableApiPush"))        { $this->UpdatePushStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiFTP"))         { $this->UpdateFtpStatus(); }
-            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateAiSensitivityStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiWhiteLed"))   { $this->UpdateWhiteLedStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiEmail"))      { $this->EmailApply(null, null, null); } // nur GET
+            if ($this->ReadPropertyBoolean("EnableApiPTZ"))        { $this->CreateOrUpdatePTZHtml(false); }
+            if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) { $this->UpdateMdSensitivityStatus(); $this->UpdateAiSensitivityStatus();
+}
+
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
@@ -2056,260 +2020,5 @@ class Reolink extends IPSModule
             $this->dbg('FTP', 'Setzen fehlgeschlagen – Firmware unterstützt die Schreibvariante nicht');
         }
         return $ok;
-    }
-
-    //Sensitiviti
-
-    private function UpdateAiSensitivityStatus(): void
-    {
-        if (!$this->apiEnsureToken()) return;
-
-        $ids = [
-            "people"  => @$this->GetIDForIdent("SensitivityPeople"),
-            "dog_cat" => @$this->GetIDForIdent("SensitivityDogCat"),
-            "vehicle" => @$this->GetIDForIdent("SensitivityVehicle")
-        ];
-
-        // ← nutzt die bereits vorhandene Auto-Erkennung
-        $vals = $this->aiReadSensitivities();
-        if (!$vals) { $this->dbg('SENS', 'Keine Sensitivitäten lesbar'); return; }
-
-        foreach ($vals as $k => $v) {
-            $ident =
-                $k === "people"  ? "SensitivityPeople" :
-                ($k === "dog_cat" ? "SensitivityDogCat" : "SensitivityVehicle");
-            $id = $ids[$k];
-            if ($id !== false && $v !== null && GetValue($id) !== (int)$v) {
-                $this->SetValue($ident, (int)$v);
-            }
-        }
-    }
-
-    // --- Setze eine AI-Sensitivity ---
-    private function AiSensitivityApply(string $cls, int $value): bool
-    {
-        if (!$this->apiEnsureToken()) return false;
-        if (!in_array($cls, ["people","dog_cat","vehicle"], true)) return false;
-
-        // Aktuelle Werte (über Auto-Erkennung) lesen
-        $current = $this->aiReadSensitivities() ?? ["people"=>50,"dog_cat"=>50,"vehicle"=>50];
-        $current[$cls] = max(0, min(100, (int)$value));
-
-        // Welche API-Variante wird von deiner Cam unterstützt?
-        $variant = $this->ReadAttributeString("AiSensApi");
-        if ($variant === "") $variant = $this->aiProbeAndCache() ?? "";
-
-        $ok = false;
-
-        // 1) Versuche SetAiCfg (flat/nested)
-        if (in_array($variant, ["AICFG_V20","AICFG_PLAIN"], true)) {
-            $body = [
-                "channel" => 0,
-                "people"  => ["sensitivity"=>$current["people"]],
-                "dog_cat" => ["sensitivity"=>$current["dog_cat"]],
-                "vehicle" => ["sensitivity"=>$current["vehicle"]],
-            ];
-            // flat
-            $r1 = $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>$body ]], 'SENS', true);
-            // nested (AiCfg-Wrapper)
-            $r2 = $ok = (is_array($r1) && (($r1[0]['code']??-1)===0))
-                ? $r1
-                : $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>["AiCfg"=>$body] ]], 'SENS', true);
-            $ok = is_array($r2) && (($r2[0]['code']??-1)===0);
-        }
-
-        // 2) Fallback: SmartDetect-Einzeldienste (manche FW-Versionen)
-        if (!$ok && in_array($variant, ["SMARTDETECT_V20","SMARTDETECT_LEG"], true)) {
-            $map = [
-                "people"  => ["cmdV20"=>"SetHumanoidDetectV20", "cmd"=>"SetHumanoidDetect"],
-                "dog_cat" => ["cmdV20"=>"SetPetDetectV20",      "cmd"=>"SetPetDetect"],
-                "vehicle" => ["cmdV20"=>"SetVehicleDetectV20",  "cmd"=>"SetVehicleDetect"],
-            ];
-            $pair = $map[$cls];
-
-            $payloadV20 = [[ "cmd"=>$pair["cmdV20"], "param"=>[ $cls==="dog_cat" ? "pet":"humanoid" => ["sensitivity"=>$current[$cls], "channel"=>0] ] ]];
-            $payloadLEG = [[ "cmd"=>$pair["cmd"],    "param"=>[ $cls==="dog_cat" ? "pet":"humanoid" => ["sensitivity"=>$current[$cls], "channel"=>0] ] ]];
-
-            $r = $this->apiCall($payloadV20, 'SENS', true);
-            if (!is_array($r) || (($r[0]['code']??-1)!==0)) {
-                $r = $this->apiCall($payloadLEG, 'SENS', true);
-            }
-            $ok = is_array($r) && (($r[0]['code']??-1)===0);
-        }
-
-        // 3) Nur falls wirklich vorhanden: SetAiSensitivity (bei dir „not support“)
-        if (!$ok && $variant === "AISENS_V20") {
-            $r = $this->apiCall([[ "cmd"=>"SetAiSensitivity", "param"=>[
-                "AiSensitivity"=>[
-                    "channel"=>0,
-                    "people"  =>["sensitivity"=>$current["people"]],
-                    "vehicle" =>["sensitivity"=>$current["vehicle"]],
-                    "pet"     =>["sensitivity"=>$current["dog_cat"]],
-                ]
-            ]]], 'SENS', true);
-            $ok = is_array($r) && (($r[0]['code']??-1)===0);
-        }
-
-        if ($ok) { $this->UpdateAiSensitivityStatus(); }
-        else     { $this->dbg('SENS', 'Setzen fehlgeschlagen – keine passende SET-Variante'); }
-
-        return $ok;
-    }
-
-    /** rekursive Suche nach einem plausiblen 0..100-"sensitivity"-Wert */
-    private function aiSearchForSensitivityRecursive($node): ?int
-    {
-        if (!is_array($node)) return null;
-        foreach ($node as $k => $v) {
-            if (is_array($v)) {
-                $r = $this->aiSearchForSensitivityRecursive($v);
-                if ($r !== null) return $r;
-            } else {
-                $lk = strtolower((string)$k);
-                if (strpos($lk, 'sens') !== false && is_numeric($v)) {
-                    $iv = (int)$v;
-                    if ($iv >= 0 && $iv <= 100) return $iv;
-                }
-            }
-        }
-        return null;
-    }
-
-    // Liefert die erkannte AI-Sensitivity-API-Variante (probt bei Bedarf einmalig)
-    public function GetAiSensApi(): string
-    {
-        $v = $this->ReadAttributeString("AiSensApi");
-        if ($v === "" || $v === "NONE") {
-            $v = $this->aiProbeAndCache() ?? "NONE";
-        }
-        $this->dbg('SENS', 'AiSensApi', $v);
-        return $v;
-    }
-
-    // Optional: Cache resetten und erneut erkennen
-    public function ProbeAiSensApi(bool $force = true): string
-    {
-        if ($force) {
-            $this->WriteAttributeString("AiSensApi", "");
-        }
-        return $this->GetAiSensApi();
-    }
-
-    // Ermittelt einmalig die unterstützte API-Variante und cached das Ergebnis im Attribut "AiSensApi".
-    private function aiProbeAndCache(): ?string
-    {
-        if (!$this->apiEnsureToken()) return null;
-
-        // 1) GetAiCfg – zwei Stile (flat / nested)
-        $rFlat   = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (is_array($rFlat) && (($rFlat[0]['code'] ?? -1) === 0)) {
-            $this->WriteAttributeString("AiSensApi", "AICFG_PLAIN");
-            return "AICFG_PLAIN";
-        }
-        $rNest   = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]], 'SENS', true);
-        if (is_array($rNest) && (($rNest[0]['code'] ?? -1) === 0)) {
-            $this->WriteAttributeString("AiSensApi", "AICFG_V20");
-            return "AICFG_V20";
-        }
-
-        // 2) SmartDetect – V20
-        $rH20 = $this->apiCall([[ "cmd"=>"GetHumanoidDetectV20", "param"=>["humanoid"=>["channel"=>0]] ]], 'SENS', true);
-        $rP20 = $this->apiCall([[ "cmd"=>"GetPetDetectV20",      "param"=>["pet"=>["channel"=>0]] ]], 'SENS', true);
-        $rV20 = $this->apiCall([[ "cmd"=>"GetVehicleDetectV20",  "param"=>["vehicle"=>["channel"=>0]] ]], 'SENS', true);
-        if (
-            (is_array($rH20) && (($rH20[0]['code'] ?? -1) === 0)) ||
-            (is_array($rP20) && (($rP20[0]['code'] ?? -1) === 0)) ||
-            (is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0))
-        ) {
-            $this->WriteAttributeString("AiSensApi", "SMARTDETECT_V20");
-            return "SMARTDETECT_V20";
-        }
-
-        // 3) SmartDetect – Legacy
-        $rH = $this->apiCall([[ "cmd"=>"GetHumanoidDetect", "param"=>["humanoid"=>["channel"=>0]] ]], 'SENS', true);
-        $rP = $this->apiCall([[ "cmd"=>"GetPetDetect",      "param"=>["pet"=>["channel"=>0]] ]], 'SENS', true);
-        $rV = $this->apiCall([[ "cmd"=>"GetVehicleDetect",  "param"=>["vehicle"=>["channel"=>0]] ]], 'SENS', true);
-        if (
-            (is_array($rH) && (($rH[0]['code'] ?? -1) === 0)) ||
-            (is_array($rP) && (($rP[0]['code'] ?? -1) === 0)) ||
-            (is_array($rV) && (($rV[0]['code'] ?? -1) === 0))
-        ) {
-            $this->WriteAttributeString("AiSensApi", "SMARTDETECT_LEG");
-            return "SMARTDETECT_LEG";
-        }
-
-        // 4) (selten) AiSensitivity (kompakt, bei dir kam "not support" – wir probieren dennoch)
-        $rS = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
-        if (is_array($rS) && (($rS[0]['code'] ?? -1) === 0)) {
-            $this->WriteAttributeString("AiSensApi", "AISENS_V20");
-            return "AISENS_V20";
-        }
-
-        $this->WriteAttributeString("AiSensApi", "NONE");
-        return "NONE";
-    }
-
-    // Liest die aktuellen AI-Sensitivitäten (people, dog_cat, vehicle) je nach erkannter Variante.
-    private function aiReadSensitivities(): ?array
-    {
-        $variant = $this->ReadAttributeString("AiSensApi");
-        if ($variant === "" || $variant === "NONE") {
-            $variant = $this->aiProbeAndCache() ?? "NONE";
-        }
-        if ($variant === "NONE") return null;
-
-        // helper zum Extrahieren eines int 0..100
-        $get = function($node, array $path): ?int {
-            $v = $node;
-            foreach ($path as $k) { $v = is_array($v) ? ($v[$k] ?? null) : null; }
-            if ($v === null || !is_numeric($v)) return null;
-            $iv = (int)$v;
-            return max(0, min(100, $iv));
-        };
-
-        if ($variant === "AICFG_PLAIN" || $variant === "AICFG_V20") {
-            $payload = ($variant === "AICFG_PLAIN")
-                ? [[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]]
-                : [[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]];
-
-            $r = $this->apiCall($payload, 'SENS', true);
-            if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) return null;
-
-            $v = $r[0]['value'] ?? [];
-            $cfg = $v['AiCfg'] ?? $v; // je nach Stil
-            return [
-                "people"  => $get($cfg, ['people','sensitivity']),
-                "dog_cat" => $get($cfg, ['dog_cat','sensitivity']),
-                "vehicle" => $get($cfg, ['vehicle','sensitivity']),
-            ];
-        }
-
-        if ($variant === "SMARTDETECT_V20" || $variant === "SMARTDETECT_LEG") {
-            $suffix = ($variant === "SMARTDETECT_V20") ? "V20" : "";
-
-            $h = $this->apiCall([[ "cmd"=>"GetHumanoidDetect{$suffix}", "param"=>["humanoid"=>["channel"=>0]] ]], 'SENS', true);
-            $p = $this->apiCall([[ "cmd"=>"GetPetDetect{$suffix}",      "param"=>["pet"=>["channel"=>0]] ]],       'SENS', true);
-            $v = $this->apiCall([[ "cmd"=>"GetVehicleDetect{$suffix}",  "param"=>["vehicle"=>["channel"=>0]] ]],   'SENS', true);
-
-            return [
-                "people"  => is_array($h) && (($h[0]['code'] ?? -1)===0) ? $get($h[0]['value'] ?? [], ['humanoid','sensitivity']) : null,
-                "dog_cat" => is_array($p) && (($p[0]['code'] ?? -1)===0) ? $get($p[0]['value'] ?? [], ['pet','sensitivity'])      : null,
-                "vehicle" => is_array($v) && (($v[0]['code'] ?? -1)===0) ? $get($v[0]['value'] ?? [], ['vehicle','sensitivity'])  : null,
-            ];
-        }
-
-        if ($variant === "AISENS_V20") {
-            $r = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
-            if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) return null;
-
-            $n = $r[0]['value']['AiSensitivity'] ?? [];
-            return [
-                "people"  => $get($n, ['people','sensitivity']),
-                "dog_cat" => $get($n, ['pet','sensitivity']),
-                "vehicle" => $get($n, ['vehicle','sensitivity']),
-            ];
-        }
-
-        return null;
     }
 }
