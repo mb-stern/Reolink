@@ -491,7 +491,10 @@ class Reolink extends IPSModule
 
     private function CreateTestElements()
     {
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
+        // Boolean nur anlegen, wenn er NICHT schon aus CreateMoveVariables() existiert
+        if (@$this->GetIDForIdent("Test") === false) {
+            $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
+        }
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -528,7 +531,10 @@ class Reolink extends IPSModule
 
     private function CreateVisitorElements()
     {
-        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
+        // Boolean nur anlegen, wenn er NICHT schon aus CreateMoveVariables() existiert
+        if (@$this->GetIDForIdent("Besucher") === false) {
+            $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
+        }
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -976,12 +982,12 @@ class Reolink extends IPSModule
         foreach ([
             "WhiteLed", "Mode", "Bright",
             "EmailNotify", "EmailInterval", "EmailContent",
-            "PTZ_HTML"
         ] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
     }
+
 
     private function CreateApiVariables(): void
     {
@@ -2148,100 +2154,6 @@ class Reolink extends IPSModule
         else     { $this->dbg('SENS', 'Setzen fehlgeschlagen – keine passende SET-Variante'); }
 
         return $ok;
-    }
-
-    private function aiReadSensitivities(): ?array
-    {
-        $variant = $this->ReadAttributeString("AiSensApi");
-        if ($variant === "") $variant = $this->aiProbeAndCache() ?? "NONE";
-        $out = ["people"=>null, "dog_cat"=>null, "vehicle"=>null];
-
-        // --- Variante: AiCfg (bevorzugt, 1 Call) ---
-        if ($variant === "AICFG_PLAIN" || $variant === "AICFG_V20") {
-            // Reihenfolge: flat → nested → nested+action:1
-            $candidates = [
-                [[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]],
-                [[ "cmd"=>"GetAiCfg", "param"=>["AiCfg"=>["channel"=>0]] ]],
-                [[ "cmd"=>"GetAiCfg", "action"=>1, "param"=>["AiCfg"=>["channel"=>0]] ]],
-            ];
-            foreach ($candidates as $payload) {
-                $r = $this->apiCall($payload, 'SENS', true);
-                if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) continue;
-
-                $node = $r[0]['value'] ?? [];
-                if (isset($node['AiCfg'])) $node = $node['AiCfg'];
-
-                foreach (["people","dog_cat","vehicle"] as $k) {
-                    if (isset($node[$k]) && is_array($node[$k])) {
-                        $out[$k] = $this->aiExtractSensitivity($node[$k]);
-                    }
-                }
-                // Wenn wenigstens 1 Wert gefunden wurde → fertig
-                if ($out["people"]!==null || $out["dog_cat"]!==null || $out["vehicle"]!==null) {
-                    return $out;
-                }
-            }
-        }
-
-        // --- Variante: SmartDetect (je Typ 1 Call) ---
-        if ($variant === "SMARTDETECT_V20" || $variant === "SMARTDETECT_LEG") {
-            $map = [
-                "people"  => $variant==="SMARTDETECT_V20" ? "GetHumanoidDetectV20" : "GetHumanoidDetect",
-                "dog_cat" => $variant==="SMARTDETECT_V20" ? "GetPetDetectV20"      : "GetPetDetect",
-                "vehicle" => $variant==="SMARTDETECT_V20" ? "GetVehicleDetectV20"  : "GetVehicleDetect",
-            ];
-            foreach ($map as $cls => $cmd) {
-                // probiere 2 Param-Layouts: minimal (channel) und mit Wrapper (humanoid/pet/vehicle)
-                $wrp = ($cls === "people") ? "humanoid" : (($cls === "dog_cat") ? "pet" : "vehicle");
-                $tries = [
-                    [[ "cmd"=>$cmd, "param"=>["channel"=>0] ]],
-                    [[ "cmd"=>$cmd, "param"=>[ $wrp => ["channel"=>0] ] ]],
-                ];
-                foreach ($tries as $pl) {
-                    $r = $this->apiCall($pl, 'SENS', true);
-                    if (!is_array($r) || (($r[0]['code'] ?? -1) !== 0)) continue;
-                    $val = $r[0]['value'] ?? [];
-                    // Suche robust nach einem "sensitivity"-Feld
-                    $out[$cls] = $this->aiSearchForSensitivityRecursive($val);
-                    if ($out[$cls] !== null) break;
-                }
-            }
-            if ($out["people"]!==null || $out["dog_cat"]!==null || $out["vehicle"]!==null) {
-                return $out;
-            }
-        }
-
-        // --- Variante: AiSensitivity (selten) ---
-        if ($variant === "AISENS_V20") {
-            $r = $this->apiCall([[ "cmd"=>"GetAiSensitivity", "param"=>["channel"=>0] ]], 'SENS', true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
-                $node = $r[0]['value']['AiSensitivity'] ?? $r[0]['value'] ?? [];
-                // Mappings: 'pet' ↔ dog_cat
-                $out["people"]  = $this->aiExtractSensitivity($node['people']  ?? []);
-                $out["vehicle"] = $this->aiExtractSensitivity($node['vehicle'] ?? []);
-                $out["dog_cat"] = $this->aiExtractSensitivity($node['pet']     ?? []);
-                if ($out["people"]!==null || $out["dog_cat"]!==null || $out["vehicle"]!==null) {
-                    return $out;
-                }
-            }
-        }
-
-        // Nichts gefunden
-        return null;
-    }
-
-    /** zieht 0..100 aus üblichen Feldern wie sensitivity/level/sense, sonst null */
-    private function aiExtractSensitivity(array $node): ?int
-    {
-        $candidates = ['sensitivity','level','sense','Sensitivity','Level','Sense'];
-        foreach ($candidates as $k) {
-            if (isset($node[$k]) && is_numeric($node[$k])) {
-                $v = (int)$node[$k];
-                if ($v >= 0 && $v <= 100) return $v;
-            }
-        }
-        // Fallback: rekursiv suchen
-        return $this->aiSearchForSensitivityRecursive($node);
     }
 
     /** rekursive Suche nach einem plausiblen 0..100-"sensitivity"-Wert */
