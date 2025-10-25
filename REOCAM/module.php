@@ -1824,113 +1824,85 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ Presets: Set/Rename/Clear (robust: flat/nested + mehrere Ops)
     // ---------------------------
-    private function ptzTryMany(string $cmd, array $bodyVariants, string $nestedKey, bool $suppress=true): bool {
-        foreach ($bodyVariants as $b) {
-            // flat
-            $r = $this->postCmdDual($cmd, $b, $nestedKey, /*suppress*/ true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-            // mit action:1 (einige FW verlangen das bei Set/Clear/Get)
-            $p = [[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$b ]];
-            $r2 = $this->apiCall($p, 'PTZ', /*suppress*/ true);
-            if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
+    // 1) Anlegen/Speichern
+    private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
+        $entry = ['id'=>$id, 'enable'=>1];
+        if ($nameForCreate !== null && $nameForCreate !== '') {
+            $n = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $nameForCreate);
+            $entry['name'] = mb_substr($n, 0, 32, 'UTF-8');
         }
-        return false;
+        // bevorzugt: nested unter PtzPreset → table[]
+        $ok = is_array($this->postCmdDual(
+            'SetPtzPreset',
+            ['channel'=>0, 'table'=>[ $entry ]],
+            'PtzPreset',  // <<< WICHTIG
+            /*suppress*/ true
+        ));
+        // Fallback: flat (ohne table)
+        if (!$ok) {
+            $flat = ['channel'=>0, 'id'=>$id, 'enable'=>1] + (isset($entry['name'])?['name'=>$entry['name']]:[]);
+            $ok = is_array($this->postCmdDual(
+                'SetPtzPreset',
+                $flat,
+                'PtzPreset',  // <<< WICHTIG
+                /*suppress*/ true
+            ));
+        }
+        if (!$ok) $this->dbg('PTZ/SetPtzPreset', 'Fehlgeschlagen', $entry);
+        return (bool)$ok;
     }
 
-    // Speichern/Setzen eines Presets (kompatibel zu alten/neuen FW)
-    private function ptzSetPreset(int $id): bool
-    {
-        $id = max(0, (int)$id);
-
-        // 1) Klassisch: SetPtzPreset (flat/nested), mit/ohne name
-        $bodies = [
-            ['channel'=>0, 'id'=>$id],                                         // minimal
-            ['channel'=>0, 'Id'=>$id],                                         // anders benannt
-            ['channel'=>0, 'id'=>$id, 'enable'=>1],
-            ['channel'=>0, 'id'=>$id, 'name'=>"Preset ".$id, 'enable'=>1],     // manche FW akzeptieren name hier
-            // Tabellen-/Listenformate, die ältere FW erwartet:
-            ['channel'=>0, 'preset'=>[['id'=>$id,'enable'=>1]]],
-            ['channel'=>0, 'table' =>[['id'=>$id,'enable'=>1]]],
-            ['channel'=>0, 'PtzPreset'=>['preset'=>[['id'=>$id,'enable'=>1]]]],
-            ['channel'=>0, 'PtzPreset'=>['table' =>[['id'=>$id,'enable'=>1]]]],
-        ];
-        if ($this->ptzTryMany('SetPtzPreset', $bodies, 'SetPtzPreset')) return true;
-
-        // 2) Fallbacks über PtzCtrl (in/ab FW-Änderungen oft stabil)
-        foreach (['SavePos','SetPos','AddPreset','SetPreset'] as $op) {
-            $r = $this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>$op,'id'=>$id], 'PtzCtrl', /*suppress*/ true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-        }
-
-        $this->dbg('PTZ','ptzSetPreset FAIL', ['id'=>$id]);
-        return false;
-    }
-
-    // Umbenennen eines Presets (mehrere historische Varianten)
-    private function ptzRenamePreset(int $id, string $name): bool
-    {
-        $id   = max(0, (int)$id);
+    // 2) Umbenennen
+    private function ptzRenamePreset(int $id, string $name): bool {
         $name = trim($name);
         if ($name === '') return false;
+        $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
+        $name = mb_substr($name, 0, 32, 'UTF-8');
 
-        // 1) Explizite Rename-Commands (flat/nested)
-        $bodies = [
-            ['channel'=>0,'id'=>$id,'name'=>$name],
-            ['channel'=>0,'Id'=>$id,'Name'=>$name],
-            // Tabellen-/Listenformate:
-            ['channel'=>0,'preset'=>[['id'=>$id,'name'=>$name,'enable'=>1]]],
-            ['channel'=>0,'table' =>[['id'=>$id,'name'=>$name,'enable'=>1]]],
-            ['channel'=>0,'PtzPreset'=>['preset'=>[['id'=>$id,'name'=>$name,'enable'=>1]]]],
-            ['channel'=>0,'PtzPreset'=>['table' =>[['id'=>$id,'name'=>$name,'enable'=>1]]]],
-        ];
-        if ($this->ptzTryMany('RenamePtzPreset', $bodies, 'RenamePtzPreset')) return true;
-
-        // 2) Manche FW erledigt Rename über SetPtzPreset mit name
-        if ($this->ptzTryMany('SetPtzPreset', $bodies, 'SetPtzPreset')) return true;
-
-        // 3) PtzCtrl-Varianten
-        foreach (['RenamePreset','SetPresetName'] as $op) {
-            $r = $this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>$op,'id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/ true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+        // bevorzugt: nested via table[]
+        $ok = is_array($this->postCmdDual(
+            'SetPtzPreset',
+            ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]],
+            'PtzPreset',  // <<< WICHTIG
+            /*suppress*/ true
+        ));
+        if (!$ok) {
+            // Fallback: flat
+            $ok = is_array($this->postCmdDual(
+                'SetPtzPreset',
+                ['channel'=>0, 'id'=>$id, 'name'=>$name],
+                'PtzPreset',  // <<< WICHTIG
+                /*suppress*/ true
+            ));
         }
-
-        $this->dbg('PTZ','ptzRenamePreset FAIL', ['id'=>$id,'name'=>$name]);
-        return false;
+        // letzte Fallbacks (einige ältere FWs)
+        if (!$ok) {
+            $ok = is_array($this->postCmdDual('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', true))
+            ?: is_array($this->postCmdDual('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', true));
+        }
+        if (!$ok) $this->dbg('PTZ/Rename', 'Fehlgeschlagen', ['id'=>$id,'name'=>$name]);
+        return (bool)$ok;
     }
 
-    // Löschen/Leeren eines Presets (kompatibel zu alten/neuen FW)
-    private function ptzClearPreset(int $id): bool
-    {
-        $id = max(0, (int)$id);
-
-        // 1) Explizite Clear-Kommandos
-        $bodies = [
-            ['channel'=>0,'id'=>$id],
-            ['channel'=>0,'Id'=>$id],
-            ['channel'=>0,'preset'=>[['id'=>$id]]],
-            ['channel'=>0,'table' =>[['id'=>$id]]],
-            ['channel'=>0,'PtzPreset'=>['preset'=>[['id'=>$id]]]],
-            ['channel'=>0,'PtzPreset'=>['table' =>[['id'=>$id]]]],
-        ];
-        if ($this->ptzTryMany('ClearPtzPreset', $bodies, 'ClearPtzPreset')) return true;
-
-        // 2) PtzCtrl-Varianten, die es „früher“ oft gab
-        foreach (['DelPreset','DeletePreset','ClearPreset','RemovePreset'] as $op) {
-            $r = $this->postCmdDual('PtzCtrl', ['channel'=>0,'op'=>$op,'id'=>$id], 'PtzCtrl', /*suppress*/ true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
+    // 3) Löschen/Clear
+    private function ptzClearPreset(int $id): bool {
+        // robust: enable=0 + name='' über SetPtzPreset
+        $ok = is_array($this->postCmdDual(
+            'SetPtzPreset',
+            ['channel'=>0, 'table'=>[ ['id'=>$id, 'enable'=>0, 'name'=>''] ]],
+            'PtzPreset',   // <<< WICHTIG
+            /*suppress*/ true
+        ));
+        if (!$ok) {
+            $ok = is_array($this->postCmdDual(
+                'SetPtzPreset',
+                ['channel'=>0, 'id'=>$id, 'enable'=>0, 'name'=>''],
+                'PtzPreset',   // <<< WICHTIG
+                /*suppress*/ true
+            ));
         }
-
-        // 3) SetPtzPreset mit enable=0 (bei manchen FW als „clear“ gewertet)
-        $bodies2 = [
-            ['channel'=>0,'id'=>$id,'enable'=>0],
-            ['channel'=>0,'preset'=>[['id'=>$id,'enable'=>0]]],
-            ['channel'=>0,'PtzPreset'=>['preset'=>[['id'=>$id,'enable'=>0]]]],
-        ];
-        if ($this->ptzTryMany('SetPtzPreset', $bodies2, 'SetPtzPreset')) return true;
-
-        $this->dbg('PTZ','ptzClearPreset FAIL', ['id'=>$id]);
-        return false;
+        if (!$ok) $this->dbg('PTZ/Clear', 'enable=0 fehlgeschlagen', ['id'=>$id]);
+        return (bool)$ok;
     }
 
     // ---------------------------
