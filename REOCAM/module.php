@@ -1865,18 +1865,29 @@ class Reolink extends IPSModule
             $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
             if (is_array($res)) {
                 $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
-                // 1) Channel schedule
+                // 1) Kanalbasierte Schedules (bevorzugt)
                 if (isset($push['chSchedule']) && is_array($push['chSchedule'])) {
                     foreach ($push['chSchedule'] as $row) {
                         $ch = (int)($row['channel'] ?? $row['Channel'] ?? -1);
-                        if ($ch === 0) { $enabled = ((int)($row['enable'] ?? 0) === 1); break; }
+                        if ($ch === 0 && isset($row['enable'])) { $enabled = ((int)$row['enable'] === 1); break; }
                     }
                 }
-                // 2) Global schedule
+                // 2) Globales schedule.enable
                 if ($enabled === null && isset($push['schedule']['enable'])) {
                     $enabled = ((int)$push['schedule']['enable'] === 1);
                 }
-                // 3) Global enable (nicht zuverlässig, aber als Fallback)
+                // 3) Aus Tabellen ableiten (falls kein enable-Feld existiert)
+                if ($enabled === null && isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
+                    $tbl = $push['schedule']['table'];
+                    $anyOn = false;
+                    foreach ($tbl as $k => $v) {
+                        if (!is_string($v)) continue;
+                        // Wenn irgendwo mindestens ein '1' vorkommt → effektiv EIN
+                        if (strpos($v, '1') !== false) { $anyOn = true; break; }
+                    }
+                    $enabled = $anyOn;
+                }
+                // 4) Fallback: globales enable
                 if ($enabled === null && isset($push['enable'])) {
                     $enabled = ((int)$push['enable'] === 1);
                 }
@@ -1885,11 +1896,8 @@ class Reolink extends IPSModule
             $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
             if (is_array($res)) {
                 $push = ($res[0]['value']['Push'] ?? $res[0]['value'] ?? []);
-                if (isset($push['schedule']['enable'])) {
-                    $enabled = ((int)$push['schedule']['enable'] === 1);
-                } elseif (isset($push['enable'])) {
-                    $enabled = ((int)$push['enable'] === 1);
-                }
+                if (isset($push['schedule']['enable']))       $enabled = ((int)$push['schedule']['enable'] === 1);
+                elseif (isset($push['enable']))               $enabled = ((int)$push['enable'] === 1);
             }
         }
 
@@ -1898,10 +1906,36 @@ class Reolink extends IPSModule
 
     private function PushApply(bool $on): bool {
         $ver = $this->DetectPushApiVersion();
-        $cmd = ($ver==='V20') ? "SetPushV20" : "SetPush";
-        $payload = [[ "cmd"=>$cmd, "param"=>[ "Push" => ["enable"=>$on?1:0, "channel"=>0] ] ]];
+        if ($ver === 'V20') {
+            // Erst versuchen: schedule.enable (global)
+            $payloads = [
+                [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "schedule" => [ "enable" => ($on?1:0), "channel"=>0 ] ] ] ]],
+                // Fallback (manche FW akzeptiert das globale enable weiterhin)
+                [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "enable" => ($on?1:0), "channel"=>0 ] ] ]],
+            ];
+            foreach ($payloads as $pl) {
+                $r = $this->apiCall($pl, 'PUSH', true);
+                if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                    $this->UpdatePushStatus();
+                    return true;
+                }
+            }
+            // Letzter Fallback: chSchedule (wenn vorhanden) pro Kanal setzen
+            $pl3 = [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "chSchedule" => [ ["channel"=>0, "enable"=>($on?1:0)] ] ] ] ]];
+            $r3 = $this->apiCall($pl3, 'PUSH', true);
+            if (is_array($r3) && (($r3[0]['code'] ?? -1) === 0)) {
+                $this->UpdatePushStatus();
+                return true;
+            }
+            $this->dbg('PUSH', 'SetPushV20: keine Variante akzeptiert');
+            return false;
+        }
+
+        // Legacy unverändert:
+        $payload = [[ "cmd"=>"SetPush", "param"=>[ "Push" => ["enable"=>$on?1:0, "channel"=>0] ] ]];
         $res = $this->apiCall($payload, 'PUSH', true);
-        return is_array($res) && (($res[0]['code'] ?? -1)===0);
+        if (is_array($res) && (($res[0]['code'] ?? -1)===0)) { $this->UpdatePushStatus(); return true; }
+        return false;
     }
 
     //FTP EIN/AUS
