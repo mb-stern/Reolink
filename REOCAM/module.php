@@ -2112,82 +2112,67 @@ class Reolink extends IPSModule
         return null; // keine Variante lieferte Sensitivities
     }
 
+    // --- Lies die AI-Sensitivitäten ---
+    private function aiReadSens(): ?array
+    {
+        $r = $this->apiCall([[ "cmd" => "GetAiSensitivity", "param" => ["channel" => 0] ]], 'SENS', true);
+        if (!is_array($r) || !isset($r[0]['value']['AiSensitivity'])) return null;
+        $ai = $r[0]['value']['AiSensitivity'];
+        return [
+            "people"  => (int)($ai['people']['sensitivity']  ?? 0),
+            "dog_cat" => (int)($ai['pet']['sensitivity']     ?? 0),
+            "vehicle" => (int)($ai['vehicle']['sensitivity'] ?? 0)
+        ];
+    }
+
     private function UpdateAiSensitivityStatus(): void
     {
         if (!$this->apiEnsureToken()) return;
+
         $ids = [
             "people"  => @$this->GetIDForIdent("SensitivityPeople"),
             "dog_cat" => @$this->GetIDForIdent("SensitivityDogCat"),
             "vehicle" => @$this->GetIDForIdent("SensitivityVehicle")
         ];
-        if ($ids["people"]===false && $ids["dog_cat"]===false && $ids["vehicle"]===false) return;
+        $vals = $this->aiReadSens();
+        if (!$vals) return;
 
-        $vals = $this->aiReadSensitivities();
-        if (!is_array($vals)) {
-            $this->dbg('SENS', 'AI Sensi: nichts gefunden (FW-Variante?)');
-            return;
-        }
-        foreach (["people","dog_cat","vehicle"] as $k) {
+        foreach ($vals as $k => $v) {
             $id = $ids[$k];
-            if ($id===false) continue;
-            $v = $vals[$k];
-            if ($v===null) continue;
-            $v = max(0,min(100,(int)$v));
-            if (GetValue($id)!==$v) $this->SetValue($k==="people"?"SensitivityPeople":($k==="dog_cat"?"SensitivityDogCat":"SensitivityVehicle"), $v);
+            if ($id !== false && GetValue($id) !== $v) {
+                $this->SetValue(
+                    $k === "people" ? "SensitivityPeople" :
+                    ($k === "dog_cat" ? "SensitivityDogCat" : "SensitivityVehicle"),
+                    $v
+                );
+            }
         }
     }
 
+    // --- Setze eine AI-Sensitivity ---
     private function AiSensitivityApply(string $cls, int $value): bool
     {
         if (!$this->apiEnsureToken()) return false;
-        if (!in_array($cls, ["people","dog_cat","vehicle"], true)) return false;
-        $v = max(0, min(100, (int)$value));
+        if (!in_array($cls, ["people", "dog_cat", "vehicle"], true)) return false;
 
-        $api = $this->ReadAttributeString("AiSensApi");
-        if ($api === "") $api = $this->aiProbeAndCache() ?? "";
+        // vorhandene Werte holen, um nur den geänderten zu überschreiben
+        $current = $this->aiReadSens() ?? ["people"=>50,"dog_cat"=>50,"vehicle"=>50];
+        $current[$cls] = max(0, min(100, $value));
 
-        $ok = false;
-        // 1) passender Set-Befehl nach Variante
-        switch ($api) {
-            case "AISENS_V20":
-                foreach (["SetAiSensitivity","SetAiCfgV20"] as $cmd) {
-                    $r = $this->apiCall([[ "cmd"=>$cmd, "param"=>[ $cmd==="SetAiSensitivity" ? "AiSensitivity" : "AiCfg" => ["channel"=>0, $cls=>["sensitivity"=>$v]] ] ]], 'SENS', true);
-                    if (is_array($r) && (($r[0]['code'] ?? -1)===0)) { $ok=true; break; }
-                }
-                break;
+        $payload = [[
+            "cmd"   => "SetAiSensitivity",
+            "param" => [
+                "AiSensitivity" => [
+                    "channel" => 0,
+                    "people"  => ["sensitivity" => $current["people"]],
+                    "vehicle" => ["sensitivity" => $current["vehicle"]],
+                    "pet"     => ["sensitivity" => $current["dog_cat"]],
+                ]
+            ]
+        ]];
 
-            case "AICFG_V20":
-            case "AICFG_PLAIN":
-                $r = $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>["AiCfg"=>["channel"=>0, $cls=>["sensitivity"=>$v]]] ]], 'SENS', true);
-                $ok = is_array($r) && (($r[0]['code'] ?? -1)===0);
-                if (!$ok) {
-                    // manche akzeptieren ohne "AiCfg"-Wrapper
-                    $r = $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>["channel"=>0, $cls=>["sensitivity"=>$v]] ]], 'SENS', true);
-                    $ok = is_array($r) && (($r[0]['code'] ?? -1)===0);
-                }
-                break;
-
-            case "SMARTDETECT_V20":
-            case "SMARTDETECT_LEG":
-                // per-Typ-Setter
-                $map = [
-                    "people"  => ["SetHumanoidDetect","SetSmartDetect","SetSmartDetectV20"],
-                    "dog_cat" => ["SetPetDetect","SetSmartDetect","SetSmartDetectV20"],
-                    "vehicle" => ["SetVehicleDetect","SetSmartDetect","SetSmartDetectV20"],
-                ];
-                foreach ($map[$cls] as $cmd) {
-                    $r = $this->apiCall([[ "cmd"=>$cmd, "param"=>["channel"=>0, $cls=>["sensitivity"=>$v]] ]], 'SENS', true);
-                    if (is_array($r) && (($r[0]['code'] ?? -1)===0)) { $ok=true; break; }
-                }
-                break;
-        }
-
-        // 2) Fallback: dein bestehendes SetAiCfg
-        if (!$ok) {
-            $r = $this->apiCall([[ "cmd"=>"SetAiCfg", "param"=>["AiCfg"=>["channel"=>0, $cls=>["sensitivity"=>$v]]] ]], 'SENS', true);
-            $ok = is_array($r) && (($r[0]['code'] ?? -1)===0);
-        }
-
+        $r = $this->apiCall($payload, 'SENS', true);
+        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
         if ($ok) $this->UpdateAiSensitivityStatus();
         return $ok;
     }
