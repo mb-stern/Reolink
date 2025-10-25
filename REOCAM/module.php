@@ -1076,7 +1076,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiPTZ"))        { $this->CreateOrUpdatePTZHtml(false); }
             if ($this->ReadPropertyBoolean("EnableApiPush"))       { $this->UpdatePushStatus(); }
             if ($this->ReadPropertyBoolean("EnableApiFTP"))        { $this->UpdateFtpStatus(); }
-}
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
