@@ -2333,26 +2333,6 @@ class Reolink extends IPSModule
         return null;
     }
 
-    // Liefert die erkannte AI-Sensitivity-API-Variante (und probt bei Bedarf einmalig).
-    public function GetAiSensApi(): string
-    {
-        $v = $this->ReadAttributeString("AiSensApi");
-        if ($v === "" || $v === "NONE") {
-            $v = $this->aiProbeAndCache() ?? "NONE";
-        }
-        $this->dbg('SENS', 'AiSensApi', $v);
-        return $v;
-    }
-
-    // Optional: erzwingt eine Neu-Erkennung (Cache leeren + erneut probieren).
-    public function ProbeAiSensApi(bool $force = true): string
-    {
-        if ($force) {
-            $this->WriteAttributeString("AiSensApi", "");
-        }
-        return $this->GetAiSensApi();
-    }
-
     // Liefert die erkannte AI-Sensitivity-API-Variante (probt bei Bedarf einmalig)
     public function GetAiSensApi(): string
     {
