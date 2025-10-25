@@ -1023,7 +1023,6 @@ class Reolink extends IPSModule
             }
         }
 
-        // PTZ
         if ($enablePTZ) {
             if (!@$this->GetIDForIdent("PTZ_HTML")) {
                 $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
@@ -1360,106 +1359,130 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ / Zoom
     // ---------------------------
-    private function CreateOrUpdatePTZHtml(bool $reloadPresets = false): void
+ 
+    private function CreateOrUpdatePTZHtml(): void
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
+
         $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") {
-            $hook = $this->RegisterHook();
-        }
+        if ($hook === "") { $hook = $this->RegisterHook(); }
 
-        // ---- Presets: aus Cache, nur bei Bedarf von der Kamera holen ----
-        $presets = [];
-        if (!$reloadPresets) {
-            $cached = $this->ReadAttributeString("PtzPresetsCache");
-            if (is_string($cached) && $cached !== "") {
-                $tmp = @json_decode($cached, true);
-                if (is_array($tmp)) $presets = $tmp;
-            }
-        }
-        if (empty($presets)) {
-            $presets = $this->getPresetList(); // <<< API-CALL NUR HIER (selten)
-            $this->WriteAttributeString("PtzPresetsCache", json_encode($presets, JSON_UNESCAPED_UNICODE));
-        }
+        $presets = $this->getPresetList();
 
-        // ---- Zoom-Info: 1 schlanker Call pro Zyklus ----
-        $zInfo = $this->getZoomInfo(); // <<< EIN API-CALL pro Refresh
-        $zMin = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
-        $zMax = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
-        $zPos = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
-
-        // ---- UI rendern (wie zuvor) ----
         $rows = '';
         if (!empty($presets)) {
             foreach ($presets as $p) {
                 $pid   = (int)$p['id'];
                 $title = htmlspecialchars((string)$p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                $rows .= '<div class="preset-row" data-preset="'.$pid.'">'.
+                $rows .=
+                    '<div class="preset-row" data-preset="'.$pid.'">'.
                         '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
                         '<div class="icons">'.
-                        '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
-                        '<button class="icon del" data-preset="'.$pid.'" title="Löschen" aria-label="Löschen">🗑</button>'.
+                            '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
+                            '<button class="icon del"     data-preset="'.$pid.'" title="Löschen"    aria-label="Löschen">🗑</button>'.
                         '</div>'.
-                        '</div>';
+                    '</div>';
             }
         } else {
             $rows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
         $btn = 42; $gap = 6;
+        $zInfo = $this->getZoomInfo();
+        $zMin  = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
+        $zMax  = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
+        $zPos  = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
+
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
-    #ptz-wrap{ --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px; max-width: 520px; margin:0 auto; user-select:none; }
-    #ptz-wrap .grid{ display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn)); gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px; }
-    #ptz-wrap button{ height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8; font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06); box-sizing:border-box; padding:6px 10px; }
+    #ptz-wrap{
+    --btn: {$btn}px; --gap: {$gap}px; --fs: 16px; --radius: 10px;
+    max-width: 520px; margin:0 auto; user-select:none;
+    }
+    #ptz-wrap .grid{
+    display:grid; grid-template-columns:repeat(3, var(--btn)); grid-template-rows:repeat(3, var(--btn));
+    gap:var(--gap); justify-content:center; align-items:center; margin-bottom:10px;
+    }
+    #ptz-wrap button{
+    height: var(--btn); border:1px solid #cfcfcf; border-radius:var(--radius); background:#f8f8f8;
+    font-size:var(--fs); line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.06);
+    box-sizing:border-box; padding:6px 10px;
+    }
     #ptz-wrap .dir{ width:var(--btn); padding:0; }
-    #ptz-wrap button:hover{ filter:brightness(.98); }
+    #ptz-wrap button:hover{ filter:brightness(.98); } 
     #ptz-wrap button:active{ transform:translateY(1px); }
-    #ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;} #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
+    #ptz-wrap .up{grid-column:2;grid-row:1;} .left{grid-column:1;grid-row:2;}
+    #ptz-wrap .right{grid-column:3;grid-row:2;} .down{grid-column:2;grid-row:3;}
+
     #ptz-wrap .section-title{ font-weight:600; margin:10px 0 6px; }
+
     #ptz-wrap .presets{ display:block; }
-    #ptz-wrap .preset-row{ display:flex; align-items:center; gap:8px; margin-bottom:var(--gap); }
-    #ptz-wrap .preset{ flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #ptz-wrap .preset-row{
+    display:flex; align-items:center; gap:8px; margin-bottom:var(--gap);
+    }
+    #ptz-wrap .preset{
+    flex:1; height:auto; min-height:36px; padding:8px 12px; text-align:left;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
     #ptz-wrap .icons { display:flex; gap:6px; }
-    #ptz-wrap .icon{ width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; padding:0; font-size:18px; }
+    #ptz-wrap .icon{
+    width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center;
+    padding:0; font-size:18px;
+    }
     #ptz-wrap .no-presets{ opacity:.7; padding:4px 0; }
-    #ptz-wrap .new{ margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-    #ptz-wrap .new input[type="text"]{ flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px; }
+
+    #ptz-wrap .new{
+    margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+    }
+    #ptz-wrap .new input[type="text"]{
+    flex:1; min-width:160px; height:34px; padding:4px 8px; border:1px solid #cfcfcf; border-radius:8px;
+    }
     #ptz-wrap .new button{ height:36px; padding:6px 10px; }
     #ptz-wrap .hint{ font-size:14px; opacity:.75; }
     </style>
+
     <div class="grid">
-    <button data-dir="up" class="dir up" title="Hoch" aria-label="Hoch">▲</button>
-    <button data-dir="left" class="dir left" title="Links" aria-label="Links">◀</button>
+    <button data-dir="up"    class="dir up"    title="Hoch"   aria-label="Hoch">▲</button>
+    <button data-dir="left"  class="dir left"  title="Links"  aria-label="Links">◀</button>
     <button data-dir="right" class="dir right" title="Rechts" aria-label="Rechts">▶</button>
-    <button data-dir="down" class="dir down" title="Runter" aria-label="Runter">▼</button>
+    <button data-dir="down"  class="dir down"  title="Runter" aria-label="Runter">▼</button>
     </div>
+
     <div class="section-title">Zoom</div>
     <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
-    <input type="range" id="ptz-zoom" min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}" style="width:220px;">
+    <input type="range" id="ptz-zoom"
+            min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}"
+            style="width:220px;">
     </div>
+
     <div class="section-title">Presets</div>
-    <div class="presets"> {$rows} </div>
+    <div class="presets">
+    {$rows}
+    </div>
+
     <div class="section-title">Neues Preset</div>
     <div class="new">
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
     <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
     </div>
+
     <script>
     (function(){
-    var base = "{$hook}";
-    var wrap = document.getElementById("ptz-wrap");
-    var msg  = document.getElementById("ptz-msg");
-    var nameIn   = document.getElementById("ptz-new-name");
+    var base   = "{$hook}";
+    var wrap   = document.getElementById("ptz-wrap");
+    var msg    = document.getElementById("ptz-msg");
+    var nameIn = document.getElementById("ptz-new-name");
+    var nextHint = document.getElementById("ptz-nextid-hint");
 
     function show(text, ok){
         if (!msg) return;
         msg.className = "status " + (ok ? "ok" : "err");
         msg.textContent = text;
     }
+
     function call(op, extra){
         var qs = new URLSearchParams(extra || {});
         qs.set("ptz", op);
@@ -1468,13 +1491,14 @@ class Reolink extends IPSModule
         .then(function(r){ return r.text().catch(function(){ return ""; }); })
         .then(function(t){
             var body = (t || "").trim().toUpperCase();
-            var ok = (body === "OK");
+            var ok   = (body === "OK");
             if (ok) { show("OK", true); return true; }
             if ((t || "").trim() === "") { show("Gesendet", true); return true; }
             show("Fehler: " + (t || ""), false); return false;
         })
         .catch(function(){ show("Gesendet", true); return true; });
     }
+
     function calcNextId(){
         var rows = wrap.querySelectorAll(".preset-row[data-preset]");
         var max = -1;
@@ -1485,42 +1509,66 @@ class Reolink extends IPSModule
         return max + 1;
     }
 
+    function updateNextIdHint(){
+        var nid = calcNextId();
+        if (nextHint) nextHint.textContent = "(ID wird automatisch vergeben: " + nid + ")";
+    }
+    updateNextIdHint();
+
     var zoomEl = document.getElementById("ptz-zoom");
     if (zoomEl) {
-        zoomEl.addEventListener("change", function(){
+    zoomEl.addEventListener("change", function(){
         var target = parseInt(zoomEl.value, 10);
         if (isNaN(target)) return;
         call("zoompos", { pos: target });
-        });
+    });
     }
 
+    // ---- Buttons: Pfeile / Presets / CRUD ----
     wrap.addEventListener("click", function(ev){
         var btn = ev.target.closest("button");
         if (!btn) return;
 
         if (btn.hasAttribute("data-dir")) {
-        call(btn.getAttribute("data-dir")); return;
+        call(btn.getAttribute("data-dir"));
+        return;
         }
+
         if (btn.classList.contains("preset") && btn.hasAttribute("data-preset")) {
-        call("preset:" + btn.getAttribute("data-preset")); return;
+        call("preset:" + btn.getAttribute("data-preset"));
+        return;
         }
+
         if (btn.classList.contains("rename") && btn.hasAttribute("data-preset")) {
         var id = parseInt(btn.getAttribute("data-preset") || "0", 10);
-        var cur = (btn.parentElement && btn.parentElement.previousElementSibling) ? btn.parentElement.previousElementSibling.textContent.trim() : "";
+        var cur = (btn.parentElement && btn.parentElement.previousElementSibling)
+                    ? btn.parentElement.previousElementSibling.textContent.trim() : "";
         var neu = window.prompt("Neuer Name für Preset " + id + ":", cur);
-        if (neu && neu.trim() !== "") { call("rename", { id:id, name:neu.trim() }); }
+        if (neu && neu.trim() !== "") {
+            call("rename", { id:id, name:neu.trim() }).then(function(ok){
+            if (ok) updateNextIdHint();
+            });
+        }
         return;
         }
+
         if (btn.classList.contains("del") && btn.hasAttribute("data-preset")) {
         var idd = parseInt(btn.getAttribute("data-preset") || "0", 10);
-        if (window.confirm("Preset " + idd + " löschen?")) { call("delete", { id: idd }); }
+        if (window.confirm("Preset " + idd + " löschen?")) {
+            call("delete", { id: idd }).then(function(ok){
+            if (ok) updateNextIdHint();
+            });
+        }
         return;
         }
+
         if (btn.id === "ptz-new-save") {
         var nm = (nameIn.value || "").trim();
         if (!nm) { show("Bitte einen Namen eingeben.", false); return; }
         var nid = calcNextId();
-        call("save", { id: nid, name: nm }).then(function(ok){ if (ok) { nameIn.value = ""; } });
+        call("save", { id: nid, name: nm }).then(function(ok){
+            if (ok) { nameIn.value = ""; updateNextIdHint(); }
+        });
         return;
         }
     });
@@ -1533,34 +1581,41 @@ class Reolink extends IPSModule
 
     private function setHtmlIfChanged(string $ident, string $html): void
     {
-        $id  = @$this->GetIDForIdent($ident);
+        $id = @$this->GetIDForIdent($ident);
         $old = ($id !== false) ? GetValue($id) : null;
         if (!is_string($old) || $old !== $html) {
             $this->SetValue($ident, $html);
+        } else {
+            $this->SendDebug($ident, 'Unverändert – kein Update', 0);
         }
-        else {
-        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
-        }       
     }
 
     private function HandlePtzCommand(string $cmd): bool
     {
+        // optionale Parameter (aus GET/POST/JSON übernommen)
         $stepParam = isset($_REQUEST['step']) ? max(1, (int)$_REQUEST['step']) : 1;
         $idParam   = $_REQUEST['id']   ?? null;
         $nameParam = $_REQUEST['name'] ?? null;
+
         $id   = is_null($idParam)   ? null : (int)$idParam;
         $name = is_null($nameParam) ? null : (string)$nameParam;
 
+        // PRESET anfahren: "preset:<id>"
         if (strpos($cmd, 'preset:') === 0) {
             $pid = (int)substr($cmd, 7);
-            if ($pid >= 0) return $this->ptzGotoPreset($pid);
-            $this->dbg("PTZ", "Ungueltige Preset-ID", $cmd);
+            if ($pid >= 0) {
+                return $this->ptzGotoPreset($pid);
+            }
+            $this->SendDebug("PTZ", "Ungueltige Preset-ID: $cmd", 0);
             return false;
         }
 
         switch (strtolower($cmd)) {
             case 'save':
-                if ($id === null || $id < 0) { $this->dbg("PTZ","id fehlt/ungueltig"); return false; }
+                if ($id === null || $id < 0) {
+                    $this->SendDebug("PTZ/SAVE", "id fehlt/ungueltig", 0);
+                    return false;
+                }
                 if (is_string($name)) {
                     $name = trim($name);
                     if ($name === '') $name = null;
@@ -1568,77 +1623,110 @@ class Reolink extends IPSModule
                         $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
                         $name = mb_substr($name, 0, 32, 'UTF-8');
                     }
-                } else { $name = null; }
+                } else {
+                    $name = null;
+                }
                 $ok = $this->PTZ_SavePreset($id, $name);
-                $this->dbg("PTZ", "SAVE", ['id'=>$id, 'name'=>$name, 'ok'=>$ok]);
+                $this->SendDebug("PTZ/SAVE", "id={$id}, name=" . ($name ?? '<none>') . " -> ".($ok?'OK':'FAIL'), 0);
                 return $ok;
 
             case 'rename':
-                if ($id === null || $id < 0 || !is_string($name) || trim($name) === '') { $this->dbg("PTZ","id/name fehlen"); return false; }
+                if ($id === null || $id < 0 || !is_string($name) || trim($name) === '') {
+                    $this->SendDebug("PTZ/RENAME", "id/name fehlen/ungueltig", 0);
+                    return false;
+                }
                 $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', trim($name));
                 $name = mb_substr($name, 0, 32, 'UTF-8');
                 $ok = $this->PTZ_RenamePreset($id, $name);
-                $this->dbg("PTZ", "RENAME", ['id'=>$id, 'name'=>$name, 'ok'=>$ok]);
+                $this->SendDebug("PTZ/RENAME", "id={$id}, name={$name} -> ".($ok?'OK':'FAIL'), 0);
                 return $ok;
 
             case 'delete':
-                if ($id === null || $id < 0) { $this->dbg("PTZ","id fehlt"); return false; }
+                if ($id === null || $id < 0) {
+                    $this->SendDebug("PTZ/DELETE", "id fehlt/ungueltig", 0);
+                    return false;
+                }
                 $ok = $this->PTZ_DeletePreset($id);
-                $this->dbg("PTZ", "DELETE", ['id'=>$id, 'ok'=>$ok]);
+                $this->SendDebug("PTZ/DELETE", "id={$id} -> ".($ok?'OK':'FAIL'), 0);
                 return $ok;
 
-            case 'zoomin':  return $this->ptzZoom('in',  $stepParam);
-            case 'zoomout': return $this->ptzZoom('out', $stepParam);
+            case 'zoomin':
+                return $this->ptzZoom('in', $stepParam);
+
+            case 'zoomout':
+                return $this->ptzZoom('out', $stepParam);
 
             case 'zoompos':
-                if (!isset($_REQUEST['pos'])) { $this->dbg("PTZ","pos fehlt"); return false; }
+                if (!isset($_REQUEST['pos'])) {
+                    $this->SendDebug("PTZ/ZOOMPOS", "pos fehlt", 0);
+                    return false;
+                }
                 $pos = (int)$_REQUEST['pos'];
+                // an Kamera-Grenzen klemmen
                 $info = $this->getZoomInfo();
-                if (is_array($info)) $pos = max($info['min'], min($info['max'], $pos));
+                if (is_array($info)) {
+                    $pos = max($info['min'], min($info['max'], $pos));
+                }
                 $ok = $this->setZoomPos($pos);
-                $this->dbg("PTZ", "ZOOMPOS", ['pos'=>$pos, 'ok'=>$ok]);
+                $this->SendDebug("PTZ/ZOOMPOS", "pos={$pos} -> ".($ok?'OK':'FAIL'), 0);
                 return $ok;
         }
 
-        $map = [ 'left' => 'Left', 'right' => 'Right', 'up' => 'Up', 'down' => 'Down' ];
+        // Pfeile (kurzer Impuls + Stop)
+        $map = [
+            'left'  => 'Left',
+            'right' => 'Right',
+            'up'    => 'Up',
+            'down'  => 'Down'
+        ];
+
         $k = strtolower($cmd);
         if (!isset($map[$k])) {
-            $this->dbg("PTZ", "Unbekanntes Kommando", $cmd);
+            $this->SendDebug("PTZ", "Unbekanntes Kommando: {$cmd}", 0);
             return false;
         }
         return $this->ptzCtrl($map[$k]);
     }
 
-    private function getPtzStyle(): string
-    {
-        $s = $this->ReadAttributeString("PtzStyle");
-        return ($s === "flat" || $s === "nested") ? $s : "";
+    private function getPtzStyle(): string {
+    $s = $this->ReadAttributeString("PtzStyle");
+    return ($s === "flat" || $s === "nested") ? $s : "";
     }
-    private function setPtzStyle(string $s): void
-    {
+
+    private function setPtzStyle(string $s): void {
         if ($s === "flat" || $s === "nested") {
             $this->WriteAttributeString("PtzStyle", $s);
-            $this->dbg("PTZ", "PtzStyle gesetzt", $s);
+            $this->SendDebug("PTZ", "PtzStyle gesetzt: ".$s, 0);
         }
+    }
+
+    private function ptzOk(?array $res): bool {
+    return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function postCmdDual(string $cmd, array $body, ?string $nestedKey=null, bool $suppress=false): ?array
     {
         $nestedKey = $nestedKey ?: $cmd;
-        $known = $this->getPtzStyle();
+
+        $known = $this->getPtzStyle();                 // "flat", "nested" oder ""
         $order = $known ? [$known, ($known === 'flat' ? 'nested' : 'flat')] : ['flat','nested'];
 
         foreach ($order as $mode) {
-            $payload = [[ 'cmd' => $cmd, 'param' => ($mode === 'flat') ? $body : [$nestedKey => $body] ]];
-            $resp = $this->apiCall($payload, 'PTZ', /*suppress*/ true);
+            $payload = [[
+                'cmd'   => $cmd,
+                'param' => ($mode === 'flat') ? $body : [$nestedKey => $body]
+            ]];
+
+            $resp = $this->apiCall($payload, /*suppress*/ true);
             if (is_array($resp) && (($resp[0]['code'] ?? -1) === 0)) {
                 if ($known !== $mode) $this->setPtzStyle($mode);
                 return $resp;
             }
         }
+
         if (!$suppress) {
-            $this->dbg("PTZ", "postCmdDual FAIL", ['cmd'=>$cmd, 'body'=>$body]);
-            $this->LogMessage("Reolink/PTZ: postCmdDual FAIL for {$cmd}", KL_ERROR);
+            $this->SendDebug("postCmdDual/$cmd", "FAIL body=".json_encode($body), 0);
+            $this->LogMessage("Reolink: postCmdDual FAIL for {$cmd}", KL_ERROR);
         }
         return null;
     }
@@ -1646,6 +1734,8 @@ class Reolink extends IPSModule
     private function ptzCtrl(string $op, array $extra = [], int $pulseMs = 250): bool
     {
         $param = ['channel' => 0, 'op' => $op] + $extra;
+
+        // Nur bei Bewegungen Speed setzen – bei Zoom führt 'speed' oft zu Fehlern
         $isMove = in_array($op, ['Left','Right','Up','Down'], true);
         if ($isMove && !isset($param['speed'])) {
             $param['speed'] = 5;
@@ -1654,20 +1744,26 @@ class Reolink extends IPSModule
         $ok = is_array($this->postCmdDual('PtzCtrl', $param, 'PtzCtrl', /*suppress*/ false));
         if (!$ok) return false;
 
+        // Impuls + Stop nur für Bewegungen (Zoom handled separat)
         if ($isMove) {
             IPS_Sleep($pulseMs);
             $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
         }
+
         return true;
     }
 
     private function ptzGotoPreset(int $id): bool
     {
-        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPos',    'id'=>$id], 'PtzCtrl', /*suppress*/ true));
+        // Erst ToPos
+        $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPos', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
         if ($ok) return true;
+
+        // Fallback ToPreset
         $ok = is_array($this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'ToPreset', 'id'=>$id], 'PtzCtrl', /*suppress*/ true));
         if ($ok) return true;
-        $this->dbg('PTZ', "Preset anfahren fehlgeschlagen", $id);
+
+        $this->SendDebug('PTZ/PRESET', "Anfahren fehlgeschlagen für ID=$id", 0);
         return false;
     }
 
@@ -1675,24 +1771,36 @@ class Reolink extends IPSModule
     {
         if (!is_array($node) || empty($node)) return;
 
+        // Fall: Liste von Preset-Objekten
         $first = reset($node);
         if (is_array($first) && (isset($first['id']) || isset($first['Id']))) {
             foreach ($node as $p) {
                 if (!is_array($p)) continue;
+
                 $rawId = $p['id'] ?? $p['Id'] ?? null;
                 if (!is_numeric($rawId)) continue;
                 $id = (int)$rawId;
-                if (isset($seen[$id])) continue;
+
+                if (isset($seen[$id])) continue; // Dedupe
 
                 $en = $p['enable'] ?? $p['Enable'] ?? null;
-                if ($en !== null && (int)$en === 0) continue;
+                if ($en !== null && (int)$en === 0) {
+                    continue; // inaktiv -> nicht anzeigen
+                }
 
+                // Name lesen
                 $name = $p['name'] ?? $p['Name'] ?? $p['sName'] ?? $p['label'] ?? $p['presetName'] ?? '';
-                $trim = trim((string)$name);
+                $name = (string)$name;
+                $trim = trim($name);
 
+                // --- integrierte Platzhalter-Erkennung (pos/preset/position + Zahl) ---
+                // Beispiele: "pos1", "pos 01", "preset2", "position3" (Groß/klein egal)
                 $isGeneric = ($trim !== '') && (preg_match('/^(pos|preset|position)\s*0*\d+$/i', $trim) === 1);
+
+                // Heuristik "belegt": typische Flags und/oder Koordinaten
                 $flag  = $p['exist'] ?? $p['bExist'] ?? $p['bexistPos'] ?? $p['enable'] ?? $p['enabled'] ?? $p['set'] ?? $p['bSet'] ?? null;
                 $isSet = ($flag === 1 || $flag === '1' || $flag === true);
+
                 $posArr = $p['pos'] ?? $p['position'] ?? $p['ptzpos'] ?? $p['ptz'] ?? null;
                 $hasPos = false;
                 if (is_array($posArr)) {
@@ -1700,77 +1808,178 @@ class Reolink extends IPSModule
                         if (is_numeric($v) && (float)$v != 0.0) { $hasPos = true; break; }
                     }
                 }
-                if (($trim === '' || $isGeneric) && !$isSet && !$hasPos) continue;
+
+                // Filter: Nur dann überspringen, wenn (Name leer ODER generisch) UND keine Flags/Koordinaten
+                if (($trim === '' || $isGeneric) && !$isSet && !$hasPos) {
+                    continue;
+                }
+
                 if ($trim === '') $name = "Preset ".$id;
 
                 $out[] = ['id'=>$id, 'name'=>$name];
                 $seen[$id] = true;
             }
+            // nicht return; darunter weiter tiefer suchen
         }
 
+        // Tiefer rekursiv durchsuchen
         foreach ($node as $v) {
-            if (is_array($v)) $this->collectPresetsRecursive($v, $out, $seen);
+            if (is_array($v)) {
+                $this->collectPresetsRecursive($v, $out, $seen);
+            }
         }
     }
 
     private function getPresetList(): array
     {
         $res = $this->postCmdDual('GetPtzPreset', ['channel'=>0], 'GetPtzPreset', /*suppress*/ true);
-        $list = []; $seen = [];
+        $list = [];
+        $seen = [];
+
         if (is_array($res)) {
-            $v = $res[0]['value'] ?? [];
+            // 1) Standard-Pfade
+            $v  = $res[0]['value'] ?? [];
             $ps = $v['PtzPreset']['preset'] ?? $v['PtzPreset']['table'] ?? $v['preset'] ?? $v['table'] ?? null;
+
             if (is_array($ps)) {
                 $this->collectPresetsRecursive($ps, $list, $seen);
             } else {
+                // 2) Fallback: komplett rekursiv durchsuchen (beliebige Container-Namen)
                 $this->collectPresetsRecursive($v, $list, $seen);
             }
+
+            // 3) Wenn weiterhin leer: komplettes Response durchsuchen
             if (empty($list)) {
                 $this->collectPresetsRecursive($res, $list, $seen);
             }
+
+            // 4) Debug-Hinweis, falls nix gefunden wurde
             if (empty($list)) {
-                $this->dbg('PTZ', 'Keine Presets erkannt', $res);
+                $keys = is_array($v) ? implode(',', array_keys($v)) : '';
+                $this->SendDebug('GetPtzPreset', 'Keine Presets erkannt. value-Keys='.$keys.' RAW='.json_encode($res), 0);
             }
         } else {
-            $this->dbg('PTZ', 'Kein gueltiges Array-Response');
+            $this->SendDebug('GetPtzPreset', 'Kein gueltiges Array-Response', 0);
         }
+
+        // nach ID sortieren (optional)
         usort($list, fn($a,$b) => $a['id'] <=> $b['id']);
         return $list;
     }
 
-    private function getZoomInfo(): ?array
-    {
+    private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
+        $entry = ['id'=>$id, 'enable'=>1];
+        if ($nameForCreate !== null && $nameForCreate !== '') {
+            $n = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $nameForCreate);
+            $entry['name'] = mb_substr($n, 0, 32, 'UTF-8');
+        }
+        // bevorzugt: nested "PtzPreset" + table[]
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ $entry ]], 'PtzPreset', /*suppress*/true));
+        // Fallback: einige FW akzeptieren "flat" (ohne table)
+        if (!$ok) {
+            $flat = ['channel'=>0, 'id'=>$id, 'enable'=>1] + (isset($entry['name'])?['name'=>$entry['name']]:[]);
+            $ok = is_array($this->postCmdDual('SetPtzPreset', $flat, 'PtzPreset', /*suppress*/true));
+        }
+        if (!$ok) $this->SendDebug('PTZ/SetPtzPreset', 'Fehlgeschlagen: '.json_encode($entry), 0);
+        return (bool)$ok;
+    }
+
+    private function ptzClearPreset(int $id): bool {
+        $entry = ['id'=>$id, 'enable'=>0, 'name'=>''];
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'table'=>[$entry]], 'PtzPreset', /*suppress*/true));
+        if (!$ok) {
+            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0,'id'=>$id,'enable'=>0,'name'=>''], 'PtzPreset', /*suppress*/true));
+        }
+        if (!$ok) $this->SendDebug('PTZ/Clear', 'enable=0 für id='.$id.' gescheitert', 0);
+        return (bool)$ok;
+    }
+
+    private function ptzRenamePreset(int $id, string $name): bool {
+        $name = trim($name);
+        if ($name === '') return false;
+        $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
+        $name = mb_substr($name, 0, 32, 'UTF-8');
+
+        // bevorzugt: nested mit table[]
+        $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]], 'PtzPreset', /*suppress*/true));
+        if (!$ok) {
+            // Fallback: flat
+            $ok = is_array($this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'PtzPreset', /*suppress*/true));
+        }
+        // als letzte Rückfallebenen die alten Varianten weiterprobieren:
+        if (!$ok) {
+            $ok = is_array($this->postCmdDual('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', /*suppress*/true))
+            ?: is_array($this->postCmdDual('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', /*suppress*/true));
+        }
+        if (!$ok) $this->SendDebug('PTZ/Rename', "Fehlgeschlagen: id=$id, name=$name", 0);
+        return (bool)$ok;
+    }
+
+    public function PTZ_SavePreset(int $id, ?string $name=null): bool {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzSetPreset($id);
+        if ($ok && $name) { $this->ptzRenamePreset($id, $name); }
+        $this->CreateOrUpdatePTZHtml(); // UI refresh
+        return $ok;
+    }
+    public function PTZ_RenamePreset(int $id, string $name): bool {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzRenamePreset($id, $name);
+        if ($ok) $this->CreateOrUpdatePTZHtml();
+        return $ok;
+    }
+    public function PTZ_DeletePreset(int $id): bool {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->ptzClearPreset($id);
+        if ($ok) $this->CreateOrUpdatePTZHtml();
+        return $ok;
+    }
+
+    private function getZoomInfo(): ?array {
         $res = $this->postCmdDual('GetZoomFocus', ['channel'=>0], 'ZoomFocus', /*suppress*/ false);
         if (!is_array($res) || !isset($res[0]['value'])) return null;
+
         $val  = $res[0]['value'];
         $zf   = $val['ZoomFocus'] ?? $val['zoomFocus'] ?? null;
         $zoom = is_array($zf) ? ($zf['zoom'] ?? $zf['Zoom'] ?? null) : null;
         if (!is_array($zoom)) return null;
+
         $pos = (int)($zoom['pos'] ?? $zoom['Pos'] ?? 0);
         $min = (int)($zoom['min'] ?? $zoom['Min'] ?? 0);
         $max = (int)($zoom['max'] ?? $zoom['Max'] ?? 10);
         return ['pos'=>$pos, 'min'=>$min, 'max'=>$max];
     }
 
-    private function setZoomPos(int $pos): bool
-    {
+    private function setZoomPos(int $pos): bool {
         $info = $this->getZoomInfo() ?: ['min'=>0, 'max'=>10];
-        $min = (int)$info['min']; $max = (int)$info['max'];
-        $p = max($min, min($max, $pos));
+        $min  = (int)$info['min'];
+        $max  = (int)$info['max'];
+        $p    = max($min, min($max, $pos));
+
+        // Falls Kamera intern 0..10 erwartet → normalisieren
         $sendPos = $p;
         if ($max > 10) {
             $sendPos = (int)round(($p - $min) * 10 / max(1, $max - $min));
         }
+
         $res = $this->postCmdDual('StartZoomFocus', ['channel'=>0, 'op'=>'ZoomPos', 'pos'=>$sendPos], 'ZoomFocus', /*suppress*/ true);
         return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function ptzZoom(string $dir, int $step = 1): bool
     {
-        $step = max(1, min(27, $step));
-        $pulseMs = 160; $gapMs = 60;
-        $ops = ($dir === 'in') ? ['ZoomIn','ZoomTele','ZoomAdd'] : ['ZoomOut','ZoomWide','ZoomDec'];
+        // step = wie viele kurze Zoom-Impulse
+        $step    = max(1, min(27, $step)); // harte Kappe (sicher)
+        $pulseMs = 160;                    // Dauer eines Impulses → feiner/grober
+        $gapMs   = 60;                     // Pause zwischen Impulsen
+
+        // Kandidaten: je nach FW heißt es unterschiedlich
+        $ops = ($dir === 'in')
+            ? ['ZoomIn','ZoomTele','ZoomAdd']
+            : ['ZoomOut','ZoomWide','ZoomDec'];
+
         $okAny = false;
+
         for ($i = 0; $i < $step; $i++) {
             $ok = false;
             foreach ($ops as $op) {
@@ -1778,101 +1987,16 @@ class Reolink extends IPSModule
                 if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
                     $ok = $okAny = true;
                     IPS_Sleep($pulseMs);
+                    // unbedingt stoppen, sonst läuft der Zoom weiter
                     $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>'Stop'], 'PtzCtrl', /*suppress*/ true);
                     break;
                 }
             }
-            if (!$ok) break;
+            if (!$ok) break;             // Kein passender Op → abbrechen
             if ($i < $step-1) IPS_Sleep($gapMs);
         }
         return $okAny;
     }
-
-    public function PTZ_SavePreset(int $id, ?string $name=null): bool
-    {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->ptzSetPreset($id);
-        if ($ok && $name) { $this->ptzRenamePreset($id, $name); }
-        if ($ok) {
-            $this->WriteAttributeString("PtzPresetsCache", "");   // Cache leeren
-            $this->CreateOrUpdatePTZHtml(true);                   // Presets neu holen
-        }
-        return $ok;
-    }
-
-    public function PTZ_RenamePreset(int $id, string $name): bool
-    {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->ptzRenamePreset($id, $name);
-        if ($ok) {
-            $this->WriteAttributeString("PtzPresetsCache", "");
-            $this->CreateOrUpdatePTZHtml(true);
-        }
-        return $ok;
-    }
-
-    public function PTZ_DeletePreset(int $id): bool
-    {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->ptzClearPreset($id);
-        if ($ok) {
-            $this->WriteAttributeString("PtzPresetsCache", "");
-            $this->CreateOrUpdatePTZHtml(true);
-        }
-        return $ok;
-    }
-
-    // ---------------------------
-    // PTZ Presets: Set/Rename/Clear (robust: flat/nested + mehrere Ops)
-    // ---------------------------
-    private function ptzSetPreset(int $id): bool
-    {
-        // Versuch 1: SetPreset
-        $r = $this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id], 'SetPtzPreset', true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // Versuch 2: SavePos / SetPos
-        foreach (['SavePos','SetPos'] as $op) {
-            $r2 = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op, 'id'=>$id], 'PtzCtrl', true);
-            if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
-        }
-        $this->dbg('PTZ', 'ptzSetPreset FAIL', ['id'=>$id, 'resp'=>$r ?? null]);
-        return false;
-    }
-
-    private function ptzRenamePreset(int $id, string $name): bool
-    {
-        $name = trim($name);
-        if ($name === '') return false;
-
-        // Versuch 1: expliziter Rename
-        $r = $this->postCmdDual('RenamePtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'RenamePtzPreset', true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // Versuch 2: SetPtzPreset mit name-Feld (manche FW akzeptieren das)
-        $r2 = $this->postCmdDual('SetPtzPreset', ['channel'=>0, 'id'=>$id, 'name'=>$name], 'SetPtzPreset', true);
-        if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
-
-        $this->dbg('PTZ', 'ptzRenamePreset FAIL', ['id'=>$id, 'name'=>$name, 'resp'=>$r2 ?? $r ?? null]);
-        return false;
-    }
-
-    private function ptzClearPreset(int $id): bool
-    {
-        // Versuch 1: ClearPreset
-        $r = $this->postCmdDual('ClearPtzPreset', ['channel'=>0, 'id'=>$id], 'ClearPtzPreset', true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) return true;
-
-        // Versuch 2: DelPreset / DeletePreset
-        foreach (['DelPreset','DeletePreset'] as $op) {
-            $r2 = $this->postCmdDual('PtzCtrl', ['channel'=>0, 'op'=>$op, 'id'=>$id], 'PtzCtrl', true);
-            if (is_array($r2) && (($r2[0]['code'] ?? -1) === 0)) return true;
-        }
-
-        $this->dbg('PTZ', 'ptzClearPreset FAIL', ['id'=>$id, 'resp'=>$r ?? null]);
-        return false;
-    }
-
 
     // ---------------------------
     // FTP EIN/AUS
