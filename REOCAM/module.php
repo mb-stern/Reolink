@@ -243,7 +243,7 @@ class Reolink extends IPSModule
                 if (in_array($lk, ['password','pass','pwd','token','apikey','authorization','auth','bearer','secret'], true)) {
                     $out[$k] = '***';
                 } elseif (in_array($lk, ['user','username'], true)) {
-                    $out[$k] = $this->maskMiddle((string)$v);
+                  $out[$k] = is_array($v) ? '***' : $this->maskMiddle((string)$v);
                 } else {
                     $out[$k] = $this->redactDeep($v);
                 }
