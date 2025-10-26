@@ -29,10 +29,12 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("PollingInterval", 2);
 
         // API-Feature-Schalter
-        $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);  // Spotlight
+        $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiFTP", false);
+        $this->RegisterPropertyBoolean('EnableApiAlarm', true); 
+        $this->RegisterPropertyBoolean('EnableApiSiren', true); 
 
 
         // Archiv
@@ -114,7 +116,9 @@ class Reolink extends IPSModule
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
         $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
-        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP);
+        $enableAlarm    = $this->ReadPropertyBoolean("EnableApiAlarm");
+        $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
+        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableAlarm || $enableSiren);
 
 
         if ($anyFeatureOn) {
@@ -180,6 +184,21 @@ class Reolink extends IPSModule
                     SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 } else {
                     $this->UpdateFtpStatus(); // zurücklesen, falls Set scheitert
+                }
+                break;
+
+            case 'MdSensitivity':
+                $lvl = max(1, min(50, (int)$Value));   // <-- 1..50
+                $ok = $this->SetMdSensitivity($lvl);
+                if ($ok) {
+                    $this->SetValue('MdSensitivity', $lvl);
+                }
+                break;
+
+            case 'SirenEnabled':
+                $ok = $this->SetSirenEnabled((bool)$Value);
+                if ($ok) {
+                    $this->SetValue('SirenEnabled', (bool)$Value);
                 }
                 break;
 
@@ -269,7 +288,6 @@ class Reolink extends IPSModule
 
         $full = $this->BuildWebhookFullUrl($hookPath);
 
-        // Nur der vollständige Pfad, nicht als klickbare URL – reine Anzeige
         $head = [
             [
                 "type"    => "Label",
@@ -945,12 +963,15 @@ class Reolink extends IPSModule
         foreach ([
             "WhiteLed", "Mode", "Bright",
             "EmailNotify", "EmailInterval", "EmailContent",
-            "PTZ_HTML", "FTPEnabled"
+            "PTZ_HTML", "FTPEnabled",
+            // NEU:
+            "MdSensitivity", "SirenEnabled"
         ] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
     }
+
 
     private function CreateApiVariables(): void
     {
@@ -1043,6 +1064,33 @@ class Reolink extends IPSModule
             $id = @$this->GetIDForIdent("FTPEnabled");
             if ($id !== false) $this->UnregisterVariable("FTPEnabled");
         }
+
+        // Motion Sensitivity (1..50)
+        if ($this->ReadPropertyBoolean("EnableApiAlarm")) {
+            if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
+                IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // INTEGER
+                IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
+               
+            }
+            if (!@$this->GetIDForIdent("MdSensitivity")) {
+                $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 9);
+                $this->EnableAction("MdSensitivity");
+            }
+        } else {
+            $id = @$this->GetIDForIdent("MdSensitivity");
+            if ($id !== false) $this->UnregisterVariable("MdSensitivity");
+        }
+
+        // Sirene
+        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+            if (!@$this->GetIDForIdent("SirenEnabled")) {
+                $this->RegisterVariableBoolean("SirenEnabled", "Sirene aktiv", "~Switch", 10);
+                $this->EnableAction("SirenEnabled");
+            }
+        } else {
+            $id = @$this->GetIDForIdent("SirenEnabled");
+            if ($id !== false) $this->UnregisterVariable("SirenEnabled");
+        }
     }
 
     public function ExecuteApiRequests()
@@ -1054,7 +1102,7 @@ class Reolink extends IPSModule
             $this->UpdateWhiteLedStatus();
         }
         if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            $this->EmailApply(null, null, null); // nur GET
+            $this->EmailApply(null, null, null);
         }
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->CreateOrUpdatePTZHtml(false);
@@ -1062,7 +1110,14 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
             $this->UpdateFtpStatus();
         }
+        if ($this->ReadPropertyBoolean("EnableApiAlarm")) {
+            $this->UpdateMdSensitivityStatus(); 
+        }
+        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+            $this->UpdateSirenStatus(); 
+        }
     }
+
 
     // ---------------------------
     // Spotlight (White LED)
@@ -1822,7 +1877,7 @@ class Reolink extends IPSModule
     }
 
     // ---------------------------
-    // PTZ Presets: Set/Rename/Clear (robust: flat/nested + mehrere Ops)
+    // PTZ Presets: Set/Rename/Clear
     // ---------------------------
     // 1) Anlegen/Speichern
     private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
@@ -1992,5 +2047,182 @@ class Reolink extends IPSModule
             $this->dbg('FTP', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt');
         }
         return $ok;
+    }
+
+    // ---------------------------
+    // Sensitivity
+    // ---------------------------
+
+    private function DetectScheduleVersion(): string
+    {
+        $res = $this->apiCall([
+            ["cmd"=>"GetAbility","param"=>["User"=>["userName"=>$this->ReadPropertyString("Username")]]]
+        ], 'ABILITY');
+        $ver = $res[0]['value']['Ability']['scheduleVersion']['ver'] ?? 0;
+        return ((int)$ver === 1) ? 'V20' : 'LEGACY';
+    }
+
+    private function GetMdSensitivity(): ?array
+    {
+        $ver = $this->DetectScheduleVersion();
+        $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM');
+        if (!is_array($res) || ($res[0]['code']??1) !== 0) return null;
+
+        $payload = $res[0]['value'] ?? [];
+        // Legacy legt es unter "Alarm", V20 unter "MdAlarm" – kurz abprüfen:
+        $a = $payload['MdAlarm'] ?? $payload['Alarm'] ?? null;
+        if (!is_array($a)) return null;
+
+        // Rückgabe normalisieren: entweder sens[] (4 Segmente) ODER newSens
+        if (!empty($a['useNewSens']) && !empty($a['newSens']['sens'])) {
+            return ['mode'=>'NEW','data'=>$a['newSens']]; // enthält sens.sensitivity + Zeiten
+        }
+        if (!empty($a['sens']) && is_array($a['sens'])) {
+            return ['mode'=>'OLD','data'=>$a['sens']];    // Array mit 4 Blöcken (id/begin/end/sensitivity)
+        }
+        return null;
+    }
+
+    public function SetMdSensitivity(int $level): bool
+    {
+        $level = max(1, min(50, $level));  // <-- 1..50
+        $ver = $this->DetectScheduleVersion(); // gibt 'V20' oder 'LEGACY' zurück
+
+        $state = $this->GetMdSensitivity(); // deine bestehende Funktion aus dem letzten Schritt
+        if ($state === null) return false;
+
+        $cmdSet = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
+
+        if ($state['mode'] === 'NEW') {
+            // newSens/useNewSens-Zweig
+            $ns = $state['data']; // enthält sensDef + sens (mit Zeiten)
+            $ns['sens']['sensitivity'] = $level;
+
+            $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
+            $payload = [
+                [
+                    "cmd"   => $cmdSet,
+                    "param" => [
+                        $paramKey => [
+                            "type"       => "md",
+                            "useNewSens" => 1,
+                            "newSens"    => $ns
+                        ]
+                    ]
+                ]
+            ];
+            $res = $this->apiCall($payload, 'ALARM_SET');
+            return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+        }
+
+        // OLD: sens[] mit 4 Blöcken – Zeiten unverändert, nur sensitivity auf allen Blöcken updaten
+        $sens = array_map(function($s) use($level){ $s['sensitivity'] = $level; return $s; }, $state['data']);
+        $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
+        $payload = [
+            [
+                "cmd"   => $cmdSet,
+                "param" => [
+                    $paramKey => [
+                        "type" => "md",
+                        "sens" => $sens
+                    ]
+                ]
+            ]
+        ];
+        $res = $this->apiCall($payload, 'ALARM_SET');
+        return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+    }
+
+    private function UpdateMdSensitivityStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("MdSensitivity");
+        if ($vid === false) return;
+
+        $ver = $this->DetectScheduleVersion();
+        $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
+
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM', /*suppress*/ true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $this->dbg('ALARM', 'GET FAIL', $res ?? null);
+            return;
+        }
+
+        $payload = $res[0]['value'] ?? [];
+        $a = $payload['MdAlarm'] ?? $payload['Alarm'] ?? null;
+        if (!is_array($a)) {
+            $this->dbg('ALARM', 'Kein Alarm-Knoten', $payload);
+            return;
+        }
+
+        $level = null;
+        if (!empty($a['useNewSens']) && !empty($a['newSens']['sens'])) {
+            $level = (int)($a['newSens']['sens']['sensitivity'] ?? 0);
+        } elseif (!empty($a['sens']) && is_array($a['sens'])) {
+            // OLD: nimm Block 0 (wie besprochen; alternativ AVG der 4 Blöcke)
+            $level = (int)($a['sens'][0]['sensitivity'] ?? 0);
+        }
+
+        if ($level === null) return;
+        $level = max(1, min(50, $level));
+
+        $old = GetValue($vid);
+        if ($old !== $level) {
+            $this->SetValue('MdSensitivity', $level);
+            $this->dbg('ALARM', 'Var geändert', ['old'=>$old, 'new'=>$level]);
+        } else {
+            $this->dbg('ALARM', 'Unverändert', ['value'=>$level], true);
+        }
+    }
+
+    // ---------------------------
+    // Sirene ein-aus
+    // ---------------------------
+
+    public function SetSirenEnabled(bool $on): bool
+    {
+        $isV20 = ($this->DetectScheduleVersion() === 'V20');
+
+        // Erst lesen, damit wir das Schedule-Table unverändert zurückschreiben
+        $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
+        $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO_GET');
+        if (!is_array($res) || ($res[0]['code']??1) !== 0) return false;
+        $audio = $res[0]['value']['Audio'] ?? null;
+        if (!is_array($audio)) return false;
+
+        $audio['enable'] = $on ? 1 : 0; // nur Toggle!
+
+        $setCmd = $isV20 ? 'SetAudioAlarmV20' : 'SetAudioAlarm';
+        $payload = [ [ "cmd"=>$setCmd, "param"=>["Audio"=>$audio] ] ];
+        $r2 = $this->apiCall($payload, 'AUDIO_SET');
+        return (is_array($r2) && ($r2[0]['code']??1) === 0);
+    }
+
+    private function UpdateSirenStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("SirenEnabled");
+        if ($vid === false) return;
+
+        $isV20  = ($this->DetectScheduleVersion() === 'V20');
+        $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
+
+        $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', /*suppress*/ true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $this->dbg('AUDIO', 'GET FAIL', $res ?? null);
+            return;
+        }
+
+        $audio = $res[0]['value']['Audio'] ?? null;
+        if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
+
+        $enabled = ((int)$audio['enable'] === 1);
+        $old = (bool)GetValue($vid);
+
+        if ($old !== $enabled) {
+            $this->SetValue('SirenEnabled', $enabled);
+            $this->dbg('AUDIO', 'Var geändert', ['old'=>$old, 'new'=>$enabled]);
+        } else {
+            $this->dbg('AUDIO', 'Unverändert', ['value'=>$enabled], true);
+        }
     }
 }
