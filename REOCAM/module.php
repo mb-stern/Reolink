@@ -124,11 +124,8 @@ class Reolink extends IPSModule
         $this->CreateOrUpdateApiVariablesUnified();
 
         if ($anyFeatureOn) {
-            // 1) Token holen (setzt Erneuerungstimer selbst)
             $this->GetToken();
-            // 2) EINMALIGER Refresh jetzt (kein Timer parallel!)
-            $this->ExecuteApiRequests(true); // force first run
-            // 3) Erst JETZT den periodischen Timer aktivieren
+            $this->ExecuteApiRequests(true);              // <— einmaliger Sofort-Refresh
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
@@ -1218,12 +1215,12 @@ class Reolink extends IPSModule
             }
             if ($this->ReadPropertyBoolean("EnableApiSiren")) {
                 $this->UpdateSirenStatus();             // 1x GetAudioAlarm(V20/Legacy)
-
+            }
             if ($this->ReadPropertyBoolean("EnableApiPush")) {
                 $this->UpdatePushStatus(); // 1x GetPush(V20/Legacy)
             }
 
-            }
+            
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
