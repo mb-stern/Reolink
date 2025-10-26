@@ -2191,7 +2191,7 @@ class Reolink extends IPSModule
         $ver = $this->ApiVersion('schedule');
         $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM');
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'SENSITIVITY');
         if (!is_array($res) || ($res[0]['code']??1) !== 0) return null;
 
         $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
