@@ -2100,6 +2100,7 @@ class Reolink extends IPSModule
     public function SetMdSensitivity(int $level): bool
     {
         $level = max(1, min(50, $level));
+        $level = 51 - $level;
 
         $state = $this->GetMdSensitivity();
         if ($state === null) return false;
@@ -2156,13 +2157,28 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("MdSensitivity");
         if ($vid === false) return;
 
-        $st = $this->GetMdSensitivity();
-        if (!$st) return;
+        $ver = $this->DetectScheduleVersion();
+        $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        // Zeige die aktuell wirksame Empfindlichkeit (Zeitplan berücksichtigt)
-        $lvl = max(1, min(50, (int)($st['active'] ?? 0)));
-        if ((int)GetValue($vid) !== $lvl) {
-            $this->SetValue("MdSensitivity", $lvl);
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM', true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
+
+        $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
+        if (!is_array($node)) return;
+
+        $level = null;
+        if (!empty($node['newSens']['sens'])) {
+            $level = (int)($node['newSens']['sens'][0]['sensitivity'] ?? 0);
+        } elseif (!empty($node['sens']) && is_array($node['sens'])) {
+            $level = (int)($node['sens'][0]['sensitivity'] ?? 0);
+        }
+        if ($level === null) return;
+
+        $level = max(1, min(50, $level));
+        $level = 51 - $level; // << Kamera(1..50) -> UI(50..1) invertieren
+
+        if ((int)GetValue($vid) !== $level) {
+            $this->SetValue("MdSensitivity", $level);
         }
     }
 
