@@ -49,6 +49,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("EmailApiVersion", "");
         $this->RegisterAttributeString("PtzStyle", "");
         $this->RegisterAttributeString("PtzPresetsCache", "");
+        $this->RegisterAttributeString("AbilityCache", "");
 
 
         // Timer
@@ -1179,14 +1180,16 @@ class Reolink extends IPSModule
     // ---- Ability Cache + zentrale Versionserkennung ----
     private function apiGetAbilityCached(): array
     {
-        // in Attributen zwischenspeichern, um Abfragen zu sparen
+        // sicherstellen, dass das Attribut existiert (idempotent)
+        $this->RegisterAttributeString("AbilityCache", "");
+
         $attrName = 'AbilityCache';
         $raw = @$this->ReadAttributeString($attrName);
         $now = time();
 
         if (is_string($raw) && $raw !== '') {
             $obj = @json_decode($raw, true);
-            if (is_array($obj) && isset($obj['ts']) && ($now - (int)$obj['ts'] < 300)) { // 5 Min Cache
+            if (is_array($obj) && isset($obj['ts']) && ($now - (int)$obj['ts'] < 300)) {
                 return (array)$obj['ability'];
             }
         }
