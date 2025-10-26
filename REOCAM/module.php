@@ -1249,13 +1249,6 @@ class Reolink extends IPSModule
         return $ability;
     }
 
-    /**
-     * $domain:
-     *  - 'schedule' -> V20/LEGACY via Ability.scheduleVersion.ver
-     *  - 'email'    -> probe GetEmailV20
-     *  - 'ftp'      -> probe GetFtpV20 / GetFtp
-     *  - 'audio'    -> probe GetAudioAlarmV20 / GetAudioAlarm
-     */
     private function ApiVersion(string $domain): string
     {
         $ability = $this->apiGetAbilityCached();
@@ -1265,7 +1258,6 @@ class Reolink extends IPSModule
             return ($ver === 1) ? 'V20' : 'LEGACY';
         }
 
-        // Für API-Domänen, die Reolink nicht zuverlässig in Ability ausweist – Probe Calls:
         switch ($domain) {
             case 'email':
                 $t = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
@@ -1284,8 +1276,15 @@ class Reolink extends IPSModule
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
 
             case 'push':
+                // V20 zuerst – mit action:1 probieren
+                $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
+                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
+                // Fallback ohne action
                 $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
                 if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
+                // Legacy – mit/ohne action testen
+                $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
+                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'LEGACY';
                 $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
         }
@@ -2498,49 +2497,68 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
-        $vid = @$this->GetIDForIdent("PushEnabled");
-        if ($vid === false) return;
+        $idVar = @$this->GetIDForIdent("PushEnabled");
+        if ($idVar === false) return;
 
-        // 1) globalen Schalter/Plan lesen
-        $schedHasAnyOne = null;
-        $globalEnable = $this->readGlobalPushEnable($schedHasAnyOne);
+        $enabled = null;
 
-        // 2) Alarm-Bäume scannen (MD/AI), ob irgendwo linkage.push==1 gesetzt ist
-        $cmd = ($this->ApiVersion("schedule") === "V20") ? "GetMdAlarm" : "GetAlarm";
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], "PUSH", true);
-        $linkage = false;
-        if (is_array($res) && (($res[0]["code"] ?? -1) === 0)) {
-            $val = $res[0]["value"] ?? $res[0]["initial"] ?? [];
-            if (is_array($val)) {
-                // übliche Knoten
-                foreach (['MdAlarm','Alarm'] as $k) {
-                    if (isset($val[$k]) && $this->anyLinkagePushEnabled($val[$k])) { $linkage = true; break; }
+        // --- V20 mit action:1
+        $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
+        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+            $push = $r[0]['value']['Push'] ?? null;
+            if (is_array($push)) {
+                if (array_key_exists('enable', $push)) {
+                    $enabled = ((int)$push['enable'] === 1);
+                } elseif (isset($push['schedule']['enable'])) {
+                    $enabled = ((int)$push['schedule']['enable'] === 1);
                 }
-                // notfalls gesamte Struktur
-                if (!$linkage && $this->anyLinkagePushEnabled($val)) $linkage = true;
             }
         }
-        // Optional: AI-Konfig abklopfen (falls FW liefert), ignorieren wenn nicht vorhanden
-        $ai = $this->apiCall([[ "cmd"=>"GetAiCfg", "param"=>["channel"=>0] ]], "PUSH", true);
-        if (!$linkage && is_array($ai) && (($ai[0]['code'] ?? -1) === 0)) {
-            $node = $ai[0]['value'] ?? $ai[0]['initial'] ?? null;
-            if (is_array($node) && $this->anyLinkagePushEnabled($node)) $linkage = true;
+
+        // --- Fallback: V20 ohne action
+        if ($enabled === null) {
+            $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $push = $r[0]['value']['Push'] ?? null;
+                if (is_array($push)) {
+                    if (array_key_exists('enable', $push)) {
+                        $enabled = ((int)$push['enable'] === 1);
+                    } elseif (isset($push['schedule']['enable'])) {
+                        $enabled = ((int)$push['schedule']['enable'] === 1);
+                    }
+                }
+            }
         }
 
-        // 3) Effektiver Status: globalEnable && (linkage) && (falls bekannt: Zeitplan enthält irgendwo „1“)
-        $effective = null;
-        if ($globalEnable !== null) {
-            $effective = $globalEnable && $linkage && (($schedHasAnyOne === null) ? true : $schedHasAnyOne);
-        } elseif ($linkage) {
-            // wenn global nicht lesbar war, aber Linkage an ist, gehen wir von „An“ aus
-            $effective = true;
+        // --- Legacy: GetPush mit/ohne action
+        if ($enabled === null) {
+            $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
+            if (!(is_array($r) && (($r[0]['code'] ?? -1) === 0))) {
+                $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
+            }
+            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
+                $node = $r[0]['value']['Push'] ?? ($r[0]['value'] ?? null);
+                if (is_array($node)) {
+                    if (array_key_exists('enable', $node)) {
+                        $enabled = ((int)$node['enable'] === 1);
+                    } elseif (isset($node['schedule']['enable'])) {
+                        $enabled = ((int)$node['schedule']['enable'] === 1);
+                    }
+                }
+            }
         }
 
-        if ($effective !== null) {
-            $cur = (bool)GetValue($vid);
-            if ($cur !== (bool)$effective) $this->SetValue("PushEnabled", (bool)$effective);
-        } else {
-            $this->dbg("PUSH", "Status unbestimmt (kein global/kein linkage gefunden)");
+        // --- FINALER Fallback: Linkage in der Bewegungserkennung (echter, realer Push-Schalter)
+        $linkage = $this->ReadPushLinkageState();
+        if ($linkage !== null) {
+            // Linkage hat Vorrang, weil viele Firmwares GetPush(V20) nicht konsistent pflegen
+            $enabled = $linkage;
+        }
+
+        if ($enabled !== null) {
+            if ((bool)GetValue($idVar) !== (bool)$enabled) {
+                $this->SetValue("PushEnabled", (bool)$enabled);
+            }
         }
     }
 
@@ -2575,5 +2593,37 @@ class Reolink extends IPSModule
         if ($ok) { $this->UpdatePushStatus(); }
         else     { $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. FW/Variante nicht unterstützt'); }
         return $ok;
+    }
+
+    private function ReadPushLinkageState(): ?bool
+    {
+        // schedule-Version ermitteln → V20 = GetMdAlarm, sonst GetAlarm
+        $isV20 = ($this->ApiVersion('schedule') === 'V20');
+        $cmd   = $isV20 ? 'GetMdAlarm' : 'GetAlarm';
+
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'PUSH_LINKAGE', true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            return null;
+        }
+
+        // value-Knoten isolieren
+        $node = $this->apiGetNode($res, $isV20 ? 'MdAlarm' : 'Alarm');
+        if (!is_array($node)) return null;
+
+        // rekursiv nach linkage.push == 1 suchen
+        $hasPush = (function ($n) use (&$hasPush) {
+            if (!is_array($n)) return false;
+
+            if (isset($n['linkage']) && is_array($n['linkage'])) {
+                $p = $n['linkage']['push'] ?? $n['linkage']['Push'] ?? null;
+                if ($p !== null && (int)$p === 1) return true;
+            }
+            foreach ($n as $v) {
+                if (is_array($v) && $hasPush($v)) return true;
+            }
+            return false;
+        })($node);
+
+        return $hasPush ? true : false;
     }
 }
