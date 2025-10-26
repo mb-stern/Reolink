@@ -194,6 +194,20 @@ class Reolink extends IPSModule
                 }
                 break;
 
+            case 'SirenAction':
+                $val = (int)$Value;
+                $ok = false;
+                if ($val === 0) {                 // Stop (manuell)
+                    $ok = $this->SirenManualSwitch(false);
+                } elseif ($val === 100) {         // Start (manuell)
+                    $ok = $this->SirenManualSwitch(true);
+                } elseif ($val >= 1 && $val <= 5) { // 1×..5× abspielen
+                    $ok = $this->SirenPlayTimes($val);
+                }
+                // nach Ausführung wieder auf 0 setzen, damit die Auswahl "entprellt"
+                if ($ok) { $this->SetValue('SirenAction', 0); }
+                break;
+
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -1038,12 +1052,28 @@ class Reolink extends IPSModule
             $this->UnregisterVariable("MdSensitivity");
         }
 
-        // -------- Sirene --------
+        // -------- Sirene--------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
             $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
             $this->EnableAction("SirenEnabled");
+
+            if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
+                IPS_CreateVariableProfile("REOCAM.SirenAction", 1); // Integer
+                IPS_SetVariableProfileValues("REOCAM.SirenAction", 0, 100, 1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 100, "Start (manuell)", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 0,   "Stop",            "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 1,   "1× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 2,   "2× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 3,   "3× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 4,   "4× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 5,   "5× abspielen",    "", -1);
+            }
+            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 5);
+            $this->EnableAction("SirenAction");
+
         } else {
             $this->UnregisterVariable("SirenEnabled");
+            $this->UnregisterVariable("SirenAction");
         }
     }
 
@@ -2206,5 +2236,44 @@ class Reolink extends IPSModule
         if ((bool)GetValue($vid) !== $enabled) {
             $this->SetValue("SirenEnabled", $enabled);
         }
+    }
+
+       // ---------------------------
+    // Sirene ansteuern
+    // ---------------------------
+
+    // ---- Sirene: Sofort abspielen (times) ----
+    private function SirenPlayTimes(int $times): bool
+    {
+        $times = max(1, min(10, $times)); // konservativ kappen
+        $payload = [[
+            "cmd"   => "AudioAlarmPlay",
+            "param" => [
+                "alarm_mode" => "times",
+                "times"      => $times,
+                "channel"    => 0
+            ]
+        ]];
+        $res = $this->apiCall($payload, 'AUDIO_PLAY');
+        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if (!$ok) $this->dbg('AUDIO_PLAY', 'FAIL', $res ?? null);
+        return $ok;
+    }
+
+    // ---- Sirene: Manuell Start/Stop ----
+    private function SirenManualSwitch(bool $on): bool
+    {
+        $payload = [[
+            "cmd"   => "AudioAlarmPlay",
+            "param" => [
+                "alarm_mode"    => "manu",
+                "manual_switch" => $on ? 1 : 0,
+                "channel"       => 0
+            ]
+        ]];
+        $res = $this->apiCall($payload, 'AUDIO_MANU');
+        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if (!$ok) $this->dbg('AUDIO_MANU', 'FAIL', $res ?? null);
+        return $ok;
     }
 }
