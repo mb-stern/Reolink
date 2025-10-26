@@ -1286,11 +1286,16 @@ class Reolink extends IPSModule
                 $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
 
-            case 'push':
-                $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
+        case 'push':
+            // 1) bevorzugt: globaler Schalter per GetPushCfg (einige FWs)
+            $t = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], 'PUSH', true);
+            if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'CFG';
+
+            // 2) sonst V20/Legacy prüfen
+            $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
+            if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
+            $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
+            return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
 
         return 'NONE';
         }
@@ -2442,20 +2447,28 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("PushEnabled");
         if ($vid === false) return;
 
-        // 1) V20 versuchen
+        // --- 1) Primär: GetPushCfg (globaler Schalter) ---
+        $res = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], 'PUSH', true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            // Manche liefern value.Push, andere direkt value
+            $node = $res[0]['value']['Push'] ?? ($res[0]['value'] ?? null);
+            $val  = $this->parsePushEnableFromNode($node);
+            if ($val !== null) { $this->SetValue("PushEnabled", (bool)$val); return; }
+        }
+
+        // --- 2) V20 versuchen ---
         $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
             $push = $res[0]['value']['Push'] ?? null;
             if (is_array($push) && array_key_exists('enable', $push)) {
                 $this->SetValue("PushEnabled", ((int)$push['enable'] === 1));
+                return;
             }
-            return;
         }
 
-        // 2) Legacy-Fallback
+        // --- 3) Legacy-Fallback ---
         $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            // Manche Firmwares legen enable unter Push.schedule.enable, manche direkt unter Push.enable
             $node = $res[0]['value']['Push'] ?? ($res[0]['value'] ?? null);
             $enabled = null;
             if (isset($node['schedule']['enable'])) {
@@ -2471,40 +2484,73 @@ class Reolink extends IPSModule
 
     private function PushApply(bool $on): bool
     {
-        $ver = $this->ApiVersion('push');
-        $ok  = false;
+        $flag = $on ? 1 : 0;
+        $ver  = $this->ApiVersion('push');
+        $ok   = false;
 
-        if ($ver === 'V20') {
-            // V20: einfaches enable-Feld
-            $r = $this->apiCall([[
-                "cmd"   => "SetPushV20",
-                "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+        // --- 1) Primär: SetPushCfg (global) ---
+        if ($ver === 'CFG') {
+            $r = $this->apiCall([[ "cmd"=>"SetPushCfg",
+                "param"=>[ "Push" => [ "enable"=>$flag, "channel"=>0 ] ]
             ]], 'PUSH', true);
             $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-        } elseif ($ver === 'LEGACY') {
-            // Legacy: erst direktes enable versuchen …
-            $r1 = $this->apiCall([[
-                "cmd"   => "SetPush",
-                "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+        }
+
+        // --- 2) V20 ---
+        if (!$ok && $ver === 'V20') {
+            $r = $this->apiCall([[ "cmd"=>"SetPushV20",
+                "param"=>[ "Push" => [ "enable"=>$flag, "channel"=>0 ] ]
+            ]], 'PUSH', true);
+            $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        }
+
+        // --- 3) Legacy ---
+        if (!$ok && $ver === 'LEGACY') {
+            // erst direktes enable …
+            $r1 = $this->apiCall([[ "cmd"=>"SetPush",
+                "param"=>[ "Push" => [ "enable"=>$flag, "channel"=>0 ] ]
             ]], 'PUSH', true);
             $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
 
-            // … Fallback: schedule.enable
+            // … dann Fallback: schedule.enable
             if (!$ok) {
-                $r2 = $this->apiCall([[
-                    "cmd"   => "SetPush",
-                    "param" => [ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ]
+                $r2 = $this->apiCall([[ "cmd"=>"SetPush",
+                    "param"=>[ "Push" => [ "schedule" => [ "enable"=>$flag ], "channel"=>0 ] ]
                 ]], 'PUSH', true);
                 $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
             }
         }
 
-        if ($ok) {
-            // UI synchronisieren (ein GET)
-            $this->UpdatePushStatus();
-        } else {
-            $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt');
-        }
+        if ($ok) { $this->UpdatePushStatus(); }
+        else     { $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt'); }
+
         return $ok;
+    }
+
+    // --- PUSH: generisches enable aus verschiedensten Schemas extrahieren ---
+    private function parsePushEnableFromNode($node): ?bool
+    {
+        if (!is_array($node)) return null;
+
+        if (isset($node['enable'])) {
+            return ((int)$node['enable'] === 1);
+        }
+        if (isset($node['schedule']['enable'])) {
+            return ((int)$node['schedule']['enable'] === 1);
+        }
+
+        // Generischer Fallback: linkage.push irgendwo im Baum?
+        $enabled = null;
+        $scan = function($x) use (&$scan, &$enabled) {
+            if (!is_array($x)) return;
+            if (isset($x['linkage']) && is_array($x['linkage']) && array_key_exists('push', $x['linkage'])) {
+                $v = $x['linkage']['push'];
+                $val = is_bool($v) ? $v : ((int)$v === 1);
+                $enabled = ($enabled === null) ? $val : ($enabled || $val);
+            }
+            foreach ($x as $v) if (is_array($v)) $scan($v);
+        };
+        $scan($node);
+        return $enabled; // kann null bleiben, wenn nichts gefunden
     }
 }
