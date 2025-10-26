@@ -1046,10 +1046,10 @@ class Reolink extends IPSModule
             // Variablen
             $id = @$this->GetIDForIdent("EmailNotify");
             if ($id === false) {
-                $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 2);
+                $this->RegisterVariableBoolean("EmailNotify", "E-Mail Alarm", "~Switch", 2);
                 $this->EnableAction("EmailNotify");
             } else {
-                IPS_SetName($id, "E-Mail Versand");
+                IPS_SetName($id, "E-Mail Alarm");
                 IPS_SetPosition($id, 3);
                 IPS_SetVariableCustomProfile($id, "~Switch");
                 $this->EnableAction("EmailNotify");
@@ -1100,10 +1100,10 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
             $id = @$this->GetIDForIdent("FTPEnabled");
             if ($id === false) {
-                $this->RegisterVariableBoolean("FTPEnabled", "FTP-Upload", "~Switch", 4);
+                $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 4);
                 $this->EnableAction("FTPEnabled");
             } else {
-                IPS_SetName($id, "FTP-Upload");
+                IPS_SetName($id, "FTP");
                 IPS_SetPosition($id, 6);
                 IPS_SetVariableCustomProfile($id, "~Switch");
                 $this->EnableAction("FTPEnabled");
@@ -1137,10 +1137,10 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
             $id = @$this->GetIDForIdent("SirenEnabled");
             if ($id === false) {
-                $this->RegisterVariableBoolean("SirenEnabled", "Sirene aktiv", "~Switch", 6);
+                $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 6);
                 $this->EnableAction("SirenEnabled");
             } else {
-                IPS_SetName($id, "Sirene aktiv");
+                IPS_SetName($id, "Sirene");
                 IPS_SetPosition($id, 10);
                 IPS_SetVariableCustomProfile($id, "~Switch");
                 $this->EnableAction("SirenEnabled");
