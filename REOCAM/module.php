@@ -1242,7 +1242,7 @@ class Reolink extends IPSModule
                 $this->dbg('EMAIL', 'Var geändert', ['ident' => $f['ident'], 'old' => $old, 'new' => $new]);
             }
             else {
-                $this->dbg('EMAIL', 'Unverändert', ['ident' => $f, 'value' => $new], true);
+                $this->dbg('EMAIL', 'Unverändert', ['ident' => $f['ident'], 'value' => $new], true);
             }
         }
     }
@@ -2142,36 +2142,24 @@ class Reolink extends IPSModule
         $ver = $this->DetectScheduleVersion();
         $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM', /*suppress*/ true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->dbg('ALARM', 'GET FAIL', $res ?? null);
-            return;
-        }
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM', true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
 
         $payload = $res[0]['value'] ?? [];
         $a = $payload['MdAlarm'] ?? $payload['Alarm'] ?? null;
-        if (!is_array($a)) {
-            $this->dbg('ALARM', 'Kein Alarm-Knoten', $payload);
-            return;
-        }
+        if (!is_array($a)) return;
 
         $level = null;
         if (!empty($a['useNewSens']) && !empty($a['newSens']['sens'])) {
             $level = (int)($a['newSens']['sens']['sensitivity'] ?? 0);
         } elseif (!empty($a['sens']) && is_array($a['sens'])) {
-            // OLD: nimm Block 0 (wie besprochen; alternativ AVG der 4 Blöcke)
-            $level = (int)($a['sens'][0]['sensitivity'] ?? 0);
+            $level = (int)($a['sens'][0]['sensitivity'] ?? 0); // oder Mittelwert
         }
-
         if ($level === null) return;
-        $level = max(1, min(50, $level));
 
-        $old = GetValue($vid);
-        if ($old !== $level) {
-            $this->SetValue('MdSensitivity', $level);
-            $this->dbg('ALARM', 'Var geändert', ['old'=>$old, 'new'=>$level]);
-        } else {
-            $this->dbg('ALARM', 'Unverändert', ['value'=>$level], true);
+        $level = max(1, min(50, $level));
+        if (GetValue($vid) !== $level) {
+            $this->SetValue("MdSensitivity", $level);
         }
     }
 
@@ -2203,26 +2191,18 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("SirenEnabled");
         if ($vid === false) return;
 
-        $isV20  = ($this->DetectScheduleVersion() === 'V20');
+        $isV20 = ($this->DetectScheduleVersion() === 'V20');
         $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
 
-        $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', /*suppress*/ true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->dbg('AUDIO', 'GET FAIL', $res ?? null);
-            return;
-        }
+        $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
 
         $audio = $res[0]['value']['Audio'] ?? null;
         if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
 
         $enabled = ((int)$audio['enable'] === 1);
-        $old = (bool)GetValue($vid);
-
-        if ($old !== $enabled) {
-            $this->SetValue('SirenEnabled', $enabled);
-            $this->dbg('AUDIO', 'Var geändert', ['old'=>$old, 'new'=>$enabled]);
-        } else {
-            $this->dbg('AUDIO', 'Unverändert', ['value'=>$enabled], true);
+        if ((bool)GetValue($vid) !== $enabled) {
+            $this->SetValue("SirenEnabled", $enabled);
         }
     }
 }
