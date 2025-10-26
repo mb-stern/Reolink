@@ -1067,7 +1067,7 @@ class Reolink extends IPSModule
             $this->WriteAttributeInteger('ExecLastTs', $now);
 
             if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-                $this->UpdateWhiteLedStatus();          /
+                $this->UpdateWhiteLedStatus(); 
             }
             if ($this->ReadPropertyBoolean("EnableApiEmail")) {
                 $this->EmailApply(null, null, null);    
