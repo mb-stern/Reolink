@@ -2433,394 +2433,176 @@ class Reolink extends IPSModule
     // PUSH EIN/AUS
     // ---------------------------
 
-    // --- Neu: rekursiver Checker für linkage.push irgendwo im Node ---
-    private function anyLinkagePushEnabled($node): bool {
-        if (!is_array($node)) return false;
-        // direkter Treffer?
-        if (isset($node['linkage']['push']) && ((int)$node['linkage']['push'] === 1)) {
-            return true;
-        }
-        // klassische Segment-Strukturen (sens / newSens.sens)
-        foreach (['sens', 'newSens'] as $k) {
-            if (isset($node[$k])) {
-                $seg = ($k === 'newSens' && isset($node['newSens']['sens'])) ? $node['newSens']['sens'] : $node[$k];
-                if (is_array($seg)) {
-                    foreach ($seg as $s) {
-                        if (isset($s['linkage']['push']) && ((int)$s['linkage']['push'] === 1)) return true;
-                    }
-                }
-            }
-        }
-        // sonst rekursiv alle Kinder
-        foreach ($node as $v) {
-            if (is_array($v) && $this->anyLinkagePushEnabled($v)) return true;
-        }
-        return false;
-    }
+    // ---- PUSH (effektiver Zustand über schedule.table.MD) ----
 
-    private function readGlobalPushEnable(&$schedHasAnyOne = null): ?bool {
-        $schedHasAnyOne = null;
-        // V20 zuerst
-        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $p = $res[0]['value']['Push'] ?? null;
-            if (is_array($p)) {
-                // globaler Schalter:
-                $enable = isset($p['enable']) ? ((int)$p['enable'] === 1) : null;
-                // Zeitpläne enthalten bei V20 Tabellen je Alarmtyp: irgendein „1“?
-                $schedHasAnyOne = false;
-                $tables = $p['schedule']['table'] ?? [];
-                if (is_array($tables)) {
-                    foreach ($tables as $str) {
-                        if (is_string($str) && strpos($str, '1') !== false) { $schedHasAnyOne = true; break; }
-                    }
-                }
-                return $enable;
-            }
-        }
-        // Legacy-Fallback
-        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true)
-            ?:  $this->apiCall([[ "cmd"=>"GetPush",              "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            $p = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
-            if (is_array($p)) {
-                $en = $p['enable'] ?? ($p['schedule']['enable'] ?? null);
-                $enable = is_null($en) ? null : ((int)$en === 1);
-                $schedHasAnyOne = null;
-                $tbl = $p['schedule']['table'] ?? null; // Legacy: oft EIN 168-Zeichen String
-                if (is_string($tbl)) $schedHasAnyOne = (strpos($tbl,'1') !== false);
-                return $enable;
-            }
-        }
-        return null;
-    }
-
-// ---- PUSH (V20 schedule-getrieben) ----
-
-    // robustes Parsen: true = aktiv, false = aus, null = nicht ermittelbar
-    private function parsePushScheduleActiveFromV20(array $resp): ?bool
-    {
-        // Struktur: [0]['value']['Push']['schedule']['table']
-        $tbl = $resp[0]['value']['Push']['schedule']['table'] ?? null;
-        if (!is_array($tbl)) {
-            return null;
-        }
-
-        // 1) Bevorzugt MD (klassische Bewegung)
-        if (isset($tbl['MD']) && is_string($tbl['MD'])) {
-            // irgendeine '1' ⇒ aktiv
-            return (strpos($tbl['MD'], '1') !== false);
-        }
-
-        // 2) Fallback: AI-Tabellen (wenn MD fehlt)
-        $aiKeys = ['AI_PEOPLE','AI_VEHICLE','AI_DOG_CAT','AI_FACE','AI_PET'];
-        $seen = false; $anyOne = false;
-        foreach ($aiKeys as $k) {
-            if (isset($tbl[$k]) && is_string($tbl[$k])) {
-                $seen = true;
-                if (strpos($tbl[$k], '1') !== false) {
-                    $anyOne = true;
-                }
-            }
-        }
-        if ($seen) {
-            return $anyOne; // irgendein AI-Signal aktiv ⇒ Push aktiv
-        }
-
-        // keine verwertbaren Felder
-        return null;
-    }
-
-    // Gibt die MD-Kettenlänge (oder 336 als sinnvollen Default)
-    private function getPushScheduleLengthFromV20(array $resp): int
-    {
-        $tbl = $resp[0]['value']['Push']['schedule']['table'] ?? [];
-        $md  = $tbl['MD'] ?? null;
-        if (is_string($md) && strlen($md) > 0) {
-            return strlen($md);
-        }
-        // sonst an einer AI-Tabelle orientieren
-        foreach (['AI_PEOPLE','AI_VEHICLE','AI_DOG_CAT','AI_FACE','AI_PET'] as $k) {
-            if (isset($tbl[$k]) && is_string($tbl[$k]) && strlen($tbl[$k]) > 0) {
-                return strlen($tbl[$k]);
-            }
-        }
-        // typischer Reolink-Wert (7 * 48 Halbstunden)
-        return 336;
-    }
-
-    private function UpdatePushStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("PushEnabled");
-        if ($vid === false) { return; }
-
-        // genau 1 Call: V20
-        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', /*suppress*/ true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $active = $this->parsePushScheduleActiveFromV20($res);
-            if ($active !== null) {
-                $this->dbg('PUSH', 'V20 schedule ausgewertet', ['value'=>$active]);
-                $cur = (bool)GetValue($vid);
-                if ($cur !== (bool)$active) {
-                    $this->SetValue("PushEnabled", (bool)$active);
-                    $this->dbg('PUSH', 'Status geändert (MD-Schedule)', ['value'=>$active]);
-                } else {
-                    $this->dbg('PUSH', 'Status unverändert (MD-Schedule)', ['value'=>$active]);
-                }
-                return;
-            }
-            // Wenn V20 da ist aber ohne auswertbare Tabelle, kein Fallback-Spam:
-            $this->dbg('PUSH', 'V20 vorhanden, Tabelle nicht auswertbar');
-            return;
-        }
-
-        // Legacy-Fallback (nur wenn V20 nicht verfügbar/fehlerhaft)
-        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true)
-            ?: $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-
-        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
-            // Viele Legacy-Firmwares haben schedule.enable oder enable.
-            $enabled = null;
-            if (isset($node['schedule']['enable'])) {
-                $enabled = ((int)$node['schedule']['enable'] === 1);
-            } elseif (isset($node['enable'])) {
-                $enabled = ((int)$node['enable'] === 1);
-            }
-            if ($enabled !== null) {
-                $cur = (bool)GetValue($vid);
-                if ($cur !== (bool)$enabled) {
-                    $this->SetValue("PushEnabled", (bool)$enabled);
-                    $this->dbg('PUSH', 'Legacy ausgewertet', ['value'=>$enabled]);
-                }
-            }
-        }
-    }
-
-    // Schreibt nur die MD-Kette (alles 1 / alles 0) und lässt AI-Tabellen unberührt.
-    // Anschließend 1x lesen für UI-Sync.
-    private function PushApply(bool $on): bool
-    {
-        // 1) Aktuellen V20-Plan holen
-        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH_SET', /*suppress*/ false);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            // Legacy-Set (best effort): enable/schedule.enable versuchen
-            $p = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ] ]];
-            $r1 = $this->apiCall($p, 'PUSH_SET', true);
-            if (!is_array($r1) || (($r1[0]['code'] ?? -1) !== 0)) {
-                $p2 = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ] ]];
-                $r2 = $this->apiCall($p2, 'PUSH_SET', true);
-                $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-                if ($ok) { $this->UpdatePushStatus(); }
-                return $ok;
-            }
-            $this->UpdatePushStatus();
-            return true;
-        }
-
-        // 2) V20: MD-Kettenlänge ermitteln und Zielkette bauen
-        $len     = $this->getPushScheduleLengthFromV20($res);
-        $target  = str_repeat($on ? '1' : '0', $len);
-
-        // 3) bestehende Tabelle laden, nur MD ersetzen
-        $push   = $res[0]['value']['Push'] ?? [];
-        $sched  = $push['schedule'] ?? [];
-        $table  = $sched['table'] ?? [];
-
-        if (!is_array($table)) { $table = []; }
-        $table['MD'] = $target;
-
-        // 4) nur das schreiben, was wir brauchen
-        $payload = [[
-            "cmd"   => "SetPushV20",
-            "param" => [
-                "Push" => [
-                    "channel"  => 0,
-                    // enable ignorieren – FW lässt es gern auf 1, wir steuern den Plan:
-                    "schedule" => [
-                        "channel" => 0,
-                        "table"   => $table
-                    ]
-                ]
-            ]
-        ]];
-
-        $r = $this->apiCall($payload, 'PUSH_SET', /*suppress*/ false);
-        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-
-        // 5) UI-Sync über genau 1 Read
-        $this->UpdatePushStatus();
-        return $ok;
-    }
-
-    // --- PUSH: robustes Parsen der MD-Schedule ---
-    private function parsePushScheduleActiveFromNode($pushNode): ?bool
-    {
-        // Knoten angleichen (manchmal liegt Push direkt unter value/initial, manchmal unter value.Push)
-        $push = null;
-        if (is_array($pushNode)) {
-            $push = $pushNode['Push'] ?? $pushNode;
-        }
-        if (!is_array($push)) {
-            return null;
-        }
-
-        // 1) Bevorzugt: schedule.table.MD
-        if (isset($push['schedule']) && is_array($push['schedule'])) {
-            $table = $push['schedule']['table'] ?? null;
-            if (is_array($table)) {
-                $md = $table['MD'] ?? null;
-
-                // a) MD als String (häufig)
-                if (is_string($md) && $md !== '') {
-                    // Sobald irgendwo eine '1' vorkommt, ist Push aktiv
-                    return (strpos($md, '1') !== false);
-                }
-                // b) MD als Array von Tages-Strings (manche FW)
-                if (is_array($md)) {
-                    $concat = '';
-                    foreach ($md as $row) {
-                        if (is_string($row)) $concat .= $row;
-                    }
-                    if ($concat !== '') {
-                        return (strpos($concat, '1') !== false);
-                    }
-                }
-
-                // Alternativ: einige FW hinterlegen Tagesnamen (Sun..Sat)
-                $days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                $concatDays = '';
-                foreach ($days as $d) {
-                    if (isset($table[$d]) && is_string($table[$d])) {
-                        $concatDays .= $table[$d];
-                    }
-                }
-                if ($concatDays !== '') {
-                    return (strpos($concatDays, '1') !== false);
-                }
-            }
-
-            // Fallback: schedule.enable (wenn MD fehlt)
-            if (isset($push['schedule']['enable'])) {
-                return ((int)$push['schedule']['enable'] === 1);
-            }
-        }
-
-        // Letzter Fallback: top-level enable (nicht zuverlässig, aber besser als nichts)
-        if (isset($push['enable'])) {
-            return ((int)$push['enable'] === 1);
-        }
-
-        return null;
-    }
-
-    // --- NEU: robustes Auslesen des Push-Status über die MD-Schedule-Kette ---
     private function ReadPushLinkageState(): ?bool
     {
-        if (!$this->apiEnsureToken()) return null;
-
-        // 1) V20: GetPushV20 – nur die Schedule-Tabelle interessiert uns
-        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', /*suppress*/ true);
+        // V20 lesen
+        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
             $push = $res[0]['value']['Push'] ?? null;
-            $on   = $this->extractPushStateFromSchedule($push);
-            if ($on !== null) {
-                $this->dbg('PUSH', 'V20 schedule ausgewertet', ['value'=>$on]);
-                return $on;
+            if (is_array($push)) {
+                // 1) V20: schedule.table.MD ist die maßgebliche Kette
+                $md = $push['schedule']['table']['MD'] ?? null;
+                if (is_string($md) && $md !== '') {
+                    // Effektiv AN, sobald mindestens ein Slot aktiv ist
+                    $on = (strpos($md, '1') !== false);
+                    $this->dbg('PUSH', 'V20 schedule ausgewertet', ['value' => $on]);
+                    return $on;
+                }
+                // 2) Fallback: wenn keine MD-Kette vorhanden, auf enable zurückfallen
+                if (isset($push['enable'])) {
+                    $on = ((int)$push['enable'] === 1);
+                    $this->dbg('PUSH', 'V20 fallback enable', ['value' => $on]);
+                    return $on;
+                }
             }
         }
 
-        // 2) Legacy: GetPush (einige FW mit action=1, andere ohne)
+        // Legacy-Fallbacks: manche liefern action=1, andere nicht
         $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
         if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
             $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
         }
         if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
             $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
-            $on   = $this->extractPushStateFromSchedule($node);
-            if ($on !== null) {
-                $this->dbg('PUSH', 'LEGACY schedule ausgewertet', ['value'=>$on]);
-                return $on;
+            if (is_array($node)) {
+                // Versuche auch hier eine MD-Kette zu finden
+                $md = $node['schedule']['table']['MD'] ?? null;
+                if (is_string($md) && $md !== '') {
+                    $on = (strpos($md, '1') !== false);
+                    $this->dbg('PUSH', 'LEGACY schedule ausgewertet', ['value' => $on]);
+                    return $on;
+                }
+                if (isset($node['schedule']['enable'])) {
+                    $on = ((int)$node['schedule']['enable'] === 1);
+                    $this->dbg('PUSH', 'LEGACY fallback schedule.enable', ['value' => $on]);
+                    return $on;
+                }
+                if (isset($node['enable'])) {
+                    $on = ((int)$node['enable'] === 1);
+                    $this->dbg('PUSH', 'LEGACY fallback enable', ['value' => $on]);
+                    return $on;
+                }
             }
-            // Fallback nur wenn keine Table existiert:
-            if (isset($node['schedule']['enable'])) return ((int)$node['schedule']['enable'] === 1);
-            if (isset($node['enable']))             return ((int)$node['enable'] === 1);
         }
 
+        // Nichts Verwertbares
+        $this->dbg('PUSH', 'Kein verwertbarer Zustand gefunden');
         return null;
+    }
+
+    private function UpdatePushStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("PushEnabled");
+        if ($vid === false) {
+            return;
+        }
+        $state = $this->ReadPushLinkageState();
+        if ($state === null) {
+            return; // nichts ändern
+        }
+        $old = (bool) GetValue($vid);
+        if ($old !== $state) {
+            $this->SetValue('PushEnabled', $state);
+            $this->dbg('PUSH', 'Status aktualisiert (MD-Schedule)', ['value' => $state]);
+        } else {
+            $this->dbg('PUSH', 'Status unverändert (MD-Schedule)', ['value' => $state]);
+        }
     }
 
     /**
-     * --- NEU: zieht "MD" aus schedule.table und entscheidet daraus on/off.
-     * Gibt true/false zurück oder null wenn keine verwertbare Tabelle gefunden wurde.
+     * Setzt effektiv den Push-Zustand, indem die MD-Schedule-Kette
+     * auf lauter '1' (AN) oder '0' (AUS) gesetzt wird.
      */
-    private function extractPushStateFromSchedule($pushNode): ?bool
+    private function SetPushV20Effective(bool $on): bool
     {
-        if (!is_array($pushNode)) return null;
-
-        // suche schedule.table – Schlüssel heißen in verschiedenen FWs leicht anders.
-        $schedule = $pushNode['schedule'] ?? null;
-        if (!is_array($schedule)) return null;
-
-        $table = $schedule['table'] ?? null;
-        if (!is_array($table)) return null;
-
-        // MD kann "MD" heißen; wir prüfen zusätzlich case-insensitiv.
-        $mdKey = null;
-        foreach ($table as $k => $_) {
-            if (strtoupper((string)$k) === 'MD') { $mdKey = $k; break; }
-        }
-        if ($mdKey === null) return null;
-
-        $chain = (string)$table[$mdKey];   // z.B. "0000...0" oder "1111...1"
-        if ($chain === '') return null;
-
-        // Logik: Push AN, sobald irgendwo eine '1' vorkommt
-        $isOn = (strpos($chain, '1') !== false);
-        return $isOn;
-    }
-
-    // true, wenn Zeichenkette mindestens eine '1' enthält
-    private function hasAnyOneString($s): bool {
-        return is_string($s) && (strpos($s, '1') !== false);
-    }
-
-    // Extrahiert den effektiven Push-Status (MD) aus GetPush(V20)-Antwort
-    private function parsePushStateFromResponse(array $resp): ?bool {
-        // gültige Antwort?
-        if (!isset($resp[0]) || (int)($resp[0]['code'] ?? -1) !== 0) {
-            return null;
-        }
-        $val  = $resp[0]['value'] ?? $resp[0]['initial'] ?? null;
-        if (!is_array($val)) return null;
-
-        $push = $val['Push'] ?? $val ?? null;
-        if (!is_array($push)) return null;
-
-        // V20: Push.schedule.table.MD
-        $table = $push['schedule']['table'] ?? null;
-        if (is_array($table)) {
-            // Fokus auf MD – das ist der Schalter für “Bewegungserkennung pusht”
-            if (array_key_exists('MD', $table)) {
-                return $this->hasAnyOneString($table['MD']);
-            }
-            // Fallback: wenn MD fehlt, aber irgendeine Tabelle 1en enthält, werten wir das als "an"
-            foreach ($table as $k => $v) {
-                if ($this->hasAnyOneString($v)) return true;
-            }
+        // Erst die aktuelle Länge der MD-Kette holen
+        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
             return false;
         }
+        $push = $res[0]['value']['Push'] ?? null;
+        if (!is_array($push)) {
+            return false;
+        }
+        $md = $push['schedule']['table']['MD'] ?? '';
+        if (!is_string($md) || $md === '') {
+            // Falls es keine MD-Kette gibt, lieber clean abbrechen
+            $this->dbg('PUSH', 'MD-Kette fehlt in V20');
+            return false;
+        }
+        $len = strlen($md);
+        $new = str_repeat($on ? '1' : '0', $len);
 
-        // Manche Legacy-Firmwares haben nur schedule.enable (0/1)
-        if (isset($push['schedule']['enable'])) {
-            return ((int)$push['schedule']['enable']) === 1;
+        // Nur schreiben, wenn sich wirklich etwas ändert
+        if ($md === $new) {
+            $this->dbg('PUSH', 'MD-Kette unverändert', ['len' => $len, 'on' => $on]);
+            return true;
         }
 
-        // Letzter Versuch: direktes enable, falls es *doch* richtig gesetzt ist
-        if (isset($push['enable'])) {
-            return ((int)$push['enable']) === 1;
+        $payload = [[
+            "cmd"   => "SetPushV20",
+            "param" => [
+                "Push" => [
+                    "channel"  => 0,
+                    // enable unangetastet lassen – die App hält ihn oft auf 1
+                    "schedule" => [
+                        "channel" => 0,
+                        "table"   => [
+                            "MD" => $new
+                        ]
+                    ]
+                ]
+            ]
+        ]];
+
+        $r = $this->apiCall($payload, 'PUSH', false);
+        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        if ($ok) {
+            $this->dbg('PUSH', 'MD-Kette gesetzt', ['len' => $len, 'on' => $on]);
+        } else {
+            $this->dbg('PUSH', 'SetPushV20 fehlgeschlagen', $r ?? null);
+        }
+        return $ok;
+    }
+
+    private function PushApply(bool $on): bool
+    {
+        // Bevorzugt V20 – dort stellen wir ausschließlich die MD-Kette
+        $ver = $this->ApiVersion('push');
+        $ok  = false;
+
+        if ($ver === 'V20') {
+            $ok = $this->SetPushV20Effective($on);
+
+        } else {
+            // Legacy-Fallbacks:
+            // 1) Versuche schedule.enable zu setzen
+            $p1 = [[
+                "cmd"   => "SetPush",
+                "param" => [ "Push" => [ "channel"=>0, "schedule" => [ "enable" => ($on ? 1 : 0) ] ] ]
+            ]];
+            $r1 = $this->apiCall($p1, 'PUSH', true);
+            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+
+            // 2) Wenn nötig, plain enable als Fallback
+            if (!$ok) {
+                $p2 = [[
+                    "cmd"   => "SetPush",
+                    "param" => [ "Push" => [ "channel"=>0, "enable" => ($on ? 1 : 0) ] ]
+                ]];
+                $r2 = $this->apiCall($p2, 'PUSH', true);
+                $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+            }
         }
 
-        return null;
+        if ($ok) {
+            // Einmal sauber zurücklesen
+            $this->UpdatePushStatus();
+        } else {
+            $this->dbg('PUSH', 'Setzen fehlgeschlagen');
+        }
+        return $ok;
     }
 }
