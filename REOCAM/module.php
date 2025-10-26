@@ -1896,7 +1896,6 @@ class Reolink extends IPSModule
 
     
     private function ptzClearPreset(int $id): bool {
-        /
         $ok = is_array($this->postCmdDual(
             'SetPtzPreset',
             ['channel'=>0, 'table'=>[ ['id'=>$id, 'enable'=>0, 'name'=>''] ]],
