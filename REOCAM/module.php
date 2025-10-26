@@ -2497,21 +2497,35 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
-        $vid = @$this->GetIDForIdent("PushEnabled");
-        if ($vid === false) return;
+        $resp = $this->apiCall([
+            ["cmd" => "GetPushV20", "param" => ["channel" => 0]]
+        ], "PUSH");
 
-        $active = $this->ReadPushLinkageState();
-        if ($active === null) {
-            $this->dbg('PUSH', 'Zustand nicht ermittelbar (kein MD/Schedule im Response)');
+        if (!is_array($resp) || !isset($resp[0]['value']['Push'])) {
+            $this->dbg('PUSH', 'Ungueltige Antwort', $resp ?? null);
             return;
         }
 
-        $cur = (bool)GetValue($vid);
-        if ($cur !== $active) {
-            $this->SetValue('PushEnabled', $active);
-            $this->dbg('PUSH', 'Var geändert', ['new' => $active]);
-        } else {
-            $this->dbg('PUSH', 'Unverändert', ['value' => $active], true);
+        $push = $resp[0]['value']['Push'];
+        // Tabelle extrahieren – String wie "111111..." oder "000000..."
+        $table = $push['schedule']['table']['MD'] ?? null;
+        if (!is_string($table)) {
+            $this->dbg('PUSH', 'Kein schedule.table.MD gefunden', $push);
+            return;
+        }
+
+        // Wenn die Tabelle mindestens ein '1' enthält, ist Push aktiv
+        $enabled = str_contains($table, '1');
+
+        $id = @$this->GetIDForIdent('PushEnabled');
+        if ($id !== false) {
+            $old = GetValue($id);
+            if ($old !== $enabled) {
+                $this->SetValue('PushEnabled', $enabled);
+                $this->dbg('PUSH', 'Status geaendert', ['alt' => $old, 'neu' => $enabled]);
+            } else {
+                $this->dbg('PUSH', 'Status unveraendert', ['value' => $enabled]);
+            }
         }
     }
 
