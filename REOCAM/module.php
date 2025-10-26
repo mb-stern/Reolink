@@ -1086,7 +1086,7 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $id = @$this->GetIDForIdent("PTZ_HTML");
             if ($id === false) {
-                $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 3);
+                $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 6);
             } else {
                 IPS_SetName($id, "PTZ");
                 IPS_SetPosition($id, 8);
@@ -1100,7 +1100,7 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
             $id = @$this->GetIDForIdent("FTPEnabled");
             if ($id === false) {
-                $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 4);
+                $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
                 $this->EnableAction("FTPEnabled");
             } else {
                 IPS_SetName($id, "FTP");
@@ -1121,7 +1121,7 @@ class Reolink extends IPSModule
 
             $id = @$this->GetIDForIdent("MdSensitivity");
             if ($id === false) {
-                $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 5);
+                $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
                 $this->EnableAction("MdSensitivity");
             } else {
                 IPS_SetName($id, "Bewegung Sensitivität");
