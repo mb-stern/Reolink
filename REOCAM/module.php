@@ -2515,7 +2515,41 @@ class Reolink extends IPSModule
         return null;
     }
 
-    // --- ERSETZEN: komplette UpdatePushStatus() ---
+    // Neu: effektiven MD-Push-Status aus GetPushV20 ermitteln
+    private function parsePushV20EffectiveMd(array $resp): ?bool
+    {
+        // Erwartete Struktur: $resp[0]['value']['Push']['schedule']['table']['MD'] = "000.../111..."
+        if (!isset($resp[0]['value']['Push'])) {
+            return null;
+        }
+        $push = $resp[0]['value']['Push'];
+
+        // 1) Primär nur MD (Bewegungserkennung) auswerten
+        $md = $push['schedule']['table']['MD'] ?? null;
+        if (is_string($md)) {
+            // mind. ein '1' = irgendwo im Zeitraster aktiv
+            return (strpos($md, '1') !== false);
+        }
+
+        // 2) Falls eine FW MD nicht liefert: auf AI-Felder zurückfallen (selten nötig)
+        $tbl = $push['schedule']['table'] ?? null;
+        if (is_array($tbl)) {
+            foreach (['AI_PEOPLE','AI_VEHICLE','AI_DOG_CAT'] as $k) {
+                if (isset($tbl[$k]) && is_string($tbl[$k]) && strpos($tbl[$k], '1') !== false) {
+                    return true;
+                }
+            }
+            // Tabelle vorhanden aber ohne '1' → aus
+            return false;
+        }
+
+        // 3) Letzter Fallback: topside "enable" (bei dir immer 1, daher nur Notlösung)
+        if (isset($push['enable'])) {
+            return ((int)$push['enable'] === 1);
+        }
+        return null;
+    }
+
     private function UpdatePushStatus(): void
     {
         $vid = @$this->GetIDForIdent("PushEnabled");
@@ -2523,70 +2557,38 @@ class Reolink extends IPSModule
             return;
         }
 
-        // 1) V20: genau EIN Call, danach direkt auswerten
-        $res = $this->apiCall([[ "cmd" => "GetPushV20", "param" => ["channel" => 0] ]], "PUSH", /*suppressError*/ true);
-
+        // --- V20: exakt einen Call, danach gezielt MD auswerten ---
+        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $push   = $res[0]['value']['Push'] ?? null;
-            $sched  = is_array($push) ? ($push['schedule'] ?? null) : null;
-            $table  = is_array($sched) ? ($sched['table'] ?? null) : null;
-
-            // Primär über die Tabelle entscheiden (MD/AI-Ketten). Fallback auf Flags.
-            $enabled = null;
-            if (is_array($table)) {
-                $enabled = $this->pushTableEnabled($table);   // true/false/null
-            }
-            if ($enabled === null) {
-                // Fallbacks: schedule.enable oder enable
-                if (isset($sched['enable'])) {
-                    $enabled = ((int)$sched['enable'] === 1);
-                } elseif (isset($push['enable'])) {
-                    $enabled = ((int)$push['enable'] === 1);
+            $eff = $this->parsePushV20EffectiveMd($res);
+            if ($eff !== null) {
+                if ((bool)GetValue($vid) !== (bool)$eff) {
+                    $this->SetValue("PushEnabled", (bool)$eff);
                 }
             }
-
-            if ($enabled !== null) {
-                $cur = (bool)GetValue($vid);
-                if ($cur !== (bool)$enabled) {
-                    $this->SetValue("PushEnabled", (bool)$enabled);
-                    $this->dbg('PUSH', 'Status (V20) aktualisiert aus Tabelle', ['enabled' => (bool)$enabled]);
-                }
-            } else {
-                $this->dbg('PUSH', 'V20: Keine verwertbaren Daten', $res);
-            }
-            return; // V20 bereits behandelt
+            return;
         }
 
-        // 2) Legacy: möglichst nur ein GET, mit sanften Fallbacks
-        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], "PUSH", true);
+        // --- Legacy-Fallback (einige liefern action=1, andere nicht) ---
+        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
         if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
-            $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
+            $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
         }
         if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            $node   = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
-            $sched  = is_array($node) ? ($node['schedule'] ?? null) : null;
-            $table  = is_array($sched) ? ($sched['table'] ?? null) : null;
+            $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
 
+            // Auch hier: erst MD aus schedule.table prüfen, dann Fallbacks
             $enabled = null;
-            if (is_array($table)) {
-                $enabled = $this->pushTableEnabled($table);
-            }
-            if ($enabled === null) {
-                if (isset($sched['enable'])) {
-                    $enabled = ((int)$sched['enable'] === 1);
-                } elseif (isset($node['enable'])) {
-                    $enabled = ((int)$node['enable'] === 1);
-                }
+            if (isset($node['schedule']['table']['MD']) && is_string($node['schedule']['table']['MD'])) {
+                $enabled = (strpos($node['schedule']['table']['MD'], '1') !== false);
+            } elseif (isset($node['schedule']['enable'])) {
+                $enabled = ((int)$node['schedule']['enable'] === 1);
+            } elseif (isset($node['enable'])) {
+                $enabled = ((int)$node['enable'] === 1);
             }
 
-            if ($enabled !== null) {
-                $cur = (bool)GetValue($vid);
-                if ($cur !== (bool)$enabled) {
-                    $this->SetValue("PushEnabled", (bool)$enabled);
-                    $this->dbg('PUSH', 'Status (LEGACY) aktualisiert', ['enabled' => (bool)$enabled]);
-                }
-            } else {
-                $this->dbg('PUSH', 'LEGACY: Keine verwertbaren Daten', $res2);
+            if ($enabled !== null && (bool)GetValue($vid) !== (bool)$enabled) {
+                $this->SetValue("PushEnabled", (bool)$enabled);
             }
         }
     }
