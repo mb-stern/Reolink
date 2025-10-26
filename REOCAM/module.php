@@ -2181,6 +2181,7 @@ class Reolink extends IPSModule
         }
     }
 
+
     private function mdNormalizeSegments($raw): array
     {
         $out = [];
