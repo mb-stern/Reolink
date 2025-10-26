@@ -38,6 +38,7 @@
         { "type": "CheckBox", "name": "EnableApiFTP",         "caption": "FTP" },
         { "type": "CheckBox", "name": "EnableApiSensitivity", "caption": "Sensitivität" },
         { "type": "CheckBox", "name": "EnableApiSiren",       "caption": "Sirene" },
+        { "type": "CheckBox", "name": "EnableApiRecord",      "caption": "Kameraaufzeichnung" },
         { "type": "CheckBox", "name": "EnableApiPTZ",         "caption": "PTZ / Presets / Zoom" }
       ]
     },
