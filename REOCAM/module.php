@@ -1422,78 +1422,37 @@ class Reolink extends IPSModule
     }
 
 
-    // Liest den Email-Zustand GENAU EINMAL und normalisiert ihn
     private function GetEmailState(): ?array
     {
-        $ver = $this->ApiVersion('email');
-
-        if ($ver === 'V20') {
-            $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL');
-            if (!is_array($res) || !isset($res[0]['value']['Email'])) {
-                $this->dbg('EMAIL', 'GetEmailV20: ungültige Antwort', $res);
-                return null;
-            }
+        // 1) V20 versuchen
+        $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0) && isset($res[0]['value']['Email'])) {
             $e = $res[0]['value']['Email'];
-
             $enabled = isset($e['enable']) ? ((int)$e['enable'] === 1) : null;
-
-            // Intervall: bevorzugt Sekunden, sonst String → Sekunden
-            $intervalSec = null;
-            if (isset($e['intervalSec']) && is_numeric($e['intervalSec'])) {
-                $intervalSec = (int)$e['intervalSec'];
-            } elseif (isset($e['interval'])) {
-                $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
-            }
-
-            // Content-Mode aus textType/attachmentType ableiten
+            $intervalSec = isset($e['intervalSec']) ? (int)$e['intervalSec'] :
+                        (isset($e['interval']) ? $this->IntervalStringToSeconds((string)$e['interval']) : null);
             $contentMode = null;
             if (isset($e['textType']) || isset($e['attachmentType'])) {
-                $text = isset($e['textType']) ? (int)$e['textType'] : 1;
-                $att  = isset($e['attachmentType']) ? (int)$e['attachmentType'] : 0;
-                if (!$text && $att === 1) $contentMode = 1;      // nur Bild
-                elseif ($text && $att === 0) $contentMode = 0;   // nur Text
-                elseif ($text && $att === 1) $contentMode = 2;   // Text+Bild
-                elseif ($text && $att === 2) $contentMode = 3;   // Text+Video
-                else $contentMode = 0;
+                $text = (int)($e['textType'] ?? 1);
+                $att  = (int)($e['attachmentType'] ?? 0);
+                $contentMode = ($text?($att===0?0:($att===1?2:3)):($att===1?1:0));
             }
-
-            return ['enabled'=>$enabled, 'intervalSec'=>$intervalSec, 'contentMode'=>$contentMode];
+            return ['enabled'=>$enabled,'intervalSec'=>$intervalSec,'contentMode'=>$contentMode];
         }
 
-        // LEGACY
-        $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]], 'EMAIL');
-        if (!is_array($res) || !isset($res[0]['value']['Email'])) {
-            $this->dbg('EMAIL', 'GetEmail: ungültige Antwort', $res);
-            return null;
+        // 2) Legacy-Fallback
+        $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]], 'EMAIL', true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0) && isset($res[0]['value']['Email'])) {
+            $e = $res[0]['value']['Email'];
+            $enabled = isset($e['schedule']['enable']) ? ((int)$e['schedule']['enable'] === 1) : null;
+            $intervalSec = isset($e['interval']) ? $this->IntervalStringToSeconds((string)$e['interval']) : null;
+            $contentMode = isset($e['attachment'])
+                ? (['0'=>0,'onlyPicture'=>1,'picture'=>2,'video'=>3][(string)$e['attachment']] ?? 0)
+                : null;
+            return ['enabled'=>$enabled,'intervalSec'=>$intervalSec,'contentMode'=>$contentMode];
         }
-        $e = $res[0]['value']['Email'];
-
-        // enable
-        $enabled = null;
-        if (isset($e['schedule']['enable'])) {
-            $enabled = ((int)$e['schedule']['enable'] === 1);
-        }
-
-        // interval (String → Sekunden)
-        $intervalSec = null;
-        if (isset($e['interval'])) {
-            $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
-        }
-
-        // attachment → contentMode
-        $contentMode = null;
-        if (isset($e['attachment'])) {
-            switch ((string)$e['attachment']) {
-                case 'onlyPicture': $contentMode = 1; break;
-                case 'picture':     $contentMode = 2; break;
-                case 'video':       $contentMode = 3; break;
-                default:            $contentMode = 0; break;
-            }
-        }
-
-        return ['enabled'=>$enabled, 'intervalSec'=>$intervalSec, 'contentMode'=>$contentMode];
+        return null;
     }
-
 
     private function EmailApply(?bool $enabled=null, ?int $intervalSec=null, ?int $contentMode=null): bool
     {
@@ -2396,12 +2355,13 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("SirenEnabled");
         if ($vid === false) return;
 
-        $isV20 = ($this->ApiVersion('audio') === 'V20');
-        $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
-
-        $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
-
+        // 1) V20 versuchen
+        $res = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "action"=>1, "param"=>["channel"=>0] ]], 'SIRENE', true);
+        if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) {
+            // 2) Legacy-Fallback
+            $res = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "action"=>1, "param"=>["channel"=>0] ]], 'SIRENE', true);
+            if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
+        }
         $audio = $res[0]['value']['Audio'] ?? null;
         if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
 
