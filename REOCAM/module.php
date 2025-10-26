@@ -2305,7 +2305,7 @@ class Reolink extends IPSModule
 
 
     // ---------------------------
-    // SRecord Status
+    // Record Status
     // ---------------------------
 
     private function UpdateRecStatus(): void
