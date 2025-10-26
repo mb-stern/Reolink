@@ -1087,7 +1087,7 @@ class Reolink extends IPSModule
 
         // -------- Recording / Schedule --------
         if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufnahme", "~Switch", 6);
+            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 6);
             $this->EnableAction("RecEnabled");
         } else {
             $this->UnregisterVariable("RecEnabled");
