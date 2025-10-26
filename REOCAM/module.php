@@ -2497,22 +2497,18 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
-        $idVar = @$this->GetIDForIdent("PushEnabled");
-        if ($idVar === false) return;
+        $vid = @$this->GetIDForIdent("PushEnabled");
+        if ($vid === false) return;
 
-        $state = $this->ReadPushLinkageState();  // → liest gezielt den wirksamen Status
-        if ($state === null) {
-            // nichts überschreiben, nur debuggen
-            $this->dbg('PUSH', 'Kein auswertbarer Status (Antwort unbekannt/leer)');
-            return;
-        }
+        $on = $this->ReadPushLinkageState();
+        if ($on === null) return; // nichts änderbar
 
-        $cur = (bool)GetValue($idVar);
-        if ($cur !== $state) {
-            $this->SetValue("PushEnabled", $state);
-            $this->dbg('PUSH', 'Var geändert (aus MD-Schedule abgeleitet)', ['old'=>$cur, 'new'=>$state]);
+        $cur = (bool)GetValue($vid);
+        if ($cur !== $on) {
+            $this->SetValue("PushEnabled", $on);
+            $this->dbg('PUSH', 'Status geändert (MD-Schedule)', ['value'=>$on]);
         } else {
-            $this->dbg('PUSH', 'Status unverändert (MD-Schedule)', ['value'=>$state]);
+            $this->dbg('PUSH', 'Status unverändert (MD-Schedule)', ['value'=>$on]);
         }
     }
 
@@ -2624,23 +2620,71 @@ class Reolink extends IPSModule
         return null;
     }
 
-    private function ReadPushLinkageState(): ?bool 
+    // --- NEU: robustes Auslesen des Push-Status über die MD-Schedule-Kette ---
+    private function ReadPushLinkageState(): ?bool
     {
-        // 1) V20 versuchen – genau das, was in deinen Dumps drin ist
-        $resV20 = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-        $state  = is_array($resV20) ? $this->parsePushStateFromResponse($resV20) : null;
-        if ($state !== null) return $state;
+        if (!$this->apiEnsureToken()) return null;
 
-        // 2) Legacy-Fallback
-        $res1   = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
-        $state1 = is_array($res1) ? $this->parsePushStateFromResponse($res1) : null;
-        if ($state1 !== null) return $state1;
+        // 1) V20: GetPushV20 – nur die Schedule-Tabelle interessiert uns
+        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', /*suppress*/ true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            $push = $res[0]['value']['Push'] ?? null;
+            $on   = $this->extractPushStateFromSchedule($push);
+            if ($on !== null) {
+                $this->dbg('PUSH', 'V20 schedule ausgewertet', ['value'=>$on]);
+                return $on;
+            }
+        }
 
-        $res2   = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-        $state2 = is_array($res2) ? $this->parsePushStateFromResponse($res2) : null;
-        return $state2;
+        // 2) Legacy: GetPush (einige FW mit action=1, andere ohne)
+        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
+        if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
+            $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
+        }
+        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
+            $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
+            $on   = $this->extractPushStateFromSchedule($node);
+            if ($on !== null) {
+                $this->dbg('PUSH', 'LEGACY schedule ausgewertet', ['value'=>$on]);
+                return $on;
+            }
+            // Fallback nur wenn keine Table existiert:
+            if (isset($node['schedule']['enable'])) return ((int)$node['schedule']['enable'] === 1);
+            if (isset($node['enable']))             return ((int)$node['enable'] === 1);
+        }
+
+        return null;
     }
 
+    /**
+     * --- NEU: zieht "MD" aus schedule.table und entscheidet daraus on/off.
+     * Gibt true/false zurück oder null wenn keine verwertbare Tabelle gefunden wurde.
+     */
+    private function extractPushStateFromSchedule($pushNode): ?bool
+    {
+        if (!is_array($pushNode)) return null;
+
+        // suche schedule.table – Schlüssel heißen in verschiedenen FWs leicht anders.
+        $schedule = $pushNode['schedule'] ?? null;
+        if (!is_array($schedule)) return null;
+
+        $table = $schedule['table'] ?? null;
+        if (!is_array($table)) return null;
+
+        // MD kann "MD" heißen; wir prüfen zusätzlich case-insensitiv.
+        $mdKey = null;
+        foreach ($table as $k => $_) {
+            if (strtoupper((string)$k) === 'MD') { $mdKey = $k; break; }
+        }
+        if ($mdKey === null) return null;
+
+        $chain = (string)$table[$mdKey];   // z.B. "0000...0" oder "1111...1"
+        if ($chain === '') return null;
+
+        // Logik: Push AN, sobald irgendwo eine '1' vorkommt
+        $isOn = (strpos($chain, '1') !== false);
+        return $isOn;
+    }
 
     // true, wenn Zeichenkette mindestens eine '1' enthält
     private function hasAnyOneString($s): bool {
