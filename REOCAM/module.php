@@ -964,13 +964,10 @@ class Reolink extends IPSModule
     // ---------------------------
     // Variablen an/abbauen (API)
     // ---------------------------
- 
-    // ---- Zentrale Anlage / Löschung aller API-Variablen ----
     private function CreateOrUpdateApiVariablesUnified(): void
     {
         // -------- White LED --------
         if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-            // Profil für Modus sicherstellen
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
                 IPS_CreateVariableProfile("REOCAM.WLED", 1); // Integer
             }
@@ -979,54 +976,25 @@ class Reolink extends IPSModule
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
 
-            // WhiteLed (bool)
-            $id = @$this->GetIDForIdent("WhiteLed");
-            if ($id === false) {
-                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
-                $this->EnableAction("WhiteLed");
-            } else {
-                IPS_SetName($id, "LED Status");
-                IPS_SetPosition($id, 0);
-                IPS_SetVariableCustomProfile($id, "~Switch");
-                $this->EnableAction("WhiteLed");
-            }
+            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 1);
+            $this->EnableAction("WhiteLed");
 
-            // Mode (int, Profil REOCAM.WLED)
-            $id = @$this->GetIDForIdent("Mode");
-            if ($id === false) {
-                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 0);
-                $this->EnableAction("Mode");
-            } else {
-                IPS_SetName($id, "LED Modus");
-                IPS_SetPosition($id, 1);
-                IPS_SetVariableCustomProfile($id, "REOCAM.WLED");
-                $this->EnableAction("Mode");
-            }
+            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
+            $this->EnableAction("Mode");
 
-            // Bright (int, 0..100)
-            $id = @$this->GetIDForIdent("Bright");
-            if ($id === false) {
-                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 0);
-                $this->EnableAction("Bright");
-            } else {
-                IPS_SetName($id, "LED Helligkeit");
-                IPS_SetPosition($id, 2);
-                IPS_SetVariableCustomProfile($id, "~Intensity.100");
-                $this->EnableAction("Bright");
-            }
+            $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
+            $this->EnableAction("Bright");
         } else {
-            if (@$this->GetIDForIdent("WhiteLed") !== false)   $this->UnregisterVariable("WhiteLed");
-            if (@$this->GetIDForIdent("Mode") !== false)       $this->UnregisterVariable("Mode");
-            if (@$this->GetIDForIdent("Bright") !== false)     $this->UnregisterVariable("Bright");
+            $this->UnregisterVariable("WhiteLed");
+            $this->UnregisterVariable("Mode");
+            $this->UnregisterVariable("Bright");
         }
 
         // -------- Email --------
         if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            // Profile sicherstellen
             if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
                 IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
             }
-            // Werte/Assoziationen
             IPS_SetVariableProfileValues("REOCAM.EmailInterval", 30, 1800, 1);
             IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
@@ -1038,78 +1006,38 @@ class Reolink extends IPSModule
                 IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
             }
             IPS_SetVariableProfileValues("REOCAM.EmailContent", 0, 3, 1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text",              "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)",  "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild",       "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video",      "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text",             "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild",      "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video",     "", -1);
 
-            // Variablen
-            $id = @$this->GetIDForIdent("EmailNotify");
-            if ($id === false) {
-                $this->RegisterVariableBoolean("EmailNotify", "E-Mail Alarm", "~Switch", 2);
-                $this->EnableAction("EmailNotify");
-            } else {
-                IPS_SetName($id, "E-Mail Alarm");
-                IPS_SetPosition($id, 3);
-                IPS_SetVariableCustomProfile($id, "~Switch");
-                $this->EnableAction("EmailNotify");
-            }
+            $this->RegisterVariableBoolean("EmailNotify", "E-Mail Alarm", "~Switch", 2);
+            $this->EnableAction("EmailNotify");
 
-            $id = @$this->GetIDForIdent("EmailInterval");
-            if ($id === false) {
-                $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 2);
-                $this->EnableAction("EmailInterval");
-            } else {
-                IPS_SetName($id, "E-Mail Intervall");
-                IPS_SetPosition($id, 4);
-                IPS_SetVariableCustomProfile($id, "REOCAM.EmailInterval");
-                $this->EnableAction("EmailInterval");
-            }
+            $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 2);
+            $this->EnableAction("EmailInterval");
 
-            $id = @$this->GetIDForIdent("EmailContent");
-            if ($id === false) {
-                $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 2);
-                $this->EnableAction("EmailContent");
-            } else {
-                IPS_SetName($id, "E-Mail Inhalt");
-                IPS_SetPosition($id, 5);
-                IPS_SetVariableCustomProfile($id, "REOCAM.EmailContent");
-                $this->EnableAction("EmailContent");
-            }
+            $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 2);
+            $this->EnableAction("EmailContent");
         } else {
-            if (@$this->GetIDForIdent("EmailNotify") !== false)   $this->UnregisterVariable("EmailNotify");
-            if (@$this->GetIDForIdent("EmailInterval") !== false) $this->UnregisterVariable("EmailInterval");
-            if (@$this->GetIDForIdent("EmailContent") !== false)  $this->UnregisterVariable("EmailContent");
+            $this->UnregisterVariable("EmailNotify");
+            $this->UnregisterVariable("EmailInterval");
+            $this->UnregisterVariable("EmailContent");
         }
 
         // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $id = @$this->GetIDForIdent("PTZ_HTML");
-            if ($id === false) {
-                $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 6);
-            } else {
-                IPS_SetName($id, "PTZ");
-                IPS_SetPosition($id, 8);
-                IPS_SetVariableCustomProfile($id, "~HTMLBox");
-            }
+            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 6);
         } else {
-            if (@$this->GetIDForIdent("PTZ_HTML") !== false) $this->UnregisterVariable("PTZ_HTML");
+            $this->UnregisterVariable("PTZ_HTML");
         }
 
         // -------- FTP --------
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-            $id = @$this->GetIDForIdent("FTPEnabled");
-            if ($id === false) {
-                $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
-                $this->EnableAction("FTPEnabled");
-            } else {
-                IPS_SetName($id, "FTP");
-                IPS_SetPosition($id, 6);
-                IPS_SetVariableCustomProfile($id, "~Switch");
-                $this->EnableAction("FTPEnabled");
-            }
+            $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
+            $this->EnableAction("FTPEnabled");
         } else {
-            if (@$this->GetIDForIdent("FTPEnabled") !== false) $this->UnregisterVariable("FTPEnabled");
+            $this->UnregisterVariable("FTPEnabled");
         }
 
         // -------- Bewegungssensitivität (1..50) --------
@@ -1119,34 +1047,18 @@ class Reolink extends IPSModule
             }
             IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
 
-            $id = @$this->GetIDForIdent("MdSensitivity");
-            if ($id === false) {
-                $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
-                $this->EnableAction("MdSensitivity");
-            } else {
-                IPS_SetName($id, "Bewegung Sensitivität");
-                IPS_SetPosition($id, 9);
-                IPS_SetVariableCustomProfile($id, "REOCAM.Sensitivity50");
-                $this->EnableAction("MdSensitivity");
-            }
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->EnableAction("MdSensitivity");
         } else {
-            if (@$this->GetIDForIdent("MdSensitivity") !== false) $this->UnregisterVariable("MdSensitivity");
+            $this->UnregisterVariable("MdSensitivity");
         }
 
         // -------- Sirene --------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            $id = @$this->GetIDForIdent("SirenEnabled");
-            if ($id === false) {
-                $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 6);
-                $this->EnableAction("SirenEnabled");
-            } else {
-                IPS_SetName($id, "Sirene");
-                IPS_SetPosition($id, 10);
-                IPS_SetVariableCustomProfile($id, "~Switch");
-                $this->EnableAction("SirenEnabled");
-            }
+            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
+            $this->EnableAction("SirenEnabled");
         } else {
-            if (@$this->GetIDForIdent("SirenEnabled") !== false) $this->UnregisterVariable("SirenEnabled");
+            $this->UnregisterVariable("SirenEnabled");
         }
     }
 
@@ -1306,18 +1218,6 @@ class Reolink extends IPSModule
             $this->RegisterVariableString($ident, $name, $profile, $pos);
         }
     }
-
-    private function removeVars(array $idents): void
-    {
-        foreach ($idents as $ident) {
-            $id = @$this->GetIDForIdent($ident);
-            if ($id !== false) {
-                $this->UnregisterVariable($ident);
-            }
-        }
-    }
-
-
 
     // ---------------------------
     // Spotlight (White LED)
