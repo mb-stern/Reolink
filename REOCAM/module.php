@@ -2166,6 +2166,39 @@ class Reolink extends IPSModule
         }
     }
 
+    private function SirenManualSwitch(bool $on): bool
+    {
+        // V20 zuerst
+        $res = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO_GET', true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            $audio = $res[0]['value']['Audio'] ?? null;
+            if (!is_array($audio)) return false;
+            $audio['enable'] = $on ? 1 : 0;
+            $r2 = $this->apiCall([[ "cmd"=>"SetAudioAlarmV20", "param"=>["Audio"=>$audio] ]], 'AUDIO_SET');
+            return is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+        }
+        // Legacy fallback
+        $res = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO_GET', true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return false;
+        $audio = $res[0]['value']['Audio'] ?? null;
+        if (!is_array($audio)) return false;
+        $audio['enable'] = $on ? 1 : 0;
+        $r2 = $this->apiCall([[ "cmd"=>"SetAudioAlarm", "param"=>["Audio"=>$audio] ]], 'AUDIO_SET');
+        return is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+    }
+
+    private function SirenPlayTimes(int $times): bool
+    {
+        $times = max(1, min(5, $times));
+        for ($i = 0; $i < $times; $i++) {
+            if (!$this->SirenManualSwitch(true))  return false;
+            IPS_Sleep(1500); // ~1.5s Sirene
+            if (!$this->SirenManualSwitch(false)) return false;
+            if ($i < $times-1) IPS_Sleep(500);   // kurze Pause zwischen Zyklen
+        }
+        return true;
+    }
+
     // ---------------------------
     // Sirene ansteuern
     // ---------------------------
@@ -2208,55 +2241,55 @@ class Reolink extends IPSModule
     // Record Status
     // ---------------------------
 
-private function UpdateRecStatus(): void
-{
-    $vid = @$this->GetIDForIdent("RecEnabled");
-    if ($vid === false) return;
-
-    $ab = $this->apiGetAbilityCached();
-    $isV20 = ((int)($ab['scheduleVersion']['ver'] ?? 0) === 1);
-
-    $cmd = $isV20 ? 'GetRecV20' : 'GetRec';
-    $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
-    if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
-
-    $rec = $res[0]['value']['Rec'] ?? $res[0]['initial']['Rec'] ?? null;
-    if (!is_array($rec)) return;
-
-    $enabled = array_key_exists('enable', $rec)
-        ? ((int)$rec['enable'] === 1)
-        : ((int)($rec['schedule']['enable'] ?? 0) === 1);
-
-    if (GetValueBoolean($vid) !== $enabled) {
-        SetValueBoolean($vid, $enabled);
-    }
-}
-
-    public function SetRecEnabled(bool $on): bool
+    private function UpdateRecStatus(): void
     {
+        $vid = @$this->GetIDForIdent("RecEnabled");
+        if ($vid === false) return;
+
         $ab = $this->apiGetAbilityCached();
         $isV20 = ((int)($ab['scheduleVersion']['ver'] ?? 0) === 1);
 
-        $get = $isV20 ? 'GetRecV20' : 'GetRec';
-        $set = $isV20 ? 'SetRecV20' : 'SetRec';
+        $cmd = $isV20 ? 'GetRecV20' : 'GetRec';
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
+        if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
 
-        $resp = $this->apiCall([[ "cmd"=>$get, "action"=>1, "param"=>["channel"=>0] ]], 'REC_GET');
-        if (!is_array($resp) || ($resp[0]['code']??1) !== 0) return false;
+        $rec = $res[0]['value']['Rec'] ?? $res[0]['initial']['Rec'] ?? null;
+        if (!is_array($rec)) return;
 
-        $rec = $resp[0]['value']['Rec'] ?? $resp[0]['initial']['Rec'] ?? [];
-        if ($isV20) {
-            $rec['enable']  = $on ? 1 : 0;
-            $rec['channel'] = $rec['channel'] ?? 0;
-        } else {
-            $rec['schedule'] = $rec['schedule'] ?? [];
-            $rec['schedule']['enable']  = $on ? 1 : 0;
-            $rec['schedule']['channel'] = $rec['schedule']['channel'] ?? 0;
-            $rec['channel'] = $rec['channel'] ?? 0;
+        $enabled = array_key_exists('enable', $rec)
+            ? ((int)$rec['enable'] === 1)
+            : ((int)($rec['schedule']['enable'] ?? 0) === 1);
+
+        if (GetValueBoolean($vid) !== $enabled) {
+            SetValueBoolean($vid, $enabled);
         }
-
-        $r2 = $this->apiCall([[ "cmd"=>$set, "param"=>[ "Rec"=>$rec ] ]], 'REC_SET');
-        $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-        if ($ok) $this->UpdateRecStatus();
-        return $ok;
     }
+
+        public function SetRecEnabled(bool $on): bool
+        {
+            $ab = $this->apiGetAbilityCached();
+            $isV20 = ((int)($ab['scheduleVersion']['ver'] ?? 0) === 1);
+
+            $get = $isV20 ? 'GetRecV20' : 'GetRec';
+            $set = $isV20 ? 'SetRecV20' : 'SetRec';
+
+            $resp = $this->apiCall([[ "cmd"=>$get, "action"=>1, "param"=>["channel"=>0] ]], 'REC_GET');
+            if (!is_array($resp) || ($resp[0]['code']??1) !== 0) return false;
+
+            $rec = $resp[0]['value']['Rec'] ?? $resp[0]['initial']['Rec'] ?? [];
+            if ($isV20) {
+                $rec['enable']  = $on ? 1 : 0;
+                $rec['channel'] = $rec['channel'] ?? 0;
+            } else {
+                $rec['schedule'] = $rec['schedule'] ?? [];
+                $rec['schedule']['enable']  = $on ? 1 : 0;
+                $rec['schedule']['channel'] = $rec['schedule']['channel'] ?? 0;
+                $rec['channel'] = $rec['channel'] ?? 0;
+            }
+
+            $r2 = $this->apiCall([[ "cmd"=>$set, "param"=>[ "Rec"=>$rec ] ]], 'REC_SET');
+            $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+            if ($ok) $this->UpdateRecStatus();
+            return $ok;
+        }
 }
