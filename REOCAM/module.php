@@ -2436,34 +2436,75 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
-        $idVar = @$this->GetIDForIdent("PushEnabled");
-        if ($idVar === false) return;
+        $vid = @$this->GetIDForIdent("PushEnabled");
+        if ($vid === false) return;
 
-        // V20 zuerst
+        // --- kleine Helfer: case-insensitive Feldsuche ---
+        $pick = function(array $a, string $k) {
+            foreach ($a as $key => $val) {
+                if (strcasecmp((string)$key, $k) === 0) return $val;
+            }
+            return null;
+        };
+        $getBool = function($v) {
+            if ($v === null) return null;
+            if (is_bool($v)) return $v;
+            if (is_numeric($v)) return ((int)$v) === 1;
+            return null;
+        };
+
+        // --------- V20 zuerst: GetPushV20 ---------
         $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $push = $res[0]['value']['Push'] ?? null;
-            if (is_array($push) && array_key_exists('enable', $push)) {
-                $this->SetValue("PushEnabled", ((int)$push['enable'] === 1));
+            $val  = is_array($res[0]['value'] ?? null) ? $res[0]['value'] : [];
+            // "Push" oder "push"
+            $push = $pick($val, 'Push');
+            if (is_array($push)) {
+                // bevorzugt: Push.enable
+                $enabled = $getBool($pick($push, 'enable'));
+                if ($enabled === null) {
+                    // einige FWs verstecken es (falsch) unter schedule.enable
+                    $schedule = $pick($push, 'schedule');
+                    if (is_array($schedule)) {
+                        $enabled = $getBool($pick($schedule, 'enable'));
+                    }
+                }
+                if ($enabled !== null) {
+                    if ((bool)GetValue($vid) !== $enabled) {
+                        $this->SetValue("PushEnabled", $enabled);
+                    }
+                    return; // success → fertig
+                }
             }
-            return;
+            // Wenn GetPushV20 zwar erfolgreich war, aber die Struktur nicht passte:
+            // NICHT frühzeitig returnen → weiter unten Legacy probieren.
         }
 
-        // Legacy Fallback (manche liefern action=1, andere nicht)
+        // --------- Legacy Fallback: GetPush (mit/ohne action) ---------
         $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
         if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
             $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
         }
         if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
+            $val = is_array($res2[0]['value'] ?? null) ? $res2[0]['value'] : [];
+            $node = $pick($val, 'Push'); // "Push" oder "push"
+            if (!is_array($node)) $node = $val;
+
             $enabled = null;
-            if (isset($node['schedule']['enable'])) {
-                $enabled = ((int)$node['schedule']['enable'] === 1);
-            } elseif (isset($node['enable'])) {
-                $enabled = ((int)$node['enable'] === 1);
+            // Legacy: bevorzugt schedule.enable
+            $schedule = $pick($node, 'schedule');
+            if (is_array($schedule)) {
+                $enabled = $getBool($pick($schedule, 'enable'));
             }
+            // manche liefern zusätzlich/alternativ "enable" oben
+            if ($enabled === null) {
+                $enabled = $getBool($pick($node, 'enable'));
+            }
+
             if ($enabled !== null) {
-                $this->SetValue("PushEnabled", $enabled);
+                if ((bool)GetValue($vid) !== $enabled) {
+                    $this->SetValue("PushEnabled", $enabled);
+                }
             }
         }
     }
