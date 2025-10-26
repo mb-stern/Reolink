@@ -2671,4 +2671,135 @@ class Reolink extends IPSModule
         if (!$ok) $this->dbg("PUSH", "Setzen fehlgeschlagen (FW-spezifisches Verhalten?)");
         return $ok;
     }
+
+        // ==========================================
+    // PUSH: Read-Only Status (keine Änderungen!)
+    // Erkennt Modus (CFG/V20/LEGACY) mit Early-Exit
+    // und liest dann genau EINEN passenden Endpunkt.
+    // ==========================================
+
+    private function Push_Read_DetectMode(): string
+    {
+        // 1) Cache nutzen, falls vorhanden
+        $mode = method_exists($this, 'ReadAttributeString') ? $this->ReadAttributeString('PushMode_RO') : '';
+        if ($mode !== '') return $mode;
+
+        // 2) Read-only Probe in sinnvoller Reihenfolge mit EARLY EXIT
+        //    (a) GetPushCfg  -> modernere Cfg-Schicht
+        $r = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], "PUSH", true);
+        if (is_array($r) && (($r[0]["code"] ?? -1) === 0) && isset($r[0]["value"]["PushCfg"])) {
+            $mode = 'CFG';
+        } else {
+            //    (b) GetPushV20 -> neue Firmware
+            $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], "PUSH", true);
+            if (is_array($r) && (($r[0]["code"] ?? -1) === 0) && isset($r[0]["value"]["Push"])) {
+                $mode = 'V20';
+            } else {
+                //    (c) GetPush   -> Legacy
+                $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
+                if (is_array($r) && (($r[0]["code"] ?? -1) === 0) && isset($r[0]["value"]["Push"])) {
+                    $mode = 'LEGACY';
+                } else {
+                    $mode = 'UNKNOWN';
+                }
+            }
+        }
+
+        $this->dbg('PUSH', 'DetectMode(RO) -> ' . $mode);
+        if (method_exists($this, 'WriteAttributeString')) {
+            $this->WriteAttributeString('PushMode_RO', $mode);
+        }
+        return $mode;
+    }
+
+    private function Push_Read_CFG(): array
+    {
+        $r = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], "PUSH", true);
+        return (is_array($r) && (($r[0]["code"] ?? -1) === 0)) ? $r : [];
+    }
+
+    private function Push_Read_V20(): array
+    {
+        $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], "PUSH", true);
+        return (is_array($r) && (($r[0]["code"] ?? -1) === 0)) ? $r : [];
+    }
+
+    private function Push_Read_Legacy(): array
+    {
+        // Read-only: nur ein Versuch ohne action:1 (keine "initial/range"-Zusatzlast)
+        $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
+        return (is_array($r) && (($r[0]["code"] ?? -1) === 0)) ? $r : [];
+    }
+
+    private function Push_Extract_Enable_From(array $res): ?int
+    {
+        // Versuche, enable an typischen Stellen zu finden; rein lesend.
+        // Rückgabe 0/1 oder null, wenn nicht vorhanden.
+        $v = $res[0]["value"] ?? null;
+        if (!is_array($v)) return null;
+
+        // V20/Legacy: value.Push.enable
+        $en = $v["Push"]["enable"] ?? null;
+        if (is_int($en) || is_string($en)) return (int)$en;
+
+        // Legacy-Fallback: value.Push.schedule.enable
+        $en = $v["Push"]["schedule"]["enable"] ?? null;
+        if (is_int($en) || is_string($en)) return (int)$en;
+
+        // CFG-Schicht: typischerweise kein "enable", ggf. nur Intervalle
+        return null;
+    }
+
+    private function Push_Extract_Lengths(array $res): array
+    {
+        // Beobachtbare Längen der Zeitraster (ohne Interpretation)
+        $v = $res[0]["value"] ?? [];
+        $tab = $v["Push"]["schedule"]["table"] ?? [];
+        $len = fn($s) => (is_string($s) ? strlen($s) : null);
+
+        return [
+            'md_len'        => $len($tab['MD']         ?? null),
+            'ai_people_len' => $len($tab['AI_PEOPLE']  ?? null),
+            'ai_vehicle_len'=> $len($tab['AI_VEHICLE'] ?? null),
+            'ai_dogcat_len' => $len($tab['AI_DOG_CAT'] ?? null),
+        ];
+    }
+
+    /**
+     * PUBLIC: Nur Lesen. Fragt GENAU EINEN Endpunkt je nach Modus ab
+     * und gibt ein schlankes, normalisiertes Array + Raw zurück.
+     */
+    public function Push_ReadStatus_RO(): array
+    {
+        $mode = $this->Push_Read_DetectMode();
+
+        $res  = [];
+        if ($mode === 'CFG')    $res = $this->Push_Read_CFG();
+        elseif ($mode === 'V20')$res = $this->Push_Read_V20();
+        elseif ($mode === 'LEGACY') $res = $this->Push_Read_Legacy();
+
+        $enabled = $this->Push_Extract_Enable_From($res);
+        $lens    = ($mode === 'V20' || $mode === 'LEGACY') ? $this->Push_Extract_Lengths($res) : [
+            'md_len'=>null,'ai_people_len'=>null,'ai_vehicle_len'=>null,'ai_dogcat_len'=>null
+        ];
+
+        $out = [
+            'mode'    => $mode,        // CFG | V20 | LEGACY | UNKNOWN
+            'enabled' => $enabled,     // 0|1|null
+            'lengths' => $lens,        // reine Beobachtung
+            'raw'     => $res          // vollständige Rohantwort zum Debuggen
+        ];
+        $this->dbg('PUSH', 'ReadStatus_RO -> ' . json_encode($out, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
+        return $out;
+    }
+
+    /** Hilfsfunktion: Cache leeren, falls du den Modus neu detektieren willst */
+    public function Push_Read_ResetModeCache(): void
+    {
+        if (method_exists($this, 'WriteAttributeString')) {
+            $this->WriteAttributeString('PushMode_RO', '');
+        }
+        $this->dbg('PUSH', 'Read-Only Modus-Cache geleert');
+    }
+
 }
