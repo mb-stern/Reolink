@@ -75,16 +75,16 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Instanz aktivieren** | Deaktiviert die Instanz temporär, um Fehlermeldungen zu vermeiden. |
 | **IP-Adresse** | IP-Adresse der Kamera. |
 | **Benutzername** | Benutzername für den Zugriff. |
-| **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
+| **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
 | **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
-| **API-Funktionen** | Aktiviert LED-, E-Mail- und PTZ-Steuerung. |
+| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene und Sensitivität der Bewegungserkennung. |
 | **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
 | **Intelligente Bewegungserkennung** | Erstellt Variablen für Personen, Tiere, Fahrzeuge, Bewegung und Besucher. |
 | **Schnappschüsse anzeigen** | Zeigt den letzten Schnappschuss jeder Erkennungsart. |
 | **Bildarchive anzeigen** | Erstellt Archive mit Schnappschüssen; Anzeige über separate Verlinkung im WebFront. |
 | **Anzahl Archivbilder** | Maximale Bildanzahl pro Archiv (Standard 20). |
 | **Test-Elemente anzeigen** | Fügt Test-Variablen und Test-Snapshots hinzu (nur zur Diagnose). |
-| **Besucher-Erkennung** | Aktiviert Doorbell-Erkennung (nur Doorbell-Modelle). |
+| **Besucher-Erkennung** | Aktiviert Klingel-Erkennung (nur Doorbell-Modelle). |
 
 ---
 
@@ -136,8 +136,15 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 8. Versionen
 
+### Version 2.10 (26.10.2025)
+- Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden.
+- API-Punkt 'FTP-Upload', 'Sensitivität' und 'Sirene' hinzugefügt.
+- Weitere Code-Optimierungen
+
 ### Version 2.9 (23.10.2025)
 - Verbesserte Erkennung der Server-IP-Adresse im Konfigurationsformular
+- Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden
+- API-Punkt 'FTP-Upload' hinzugefügt
 
 ### Version 2.8 (30.09.2025)
 - Neuer Schalter *Instanz deaktivieren*  
