@@ -235,24 +235,35 @@ class Reolink extends IPSModule
 
     private function redactDeep($value)
     {
-        // Schwärzt häufige Schlüssel und URL-Query-Parameter
         if (is_array($value)) {
             $out = [];
             foreach ($value as $k => $v) {
                 $lk = strtolower((string)$k);
+
                 if (in_array($lk, ['password','pass','pwd','token','apikey','authorization','auth','bearer','secret'], true)) {
+                    // Egal welcher Typ -> komplett schwärzen
                     $out[$k] = '***';
-                } elseif (in_array($lk, ['user','username'], true)) {
-                  $out[$k] = is_array($v) ? '***' : $this->maskMiddle((string)$v);
-                } else {
-                    $out[$k] = $this->redactDeep($v);
+                    continue;
                 }
+
+                if (in_array($lk, ['user','username'], true)) {
+                    // NEU: bei Arrays rekursiv weiter, bei Strings maskieren
+                    if (is_array($v)) {
+                        $out[$k] = $this->redactDeep($v); // trifft dann auf 'userName' usw.
+                    } else {
+                        $out[$k] = $this->maskMiddle((string)$v);
+                    }
+                    continue;
+                }
+
+                $out[$k] = $this->redactDeep($v);
             }
             return $out;
         }
+
         if (is_string($value)) {
             $s = $value;
-            // URL-Parameter
+            // URL-Parameter schwärzen
             $s = preg_replace('/([?&])(user|username)=([^&#\s]*)/i', '$1$2=***', $s);
             $s = preg_replace('/([?&])(password|pass|pwd)=([^&#\s]*)/i', '$1$2=***', $s);
             $s = preg_replace('/([?&])(token|apikey)=([^&#\s]*)/i', '$1$2=***', $s);
@@ -261,6 +272,7 @@ class Reolink extends IPSModule
             $s = preg_replace('/(Authorization:\s*Basic\s+)[A-Za-z0-9+\/=]+/i', '$1***', $s);
             return $s;
         }
+
         return $value;
     }
 
