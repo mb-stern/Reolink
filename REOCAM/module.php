@@ -1164,38 +1164,37 @@ class Reolink extends IPSModule
 
     private function ApiVersion(string $domain): string
     {
-        $ability = $this->apiGetAbilityCached();
-
-        if ($domain === 'schedule') {
-            $ver = (int)($ability['scheduleVersion']['ver'] ?? 0);
-            return ($ver === 1) ? 'V20' : 'LEGACY';
-        }
-
         switch ($domain) {
+            case 'record':
+                // Nutze die Fähigkeit "scheduleVersion": ver==1 => V20, sonst Legacy.
+                // (Keine zusätzliche Netzwerkprobe nötig.)
+                $ab = $this->apiGetAbilityCached(); // nutzt deinen bestehenden Ability-Cache
+                $schVer = (int)($ab['scheduleVersion']['ver'] ?? 0);
+                return ($schVer === 1) ? 'V20' : 'LEGACY';
+
+            case 'ftp':
+                // Genau eine Probe: V20 versuchen; wenn das nicht 0 liefert, -> LEGACY annehmen.
+                $t = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
+                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'V20' : 'LEGACY';
+
+            case 'audio':
+                // (Optional) Einmal auf V20 prüfen, sonst LEGACY probieren.
+                // Das verursacht max. EINE zusätzliche Anfrage, war bisher aber kein Doppel-Problem.
+                $t = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', true);
+                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
+                $t2 = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', true);
+                return (is_array($t2) && (($t2[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
+
             case 'email':
+                // unverändert lassen oder analog verschlanken, falls gewünscht
                 $t = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'V20' : 'LEGACY';
 
-            case 'ftp':
-                $t = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-
-            case 'audio':
-                $t = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-                
-            case 'record':
-                $t = $this->apiCall([[ "cmd"=>"GetRecV20", "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetRec", "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-
+            case 'schedule':
+                $ab = $this->apiGetAbilityCached();
+                $ver = (int)($ab['scheduleVersion']['ver'] ?? 0);
+                return ($ver === 1) ? 'V20' : 'LEGACY';
         }
-
         return 'NONE';
     }
 
@@ -1610,9 +1609,6 @@ class Reolink extends IPSModule
         if (!is_string($old) || $old !== $html) {
             $this->SetValue($ident, $html);
         }
-        else {
-        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
-        }       
     }
 
     private function HandlePtzCommand(string $cmd): bool
