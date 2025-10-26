@@ -1285,7 +1285,6 @@ class Reolink extends IPSModule
                 if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
                 $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-        }
 
             case 'push':
                 $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
@@ -1294,6 +1293,7 @@ class Reolink extends IPSModule
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
 
         return 'NONE';
+        }
     }
 
     // ---- Profile-Helfer ----
