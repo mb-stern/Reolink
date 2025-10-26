@@ -1180,9 +1180,6 @@ class Reolink extends IPSModule
     // ---- Ability Cache + zentrale Versionserkennung ----
     private function apiGetAbilityCached(): array
     {
-        // sicherstellen, dass das Attribut existiert (idempotent)
-        $this->RegisterAttributeString("AbilityCache", "");
-
         $attrName = 'AbilityCache';
         $raw = @$this->ReadAttributeString($attrName);
         $now = time();
