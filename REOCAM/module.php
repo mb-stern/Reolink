@@ -32,10 +32,9 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
-        $this->RegisterPropertyBoolean("EnableApiFTP", true);
+        $this->RegisterPropertyBoolean("EnableApiFTP", false);
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
-        $this->RegisterPropertyBoolean('EnableApiPush', true);
 
 
         // Archiv
@@ -118,9 +117,7 @@ class Reolink extends IPSModule
         $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
         $enableSensitivity    = $this->ReadPropertyBoolean("EnableApiSensitivity");
         $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enablePush     = $this->ReadPropertyBoolean("EnableApiPush");
-        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren || $enablePush);
-
+        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren);
 
         // Variablen anlegen/aufräumen (wie gehabt)
         $this->CreateOrUpdateApiVariablesUnified();
@@ -205,16 +202,6 @@ class Reolink extends IPSModule
                     $this->SetValue('SirenEnabled', (bool)$Value);
                 }
                 break;
-
-            case 'PushEnabled':
-                $ok = $this->PushApply((bool)$Value);
-                if ($ok) {
-                    $this->SetValue('PushEnabled', (bool)$Value);
-                } else {
-                    $this->UpdatePushStatus();
-                }
-                break;
-
 
             default:
                 throw new Exception("Invalid Ident");
@@ -995,7 +982,7 @@ class Reolink extends IPSModule
             // WhiteLed (bool)
             $id = @$this->GetIDForIdent("WhiteLed");
             if ($id === false) {
-                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 1);
+                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
                 $this->EnableAction("WhiteLed");
             } else {
                 IPS_SetName($id, "LED Status");
@@ -1007,7 +994,7 @@ class Reolink extends IPSModule
             // Mode (int, Profil REOCAM.WLED)
             $id = @$this->GetIDForIdent("Mode");
             if ($id === false) {
-                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
+                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 0);
                 $this->EnableAction("Mode");
             } else {
                 IPS_SetName($id, "LED Modus");
@@ -1019,7 +1006,7 @@ class Reolink extends IPSModule
             // Bright (int, 0..100)
             $id = @$this->GetIDForIdent("Bright");
             if ($id === false) {
-                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
+                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 0);
                 $this->EnableAction("Bright");
             } else {
                 IPS_SetName($id, "LED Helligkeit");
@@ -1161,22 +1148,6 @@ class Reolink extends IPSModule
         } else {
             if (@$this->GetIDForIdent("SirenEnabled") !== false) $this->UnregisterVariable("SirenEnabled");
         }
-
-        // -------- Push (App-Benachrichtigungen) --------
-        if ($this->ReadPropertyBoolean("EnableApiPush")) {
-            $id = @$this->GetIDForIdent("PushEnabled");
-            if ($id === false) {
-                $this->RegisterVariableBoolean("PushEnabled", "Push-Benachrichtigungen", "~Switch", 7);
-                $this->EnableAction("PushEnabled");
-            } else {
-                IPS_SetName($id, "Push-Benachrichtigungen");
-                IPS_SetPosition($id, 7);
-                IPS_SetVariableCustomProfile($id, "~Switch");
-                $this->EnableAction("PushEnabled");
-            }
-        } else {
-            if (@$this->GetIDForIdent("PushEnabled") !== false) $this->UnregisterVariable("PushEnabled");
-        }
     }
 
     public function ExecuteApiRequests(bool $force = false)
@@ -1220,10 +1191,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiSiren")) {
                 $this->UpdateSirenStatus();             // 1x GetAudioAlarm(V20/Legacy)
             }
-            if ($this->ReadPropertyBoolean("EnableApiPush")) {
-                $this->UpdatePushStatus();            // 1x GetPush(V20/Legacy)
-            }
-
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
@@ -1285,20 +1252,9 @@ class Reolink extends IPSModule
                 if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
                 $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-
-        case 'push':
-            // 1) bevorzugt: globaler Schalter per GetPushCfg (einige FWs)
-            $t = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], 'PUSH', true);
-            if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'CFG';
-
-            // 2) sonst V20/Legacy prüfen
-            $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-            if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-            $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-            return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
+        }
 
         return 'NONE';
-        }
     }
 
     // ---- Profile-Helfer ----
@@ -2436,91 +2392,5 @@ class Reolink extends IPSModule
         if ((bool)GetValue($vid) !== $enabled) {
             $this->SetValue("SirenEnabled", $enabled);
         }
-    }
-
-    // ---------------------------
-    // Push (App-Benachrichtigungen) EIN/AUS
-    // ---------------------------
-
-    private function UpdatePushStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("PushEnabled");
-        if ($vid === false) return;
-
-        // 1) Einfach: GetPush (einige FW haben enable direkt oder unter schedule.enable)
-        $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
-        if (is_array($res) && (($res[0]["code"] ?? -1) === 0)) {
-            $node = $res[0]["value"]["Push"] ?? ($res[0]["value"] ?? null);
-            if (is_array($node)) {
-                if (isset($node["enable"])) {
-                    $this->SetValue("PushEnabled", ((int)$node["enable"] === 1));
-                    return;
-                }
-                if (isset($node["schedule"]["enable"])) {
-                    $this->SetValue("PushEnabled", ((int)$node["schedule"]["enable"] === 1));
-                    return;
-                }
-            }
-        }
-
-        // 2) Fallback (schlank): MD/Alarm lesen und nur flach nach linkage.push suchen
-        $cmd = ($this->ApiVersion("schedule") === "V20") ? "GetMdAlarm" : "GetAlarm";
-        $res2 = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], "PUSH", true);
-        if (is_array($res2) && (($res2[0]["code"] ?? -1) === 0)) {
-            $val = $res2[0]["value"] ?? $res2[0]["initial"] ?? [];
-            $arr = is_array($val) ? $val : [];
-
-            // minimaler, nicht-rekursiver Scan über ein paar typische Stellen
-            $candidates = [];
-            if (isset($arr["MdAlarm"])) $candidates[] = $arr["MdAlarm"];
-            if (isset($arr["Alarm"]))   $candidates[] = $arr["Alarm"];
-
-            foreach ($candidates as $n) {
-                // häufig: newSens.sens[] bzw. sens[]
-                $sens = $n["newSens"]["sens"] ?? $n["sens"] ?? [];
-                if (is_array($sens)) {
-                    foreach ($sens as $s) {
-                        if (isset($s["linkage"]["push"])) {
-                            $this->SetValue("PushEnabled", ((int)$s["linkage"]["push"] === 1));
-                            return;
-                        }
-                    }
-                }
-                // manchmal: linkage auf oberster Ebene
-                if (isset($n["linkage"]["push"])) {
-                    $this->SetValue("PushEnabled", ((int)$n["linkage"]["push"] === 1));
-                    return;
-                }
-            }
-        }
-
-        // 3) GetPushCfg liefert meist nur Intervalle → bewusst nichts ändern
-        $this->dbg("PUSH", "Status unbestimmt (kein enable in GetPush / keine linkage.push gefunden)");
-    }
-
-    private function PushApply(bool $on): bool
-    {
-        // Versuch A: direktes enable
-        $r1 = $this->apiCall([[
-            "cmd"   => "SetPush",
-            "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
-        ]], "PUSH", true);
-        $ok = is_array($r1) && (($r1[0]["code"] ?? -1) === 0);
-
-        // Versuch B: schedule.enable
-        if (!$ok) {
-            $r2 = $this->apiCall([[
-                "cmd"   => "SetPush",
-                "param" => [ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ]
-            ]], "PUSH", true);
-            $ok = is_array($r2) && (($r2[0]["code"] ?? -1) === 0);
-        }
-
-        if ($ok) {
-            $this->UpdatePushStatus(); // ein einziger GET zur UI-Synchronisierung
-        } else {
-            $this->dbg("PUSH", "Setzen fehlgeschlagen (FW/Modell unterstützt den Pfad evtl. nicht)");
-        }
-        return $ok;
     }
 }
