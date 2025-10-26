@@ -130,7 +130,7 @@ class Reolink extends IPSModule
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $$this->CreateOrUpdateApiVariablesUnified();
+            $this->CreateOrUpdateApiVariablesUnified();
         }
     }
 
@@ -1421,7 +1421,7 @@ class Reolink extends IPSModule
     // Liest den Email-Zustand GENAU EINMAL und normalisiert ihn
     private function GetEmailState(): ?array
     {
-        $ver = $this->DetectEmailApiVersion();
+        $ver = $this->ApiVersion('email');
 
         if ($ver === 'V20') {
             $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL');
@@ -1493,7 +1493,7 @@ class Reolink extends IPSModule
 
     private function EmailApply(?bool $enabled=null, ?int $intervalSec=null, ?int $contentMode=null): bool
     {
-        $ver = $this->DetectEmailApiVersion();
+        $ver = $this->ApiVersion('email');
         $okSet = true;
 
         $wantSet = ($enabled !== null || $intervalSec !== null || $contentMode !== null);
@@ -2163,7 +2163,7 @@ class Reolink extends IPSModule
 
     private function FtpApply(bool $on): bool
     {
-        $ver = $this->DetectFtpApiVersion();
+        $ver = $this->ApiVersion('ftp');
         $ok  = false;
 
         if ($ver === "V20") {
@@ -2202,7 +2202,7 @@ class Reolink extends IPSModule
 
     private function GetMdSensitivity(): ?array
     {
-        $ver = $this->$this->ApiVersion('schedule');
+        $ver = $this->ApiVersion('schedule');
         $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
 
         $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM');
@@ -2370,7 +2370,7 @@ class Reolink extends IPSModule
 
     public function SetSirenEnabled(bool $on): bool
     {
-        $isV20 = $this->ApiVersion('schedule');
+        $isV20 = ($this->ApiVersion('audio') === 'V20');
 
         // Erst lesen, damit wir das Schedule-Table unverändert zurückschreiben
         $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
@@ -2392,7 +2392,7 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("SirenEnabled");
         if ($vid === false) return;
 
-        $isV20 = $this->ApiVersion('schedule');
+        $isV20 = ($this->ApiVersion('audio') === 'V20');
         $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
 
         $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO', true);
