@@ -2566,48 +2566,6 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function ReadPushLinkageState(): ?bool
-    {
-        // schedule-Version ermitteln → V20 = GetMdAlarm, sonst GetAlarm
-        $isV20 = ($this->ApiVersion('schedule') === 'V20');
-        $cmd   = $isV20 ? 'GetMdAlarm' : 'GetAlarm';
-
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'PUSH_LINKAGE', true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            return null;
-        }
-
-        // value-Knoten isolieren
-        $node = $this->apiGetNode($res, $isV20 ? 'MdAlarm' : 'Alarm');
-        if (!is_array($node)) {
-            return null;
-        }
-
-        // Rekursive Suche nach linkage.push == 1 (korrektes Self-Referencing)
-        $hasPush = null;
-        $hasPush = function ($n) use (&$hasPush): bool {
-            if (!is_array($n)) {
-                return false;
-            }
-
-            if (isset($n['linkage']) && is_array($n['linkage'])) {
-                $p = $n['linkage']['push'] ?? $n['linkage']['Push'] ?? null;
-                if ($p !== null && (int)$p === 1) {
-                    return true;
-                }
-            }
-
-            foreach ($n as $v) {
-                if (is_array($v) && $hasPush($v)) {
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        return $hasPush($node) ? true : false;
-    }
-
     // --- PUSH: robustes Parsen der MD-Schedule ---
     private function parsePushScheduleActiveFromNode($pushNode): ?bool
     {
