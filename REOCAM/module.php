@@ -35,6 +35,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiFTP", false);
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
+        $this->RegisterPropertyBoolean('EnableApiRecord', true);
 
 
         // Archiv
@@ -112,7 +113,9 @@ class Reolink extends IPSModule
         $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
         $enableSensitivity    = $this->ReadPropertyBoolean("EnableApiSensitivity");
         $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren);
+        $enableRecord  = $this->ReadPropertyBoolean("EnableApiRecord");
+        $anyFeatureOn  = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren || $enableRecord);  
+
 
         $this->CreateOrUpdateApiVariablesUnified();
 
@@ -206,6 +209,12 @@ class Reolink extends IPSModule
                 }
                 // nach Ausführung wieder auf 0 setzen, damit die Auswahl "entprellt"
                 if ($ok) { $this->SetValue('SirenAction', 0); }
+                break;
+
+            case 'RecEnabled':
+                $ok = $this->SetRecEnabled((bool)$Value);
+                if ($ok) { $this->SetValue('RecEnabled', (bool)$Value); }
+                else     { $this->UpdateRecStatus(); }
                 break;
 
             default:
@@ -1075,6 +1084,14 @@ class Reolink extends IPSModule
             $this->UnregisterVariable("SirenEnabled");
             $this->UnregisterVariable("SirenAction");
         }
+
+        // -------- Recording / Schedule --------
+        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
+            $this->RegisterVariableBoolean("RecEnabled", "Aufnahme (Zeitplan)", "~Switch", 6);
+            $this->EnableAction("RecEnabled");
+        } else {
+            $this->UnregisterVariable("RecEnabled");
+        }
     }
 
     public function ExecuteApiRequests(bool $force = false)
@@ -1166,6 +1183,13 @@ class Reolink extends IPSModule
                 if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
                 $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
+                
+            case 'record':
+                $t = $this->apiCall([[ "cmd"=>"GetRecV20", "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
+                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
+                $t = $this->apiCall([[ "cmd"=>"GetRec", "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
+                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
+
         }
 
         return 'NONE';
@@ -2238,14 +2262,13 @@ class Reolink extends IPSModule
         }
     }
 
-       // ---------------------------
+    // ---------------------------
     // Sirene ansteuern
     // ---------------------------
 
-    // ---- Sirene: Sofort abspielen (times) ----
     private function SirenPlayTimes(int $times): bool
     {
-        $times = max(1, min(10, $times)); // konservativ kappen
+        $times = max(1, min(10, $times)); 
         $payload = [[
             "cmd"   => "AudioAlarmPlay",
             "param" => [
@@ -2260,7 +2283,6 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    // ---- Sirene: Manuell Start/Stop ----
     private function SirenManualSwitch(bool $on): bool
     {
         $payload = [[
@@ -2275,5 +2297,82 @@ class Reolink extends IPSModule
         $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
         if (!$ok) $this->dbg('AUDIO_MANU', 'FAIL', $res ?? null);
         return $ok;
+    }
+
+
+    // ---------------------------
+    // SRecord Status
+    // ---------------------------
+
+    private function UpdateRecStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("RecEnabled");
+        if ($vid === false) return;
+
+        $ver = $this->ApiVersion('record');
+        if ($ver === 'NONE') { $this->dbg('REC', 'Keine Recording-API'); return; }
+
+        $cmd = ($ver === 'V20') ? 'GetRecV20' : 'GetRec';
+        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
+        if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
+
+        $rec = $res[0]['value']['Rec'] ?? $res[0]['initial']['Rec'] ?? null;
+        if (!is_array($rec)) return;
+
+        // V20 hat "enable" direkt am Rec-Objekt; Legacy meist im schedule.enable
+        $enabled = null;
+        if (array_key_exists('enable', $rec)) {
+            $enabled = ((int)$rec['enable'] === 1);
+        } elseif (isset($rec['schedule']['enable'])) {
+            $enabled = ((int)$rec['schedule']['enable'] === 1);
+        }
+
+        if ($enabled !== null && ((bool)GetValue($vid) !== $enabled)) {
+            $this->SetValue('RecEnabled', $enabled);
+        }
+    }
+
+    public function SetRecEnabled(bool $on): bool
+    {
+        $ver = $this->ApiVersion('record');
+        if ($ver === 'NONE') { $this->dbg('REC', 'Nicht unterstützt'); return false; }
+
+        // Erst aktuellen Stand holen (wir übernehmen vorhandene Felder wie preRec/postRec/schedule)
+        $get  = ($ver === 'V20') ? 'GetRecV20' : 'GetRec';
+        $set  = ($ver === 'V20') ? 'SetRecV20' : 'SetRec';
+        $resp = $this->apiCall([[ "cmd"=>$get, "action"=>1, "param"=>["channel"=>0] ]], 'REC_GET');
+        if (!is_array($resp) || ($resp[0]['code']??1) !== 0) return false;
+
+        $rec = $resp[0]['value']['Rec'] ?? $resp[0]['initial']['Rec'] ?? null;
+        if (!is_array($rec)) $rec = [];
+
+        if ($ver === 'V20') {
+            // V20: einfach Rec.enable setzen
+            $rec['enable'] = $on ? 1 : 0;
+            // channel nicht vergessen, falls nicht vorhanden
+            if (!isset($rec['channel'])) $rec['channel'] = 0;
+
+            $payload = [[ "cmd"=>$set, "param"=> [ "Rec" => $rec ] ]];
+            $r2 = $this->apiCall($payload, 'REC_SET');
+            $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+            if ($ok) $this->UpdateRecStatus();
+            return $ok;
+
+        } else {
+            // Legacy: schedule.enable toggeln (Tabelle unangetastet)
+            if (!isset($rec['schedule']) || !is_array($rec['schedule'])) {
+                $rec['schedule'] = ["channel"=>0, "enable"=> ($on ? 1 : 0)];
+            } else {
+                $rec['schedule']['enable'] = ($on ? 1 : 0);
+                if (!isset($rec['schedule']['channel'])) $rec['schedule']['channel'] = 0;
+            }
+            if (!isset($rec['channel'])) $rec['channel'] = 0;
+
+            $payload = [[ "cmd"=>$set, "param"=> [ "Rec" => $rec ] ]];
+            $r2 = $this->apiCall($payload, 'REC_SET');
+            $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+            if ($ok) $this->UpdateRecStatus();
+            return $ok;
+        }
     }
 }
