@@ -2099,7 +2099,10 @@ class Reolink extends IPSModule
 
     public function SetMdSensitivity(int $level): bool
     {
+        // UI: 1..50
         $level = max(1, min(50, $level));
+        // Kamera erwartet invertiert: 50..1
+        $levelCam = 51 - $level;
 
         $state = $this->GetMdSensitivity();
         if ($state === null) return false;
@@ -2108,12 +2111,12 @@ class Reolink extends IPSModule
         $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
         $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
 
-        // vorhandene Segmente übernehmen, nur sensitivity angleichen
+        // vorhandene Segmente übernehmen, nur sensitivity angleichen (mit Kamera-Wert!)
         $segments = $state['segments'];
         if (empty($segments)) {
-            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$level ]];
+            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
         } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $level; }
+            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
             unset($s);
         }
 
@@ -2125,7 +2128,7 @@ class Reolink extends IPSModule
                         "type"       => "md",
                         "useNewSens" => 1,
                         "newSens"    => [
-                            "sensDef" => $level,
+                            "sensDef" => $levelCam,   // ebenfalls invertiert setzen
                             "sens"    => $segments
                         ],
                         "channel"    => 0
@@ -2159,10 +2162,14 @@ class Reolink extends IPSModule
         $st = $this->GetMdSensitivity();
         if (!$st) return;
 
-        // Zeige die aktuell wirksame Empfindlichkeit (Zeitplan berücksichtigt)
-        $lvl = max(1, min(50, (int)($st['active'] ?? 0)));
-        if ((int)GetValue($vid) !== $lvl) {
-            $this->SetValue("MdSensitivity", $lvl);
+        // Kamera liefert 1..50
+        $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
+
+        // UI zeigt invertiert (50..1)
+        $lvlUI = 51 - $lvlCam;
+
+        if ((int)GetValue($vid) !== $lvlUI) {
+            $this->SetValue("MdSensitivity", $lvlUI);
         }
     }
 
