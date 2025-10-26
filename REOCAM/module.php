@@ -2497,87 +2497,88 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
+        $idVar = @$this->GetIDForIdent("PushEnabled");
+        if ($idVar === false) return;
+
+        // Nur EIN Call – exakt das, was wir brauchen
         $resp = $this->apiCall([
             ["cmd" => "GetPushV20", "param" => ["channel" => 0]]
-        ], "PUSH");
+        ], 'PUSH', true);
 
-        if (!is_array($resp) || !isset($resp[0]['value']['Push'])) {
-            $this->dbg('PUSH', 'Ungueltige Antwort', $resp ?? null);
+        if (!(is_array($resp) && isset($resp[0]['value']))) {
+            $this->dbg('PUSH', 'GetPushV20: ungueltige Antwort', $resp ?? null);
             return;
         }
 
-        $push = $resp[0]['value']['Push'];
-        // Tabelle extrahieren – String wie "111111..." oder "000000..."
-        $table = $push['schedule']['table']['MD'] ?? null;
-        if (!is_string($table)) {
-            $this->dbg('PUSH', 'Kein schedule.table.MD gefunden', $push);
+        // schedule.table.MD kann in value ODER initial liegen – beide prüfen
+        $v = $resp[0];
+        $md =
+            $v['value']['Push']['schedule']['table']['MD']
+            ?? $v['initial']['Push']['schedule']['table']['MD']
+            ?? null;
+
+        if (!is_string($md)) {
+            $this->dbg('PUSH', 'Kein schedule.table.MD gefunden', $v);
             return;
         }
 
-        // Wenn die Tabelle mindestens ein '1' enthält, ist Push aktiv
-        $enabled = str_contains($table, '1');
+        // Mindestens eine '1' => aktiv
+        $enabled = (strpos($md, '1') !== false);
 
-        $id = @$this->GetIDForIdent('PushEnabled');
-        if ($id !== false) {
-            $old = GetValue($id);
-            if ($old !== $enabled) {
-                $this->SetValue('PushEnabled', $enabled);
-                $this->dbg('PUSH', 'Status geaendert', ['alt' => $old, 'neu' => $enabled]);
-            } else {
-                $this->dbg('PUSH', 'Status unveraendert', ['value' => $enabled]);
-            }
+        $old = (bool)GetValue($idVar);
+        if ($old !== $enabled) {
+            $this->SetValue("PushEnabled", $enabled);
+            $this->dbg('PUSH', 'Status geaendert', ['alt' => $old, 'neu' => $enabled, 'len' => strlen($md)]);
+        } else {
+            $this->dbg('PUSH', 'Status unveraendert', ['value' => $enabled, 'len' => strlen($md)]);
         }
     }
 
     private function PushApply(bool $on): bool
     {
-        $ver = $this->ApiVersion('push');
-        $ok  = false;
-
-        if ($ver === "V20") {
-            // 7 Tage à 48 Slots
-            $row = str_repeat($on ? '1' : '0', 48);
-            $table = [
-                'Sun' => $row, 'Mon' => $row, 'Tue' => $row, 'Wed' => $row,
-                'Thu' => $row, 'Fri' => $row, 'Sat' => $row,
-                // Einige FW liefern/erwarten zusätzlich eine MD-Gesamtkette:
-                'MD'  => str_repeat($on ? '1' : '0', 7 * 48)
-            ];
-
-            $r = $this->apiCall([[
-                "cmd"   => "SetPushV20",
-                "param" => [ "Push" => [ "schedule" => [ "table" => $table ], "channel" => 0 ] ]
-            ]], 'PUSH', true);
-            $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-
-            // Fallback: reines enable (falls Tabelle nicht unterstützt)
-            if (!$ok) {
-                $r = $this->apiCall([[
-                    "cmd"   => "SetPushV20",
-                    "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
-                ]], 'PUSH', true);
-                $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-            }
-
-        } else { // LEGACY
-            // Erst schedule.enable, dann Fallback auf top-level enable
-            $p = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ] ]];
-            $r1 = $this->apiCall($p, 'PUSH', true);
-            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-
-            if (!$ok) {
-                $p2 = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ] ]];
-                $r2 = $this->apiCall($p2, 'PUSH', true);
-                $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-            }
+        // 1) Aktuelle Struktur holen (ein Call)
+        $g = $this->apiCall([
+            ["cmd" => "GetPushV20", "param" => ["channel" => 0]]
+        ], 'PUSH_SET', true);
+        if (!(is_array($g) && isset($g[0]['value']['Push']))) {
+            $this->dbg('PUSH', 'GetPushV20 vor Set fehlgeschlagen', $g ?? null);
+            return false;
         }
 
-        if ($ok) {
-            $this->UpdatePushStatus(); // UI sync über die MD-Prüfung
-        } else {
-            $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt');
+        // 2) MD-String extrahieren (value oder initial)
+        $node = $g[0];
+        $push = $node['value']['Push'] ?? ($node['initial']['Push'] ?? null);
+        if (!is_array($push)) {
+            $this->dbg('PUSH', 'Kein Push-Knoten vorhanden', $node);
+            return false;
         }
-        return $ok;
+
+        $md = $push['schedule']['table']['MD'] ?? null;
+        if (!is_string($md) || $md === '') {
+            // Fallback: Länge 7*24=168 Slots ist üblich, ersatzweise 168
+            $md = str_repeat('0', 168);
+        }
+
+        // 3) Nur MD neu setzen – enable darf 1 bleiben (so liefert die FW es ohnehin)
+        $newMd = str_repeat($on ? '1' : '0', strlen($md));
+        $push['schedule']['table']['MD'] = $newMd;
+        $push['enable'] = 1; // so erwartet/liefern viele FWs den Knoten; entscheidend ist die Tabelle
+
+        // 4) Zurückschreiben (ein Call)
+        $r = $this->apiCall([
+            ["cmd" => "SetPushV20", "param" => ["Push" => $push]]
+        ], 'PUSH_SET', true);
+
+        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        if (!$ok) {
+            $this->dbg('PUSH', 'SetPushV20 fehlgeschlagen', $r ?? null);
+            return false;
+        }
+
+        // 5) UI synchronisieren (ein Call reicht – hier optional sogar sparen und direkt setzen)
+        $this->SetValue('PushEnabled', $on);
+        $this->dbg('PUSH', 'Set ok, UI gesetzt', ['on' => $on, 'len' => strlen($newMd)]);
+        return true;
     }
 
     // --- PUSH: robustes Parsen der MD-Schedule ---
