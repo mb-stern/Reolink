@@ -35,7 +35,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiFTP", false);
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
-        $this->RegisterPropertyBoolean('EnableApiPush', true);
+
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -117,15 +117,17 @@ class Reolink extends IPSModule
         $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
         $enableSensitivity    = $this->ReadPropertyBoolean("EnableApiSensitivity");
         $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enablePush    = $this->ReadPropertyBoolean("EnableApiPush");
-        $anyFeatureOn  = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren || $enablePush);
+        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren);
 
         // Variablen anlegen/aufräumen (wie gehabt)
         $this->CreateOrUpdateApiVariablesUnified();
 
         if ($anyFeatureOn) {
+            // 1) Token holen (setzt Erneuerungstimer selbst)
             $this->GetToken();
-            $this->ExecuteApiRequests(true);              // <— einmaliger Sofort-Refresh
+            // 2) EINMALIGER Refresh jetzt (kein Timer parallel!)
+            $this->ExecuteApiRequests(true); // force first run
+            // 3) Erst JETZT den periodischen Timer aktivieren
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
@@ -198,15 +200,6 @@ class Reolink extends IPSModule
                 $ok = $this->SetSirenEnabled((bool)$Value);
                 if ($ok) {
                     $this->SetValue('SirenEnabled', (bool)$Value);
-                }
-                break;
-
-            case 'PushEnabled':
-                $ok = $this->PushApply((bool)$Value);
-                if ($ok) {
-                    $this->SetValue('PushEnabled', (bool)$Value);
-                } else {
-                    $this->UpdatePushStatus(); // zurücklesen
                 }
                 break;
 
@@ -989,7 +982,7 @@ class Reolink extends IPSModule
             // WhiteLed (bool)
             $id = @$this->GetIDForIdent("WhiteLed");
             if ($id === false) {
-                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 1);
+                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
                 $this->EnableAction("WhiteLed");
             } else {
                 IPS_SetName($id, "LED Status");
@@ -1001,7 +994,7 @@ class Reolink extends IPSModule
             // Mode (int, Profil REOCAM.WLED)
             $id = @$this->GetIDForIdent("Mode");
             if ($id === false) {
-                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
+                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 0);
                 $this->EnableAction("Mode");
             } else {
                 IPS_SetName($id, "LED Modus");
@@ -1013,7 +1006,7 @@ class Reolink extends IPSModule
             // Bright (int, 0..100)
             $id = @$this->GetIDForIdent("Bright");
             if ($id === false) {
-                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
+                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 0);
                 $this->EnableAction("Bright");
             } else {
                 IPS_SetName($id, "LED Helligkeit");
@@ -1053,10 +1046,10 @@ class Reolink extends IPSModule
             // Variablen
             $id = @$this->GetIDForIdent("EmailNotify");
             if ($id === false) {
-                $this->RegisterVariableBoolean("EmailNotify", "E-Mail Alarm", "~Switch", 2);
+                $this->RegisterVariableBoolean("EmailNotify", "E-Mail Versand", "~Switch", 2);
                 $this->EnableAction("EmailNotify");
             } else {
-                IPS_SetName($id, "E-Mail Alarm");
+                IPS_SetName($id, "E-Mail Versand");
                 IPS_SetPosition($id, 3);
                 IPS_SetVariableCustomProfile($id, "~Switch");
                 $this->EnableAction("EmailNotify");
@@ -1107,10 +1100,10 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiFTP")) {
             $id = @$this->GetIDForIdent("FTPEnabled");
             if ($id === false) {
-                $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 4);
+                $this->RegisterVariableBoolean("FTPEnabled", "FTP-Upload", "~Switch", 4);
                 $this->EnableAction("FTPEnabled");
             } else {
-                IPS_SetName($id, "FTP");
+                IPS_SetName($id, "FTP-Upload");
                 IPS_SetPosition($id, 6);
                 IPS_SetVariableCustomProfile($id, "~Switch");
                 $this->EnableAction("FTPEnabled");
@@ -1144,34 +1137,16 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
             $id = @$this->GetIDForIdent("SirenEnabled");
             if ($id === false) {
-                $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 6);
+                $this->RegisterVariableBoolean("SirenEnabled", "Sirene aktiv", "~Switch", 6);
                 $this->EnableAction("SirenEnabled");
             } else {
-                IPS_SetName($id, "Sirene");
+                IPS_SetName($id, "Sirene aktiv");
                 IPS_SetPosition($id, 10);
                 IPS_SetVariableCustomProfile($id, "~Switch");
                 $this->EnableAction("SirenEnabled");
             }
         } else {
             if (@$this->GetIDForIdent("SirenEnabled") !== false) $this->UnregisterVariable("SirenEnabled");
-        }
-
-        // -------- PUSH (App-Push-Nachrichtenen) --------
-        if ($this->ReadPropertyBoolean("EnableApiPush")) {
-            $id = @$this->GetIDForIdent("PushEnabled");
-            if ($id === false) {
-                $this->RegisterVariableBoolean("PushEnabled", "Push-Nachrichten", "~Switch", 7);
-                $this->EnableAction("PushEnabled");
-            } else {
-                IPS_SetName($id, "Push-Nachrichten");
-                IPS_SetPosition($id, 7);
-                IPS_SetVariableCustomProfile($id, "~Switch");
-                $this->EnableAction("PushEnabled");
-            }
-        } else {
-            if (@$this->GetIDForIdent("PushEnabled") !== false) {
-                $this->UnregisterVariable("PushEnabled");
-            }
         }
     }
 
@@ -1216,11 +1191,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiSiren")) {
                 $this->UpdateSirenStatus();             // 1x GetAudioAlarm(V20/Legacy)
             }
-            if ($this->ReadPropertyBoolean("EnableApiPush")) {
-                $this->UpdatePushStatus(); // 1x GetPush(V20/Legacy)
-            }
-
-            
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
@@ -1249,6 +1219,13 @@ class Reolink extends IPSModule
         return $ability;
     }
 
+    /**
+     * $domain:
+     *  - 'schedule' -> V20/LEGACY via Ability.scheduleVersion.ver
+     *  - 'email'    -> probe GetEmailV20
+     *  - 'ftp'      -> probe GetFtpV20 / GetFtp
+     *  - 'audio'    -> probe GetAudioAlarmV20 / GetAudioAlarm
+     */
     private function ApiVersion(string $domain): string
     {
         $ability = $this->apiGetAbilityCached();
@@ -1258,6 +1235,7 @@ class Reolink extends IPSModule
             return ($ver === 1) ? 'V20' : 'LEGACY';
         }
 
+        // Für API-Domänen, die Reolink nicht zuverlässig in Ability ausweist – Probe Calls:
         switch ($domain) {
             case 'email':
                 $t = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
@@ -1273,19 +1251,6 @@ class Reolink extends IPSModule
                 $t = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
                 if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
                 $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-
-            case 'push':
-                // V20 zuerst – mit action:1 probieren
-                $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                // Fallback ohne action
-                $t = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                // Legacy – mit/ohne action testen
-                $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'LEGACY';
-                $t = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
                 return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
         }
 
@@ -2428,378 +2393,4 @@ class Reolink extends IPSModule
             $this->SetValue("SirenEnabled", $enabled);
         }
     }
-
-    // ---------------------------
-    // PUSH EIN/AUS
-    // ---------------------------
-
-    // ---- PUSH (effektiver Zustand über schedule.table.MD) ----
-
-    private function ReadPushLinkageState(): ?bool
-    {
-        // V20 lesen
-        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $push = $res[0]['value']['Push'] ?? null;
-            if (is_array($push)) {
-                // 1) V20: schedule.table.MD ist die maßgebliche Kette
-                $md = $push['schedule']['table']['MD'] ?? null;
-                if (is_string($md) && $md !== '') {
-                    // Effektiv AN, sobald mindestens ein Slot aktiv ist
-                    $on = (strpos($md, '1') !== false);
-                    $this->dbg('PUSH', 'V20 schedule ausgewertet', ['value' => $on]);
-                    return $on;
-                }
-                // 2) Fallback: wenn keine MD-Kette vorhanden, auf enable zurückfallen
-                if (isset($push['enable'])) {
-                    $on = ((int)$push['enable'] === 1);
-                    $this->dbg('PUSH', 'V20 fallback enable', ['value' => $on]);
-                    return $on;
-                }
-            }
-        }
-
-        // Legacy-Fallbacks: manche liefern action=1, andere nicht
-        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
-            $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-        }
-        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
-            if (is_array($node)) {
-                // Versuche auch hier eine MD-Kette zu finden
-                $md = $node['schedule']['table']['MD'] ?? null;
-                if (is_string($md) && $md !== '') {
-                    $on = (strpos($md, '1') !== false);
-                    $this->dbg('PUSH', 'LEGACY schedule ausgewertet', ['value' => $on]);
-                    return $on;
-                }
-                if (isset($node['schedule']['enable'])) {
-                    $on = ((int)$node['schedule']['enable'] === 1);
-                    $this->dbg('PUSH', 'LEGACY fallback schedule.enable', ['value' => $on]);
-                    return $on;
-                }
-                if (isset($node['enable'])) {
-                    $on = ((int)$node['enable'] === 1);
-                    $this->dbg('PUSH', 'LEGACY fallback enable', ['value' => $on]);
-                    return $on;
-                }
-            }
-        }
-
-        // Nichts Verwertbares
-        $this->dbg('PUSH', 'Kein verwertbarer Zustand gefunden');
-        return null;
-    }
-
-    // --- HINZUFÜGEN: kleiner Helper, keine Closures, nur genau was wir brauchen ---
-    private function pushTableEnabled(array $table): ?bool
-    {
-        // Reolink nutzt 96 oder 144 Zeichen lange 0/1-Strings pro Tag (Slot = 10/15 Minuten)
-        // Aktiv ist, wenn in irgendeinem relevanten String mindestens eine '1' vorkommt.
-        $keys = ['AI_PEOPLE', 'AI_VEHICLE', 'AI_DOG_CAT', 'MD'];
-        $seen = false;
-        foreach ($keys as $k) {
-            if (!isset($table[$k])) { continue; }
-            $seen = true;
-            $s = (string)$table[$k];
-            if ($s !== '' && strpos($s, '1') !== false) {
-                return true;    // mindestens ein Slot aktiv → Push aktiv
-            }
-        }
-        // Wenn wir wenigstens einen der Keys gesehen haben, aber keine '1' vorkam → aus
-        if ($seen) {
-            return false;
-        }
-        // Keine Tabelle / keine relevanten Keys gefunden → unbekannt
-        return null;
-    }
-
-    // Neu: effektiven MD-Push-Status aus GetPushV20 ermitteln
-    private function parsePushV20EffectiveMd(array $resp): ?bool
-    {
-        // Erwartete Struktur: $resp[0]['value']['Push']['schedule']['table']['MD'] = "000.../111..."
-        if (!isset($resp[0]['value']['Push'])) {
-            return null;
-        }
-        $push = $resp[0]['value']['Push'];
-
-        // 1) Primär nur MD (Bewegungserkennung) auswerten
-        $md = $push['schedule']['table']['MD'] ?? null;
-        if (is_string($md)) {
-            // mind. ein '1' = irgendwo im Zeitraster aktiv
-            return (strpos($md, '1') !== false);
-        }
-
-        // 2) Falls eine FW MD nicht liefert: auf AI-Felder zurückfallen (selten nötig)
-        $tbl = $push['schedule']['table'] ?? null;
-        if (is_array($tbl)) {
-            foreach (['AI_PEOPLE','AI_VEHICLE','AI_DOG_CAT'] as $k) {
-                if (isset($tbl[$k]) && is_string($tbl[$k]) && strpos($tbl[$k], '1') !== false) {
-                    return true;
-                }
-            }
-            // Tabelle vorhanden aber ohne '1' → aus
-            return false;
-        }
-
-        // 3) Letzter Fallback: topside "enable" (bei dir immer 1, daher nur Notlösung)
-        if (isset($push['enable'])) {
-            return ((int)$push['enable'] === 1);
-        }
-        return null;
-    }
-
-    private function UpdatePushStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("PushEnabled");
-        if ($vid === false) return;
-
-        $ver = $this->ApiVersion('push');
-
-        if ($ver === 'V20') {
-            $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], "PUSH", true);
-            if (is_array($res) && (($res[0]["code"] ?? -1) === 0)) {
-                // MD-Kette/AI_* auswerten wie bisher (Dein Code ist hier okay)
-                // …
-            }
-            return;
-        }
-
-        // Legacy nur hier:
-        $res = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], "PUSH", true)
-            ?: $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
-        if (is_array($res) && (($res[0]["code"] ?? -1) === 0)) {
-            // schedule.table.MD / AI_* / schedule.enable / enable auswerten – wie in Deinem Legacy-Zweig
-            // …
-        }
-    }
-
-
-    private function SetPushV20Effective(bool $on): bool
-    {
-        // Erst die aktuelle Länge der MD-Kette holen
-        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            return false;
-        }
-        $push = $res[0]['value']['Push'] ?? null;
-        if (!is_array($push)) {
-            return false;
-        }
-        $md = $push['schedule']['table']['MD'] ?? '';
-        if (!is_string($md) || $md === '') {
-            // Falls es keine MD-Kette gibt, lieber clean abbrechen
-            $this->dbg('PUSH', 'MD-Kette fehlt in V20');
-            return false;
-        }
-        $len = strlen($md);
-        $new = str_repeat($on ? '1' : '0', $len);
-
-        // Nur schreiben, wenn sich wirklich etwas ändert
-        if ($md === $new) {
-            $this->dbg('PUSH', 'MD-Kette unverändert', ['len' => $len, 'on' => $on]);
-            return true;
-        }
-
-        $payload = [[
-            "cmd"   => "SetPushV20",
-            "param" => [
-                "Push" => [
-                    "channel"  => 0,
-                    // enable unangetastet lassen – die App hält ihn oft auf 1
-                    "schedule" => [
-                        "channel" => 0,
-                        "table"   => [
-                            "MD" => $new
-                        ]
-                    ]
-                ]
-            ]
-        ]];
-
-        $r = $this->apiCall($payload, 'PUSH', false);
-        $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-        if ($ok) {
-            $this->dbg('PUSH', 'MD-Kette gesetzt', ['len' => $len, 'on' => $on]);
-        } else {
-            $this->dbg('PUSH', 'SetPushV20 fehlgeschlagen', $r ?? null);
-        }
-        return $ok;
-    }
-
-    private function PushApply(bool $on): bool
-    {
-        $ver = $this->ApiVersion('push');
-        $ok  = false;
-
-        if ($ver === "V20") {
-            // MD-Länge nur bei V20 bestimmen
-            $len = 0;
-            $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], "PUSH", true);
-            if (is_array($res) && (($res[0]["code"] ?? -1) === 0)) {
-                $md  = (string)($res[0]["value"]["Push"]["schedule"]["table"]["MD"] ?? "");
-                $len = strlen($md);
-            }
-            if ($len <= 0) $len = 7 * 24; // Fallback 168 Slots
-
-            // 1) optional top-level enable (FW-abhängig)
-            $p1 = [[ "cmd"=>"SetPushV20", "param"=>[ "Push" => [ "enable" => ($on?1:0), "channel" => 0 ] ] ]];
-            $r1 = $this->apiCall($p1, "PUSH", true);
-            $ok = is_array($r1) && (($r1[0]["code"] ?? -1) === 0);
-
-            // 2) MD-Kette explizit setzen
-            $mdStr = str_repeat($on ? "1" : "0", $len);
-            $p2 = [[ "cmd"=>"SetPushV20",
-                    "param"=>[ "Push" => [ "schedule" => [ "channel"=>0, "table" => [ "MD" => $mdStr ] ] ] ] ]];
-            $r2 = $this->apiCall($p2, "PUSH", true);
-            $ok = $ok || (is_array($r2) && (($r2[0]["code"] ?? -1) === 0));
-        } else {
-            // Legacy: KEIN GetPushV20 mehr!
-            $p = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "enable" => ($on?1:0), "channel" => 0 ] ] ]];
-            $r1 = $this->apiCall($p, "PUSH", true);
-            $ok = is_array($r1) && (($r1[0]["code"] ?? -1) === 0);
-            if (!$ok) {
-                $p2 = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "schedule" => [ "enable" => ($on?1:0) ], "channel" => 0 ] ] ]];
-                $r2 = $this->apiCall($p2, "PUSH", true);
-                $ok = is_array($r2) && (($r2[0]["code"] ?? -1) === 0);
-            }
-        }
-
-        // UI sync: genau EIN GET
-        $this->UpdatePushStatus();
-        if (!$ok) $this->dbg("PUSH", "Setzen fehlgeschlagen (FW-spezifisches Verhalten?)");
-        return $ok;
-    }
-
-        // ==========================================
-    // PUSH: Read-Only Status (keine Änderungen!)
-    // Erkennt Modus (CFG/V20/LEGACY) mit Early-Exit
-    // und liest dann genau EINEN passenden Endpunkt.
-    // ==========================================
-
-    private function Push_Read_DetectMode(): string
-    {
-        // 1) Cache nutzen, falls vorhanden
-        $mode = method_exists($this, 'ReadAttributeString') ? $this->ReadAttributeString('PushMode_RO') : '';
-        if ($mode !== '') return $mode;
-
-        // 2) Read-only Probe in sinnvoller Reihenfolge mit EARLY EXIT
-        //    (a) GetPushCfg  -> modernere Cfg-Schicht
-        $r = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], "PUSH", true);
-        if (is_array($r) && (($r[0]["code"] ?? -1) === 0) && isset($r[0]["value"]["PushCfg"])) {
-            $mode = 'CFG';
-        } else {
-            //    (b) GetPushV20 -> neue Firmware
-            $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], "PUSH", true);
-            if (is_array($r) && (($r[0]["code"] ?? -1) === 0) && isset($r[0]["value"]["Push"])) {
-                $mode = 'V20';
-            } else {
-                //    (c) GetPush   -> Legacy
-                $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
-                if (is_array($r) && (($r[0]["code"] ?? -1) === 0) && isset($r[0]["value"]["Push"])) {
-                    $mode = 'LEGACY';
-                } else {
-                    $mode = 'UNKNOWN';
-                }
-            }
-        }
-
-        $this->dbg('PUSH', 'DetectMode(RO) -> ' . $mode);
-        if (method_exists($this, 'WriteAttributeString')) {
-            $this->WriteAttributeString('PushMode_RO', $mode);
-        }
-        return $mode;
-    }
-
-    private function Push_Read_CFG(): array
-    {
-        $r = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], "PUSH", true);
-        return (is_array($r) && (($r[0]["code"] ?? -1) === 0)) ? $r : [];
-    }
-
-    private function Push_Read_V20(): array
-    {
-        $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], "PUSH", true);
-        return (is_array($r) && (($r[0]["code"] ?? -1) === 0)) ? $r : [];
-    }
-
-    private function Push_Read_Legacy(): array
-    {
-        // Read-only: nur ein Versuch ohne action:1 (keine "initial/range"-Zusatzlast)
-        $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
-        return (is_array($r) && (($r[0]["code"] ?? -1) === 0)) ? $r : [];
-    }
-
-    private function Push_Extract_Enable_From(array $res): ?int
-    {
-        // Versuche, enable an typischen Stellen zu finden; rein lesend.
-        // Rückgabe 0/1 oder null, wenn nicht vorhanden.
-        $v = $res[0]["value"] ?? null;
-        if (!is_array($v)) return null;
-
-        // V20/Legacy: value.Push.enable
-        $en = $v["Push"]["enable"] ?? null;
-        if (is_int($en) || is_string($en)) return (int)$en;
-
-        // Legacy-Fallback: value.Push.schedule.enable
-        $en = $v["Push"]["schedule"]["enable"] ?? null;
-        if (is_int($en) || is_string($en)) return (int)$en;
-
-        // CFG-Schicht: typischerweise kein "enable", ggf. nur Intervalle
-        return null;
-    }
-
-    private function Push_Extract_Lengths(array $res): array
-    {
-        // Beobachtbare Längen der Zeitraster (ohne Interpretation)
-        $v = $res[0]["value"] ?? [];
-        $tab = $v["Push"]["schedule"]["table"] ?? [];
-        $len = fn($s) => (is_string($s) ? strlen($s) : null);
-
-        return [
-            'md_len'        => $len($tab['MD']         ?? null),
-            'ai_people_len' => $len($tab['AI_PEOPLE']  ?? null),
-            'ai_vehicle_len'=> $len($tab['AI_VEHICLE'] ?? null),
-            'ai_dogcat_len' => $len($tab['AI_DOG_CAT'] ?? null),
-        ];
-    }
-
-    /**
-     * PUBLIC: Nur Lesen. Fragt GENAU EINEN Endpunkt je nach Modus ab
-     * und gibt ein schlankes, normalisiertes Array + Raw zurück.
-     */
-    public function Push_ReadStatus_RO(): array
-    {
-        $mode = $this->Push_Read_DetectMode();
-
-        $res  = [];
-        if ($mode === 'CFG')    $res = $this->Push_Read_CFG();
-        elseif ($mode === 'V20')$res = $this->Push_Read_V20();
-        elseif ($mode === 'LEGACY') $res = $this->Push_Read_Legacy();
-
-        $enabled = $this->Push_Extract_Enable_From($res);
-        $lens    = ($mode === 'V20' || $mode === 'LEGACY') ? $this->Push_Extract_Lengths($res) : [
-            'md_len'=>null,'ai_people_len'=>null,'ai_vehicle_len'=>null,'ai_dogcat_len'=>null
-        ];
-
-        $out = [
-            'mode'    => $mode,        // CFG | V20 | LEGACY | UNKNOWN
-            'enabled' => $enabled,     // 0|1|null
-            'lengths' => $lens,        // reine Beobachtung
-            'raw'     => $res          // vollständige Rohantwort zum Debuggen
-        ];
-        $this->dbg('PUSH', 'ReadStatus_RO -> ' . json_encode($out, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
-        return $out;
-    }
-
-    /** Hilfsfunktion: Cache leeren, falls du den Modus neu detektieren willst */
-    public function Push_Read_ResetModeCache(): void
-    {
-        if (method_exists($this, 'WriteAttributeString')) {
-            $this->WriteAttributeString('PushMode_RO', '');
-        }
-        $this->dbg('PUSH', 'Read-Only Modus-Cache geleert');
-    }
-
 }
