@@ -33,7 +33,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiFTP", false);
-        $this->RegisterPropertyBoolean('EnableApiAlarm', true); 
+        $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
 
 
@@ -71,33 +71,30 @@ class Reolink extends IPSModule
 
         $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
-            $this->SetStatus(104); // IS_INACTIVE
+            $this->SetStatus(104);
             foreach ([
                 "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
                 "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
-            // Token & Flags leeren
             $this->WriteAttributeString("ApiToken", "");
             $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
             $this->WriteAttributeBoolean("TokenRefreshing", false);
             return;
         }
 
-        $this->SetStatus(102); // IS_ACTIVE
+        $this->SetStatus(102);
 
-        // Hook sicherstellen
+        // Hook etc. (wie gehabt) …
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
             $this->dbg('WEBHOOK', 'Hook init', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
         }
 
-        // Stream
+        // Stream & UI (wie gehabt) …
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-
-        // UI-Elemente
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) { $this->RemoveSnapshots(); }
         if ($this->ReadPropertyBoolean("ShowArchives")) { $this->CreateOrUpdateArchives(); } else { $this->RemoveArchives(); }
@@ -119,19 +116,21 @@ class Reolink extends IPSModule
         $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
         $enableAlarm    = $this->ReadPropertyBoolean("EnableApiAlarm");
         $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $anyFeatureOn = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableAlarm || $enableSiren);
+        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableAlarm || $enableSiren);
 
+        // Variablen anlegen/aufräumen (wie gehabt)
+        $this->CreateOrUpdateApiVariablesUnified();
 
         if ($anyFeatureOn) {
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
-            $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $this->CreateOrUpdateApiVariablesUnified();
+            // 1) Token holen (setzt Erneuerungstimer selbst)
             $this->GetToken();
-            $this->ExecuteApiRequests();
+            // 2) EINMALIGER Refresh jetzt (kein Timer parallel!)
+            $this->ExecuteApiRequests(true); // force first run
+            // 3) Erst JETZT den periodischen Timer aktivieren
+            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
-            $this->CreateOrUpdateApiVariablesUnified();
         }
     }
 
@@ -1115,7 +1114,7 @@ class Reolink extends IPSModule
         }
 
         // -------- Bewegungssensitivität (1..50) --------
-        if ($this->ReadPropertyBoolean("EnableApiAlarm")) {
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
             if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
                 IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // Integer
             }
@@ -1152,28 +1151,49 @@ class Reolink extends IPSModule
         }
     }
 
-    public function ExecuteApiRequests()
+    public function ExecuteApiRequests(bool $force = false)
     {
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
 
-        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-            $this->UpdateWhiteLedStatus();
+        // --- Parallel- und Schnellfeuer-Schutz ---
+        $sem = "REOCAM_{$this->InstanceID}_Exec";
+        if (function_exists('IPS_SemaphoreEnter')) {
+            if (!IPS_SemaphoreEnter($sem, 2000)) {
+                // Ein Lauf ist noch aktiv → abbrechen
+                return;
+            }
         }
-        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            $this->EmailApply(null, null, null);
-        }
-        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->CreateOrUpdatePTZHtml(false);
-        }
-        if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-            $this->UpdateFtpStatus();
-        }
-        if ($this->ReadPropertyBoolean("EnableApiAlarm")) {
-            $this->UpdateMdSensitivityStatus(); 
-        }
-        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            $this->UpdateSirenStatus(); 
+        try {
+            // 500ms Cool-Down gegen nahezu zeitgleiche Trigger
+            $last = (int)($this->ReadAttributeInteger('ExecLastTs') ?? 0);
+            $now  = time();
+            if (!$force && ($now - $last) < 1) {
+                return;
+            }
+            $this->WriteAttributeInteger('ExecLastTs', $now);
+
+            // --- State lesen/aktualisieren (je Domain maximal 1 GET) ---
+            if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
+                $this->UpdateWhiteLedStatus();          // 1x GetWhiteLed
+            }
+            if ($this->ReadPropertyBoolean("EnableApiEmail")) {
+                $this->EmailApply(null, null, null);    // reines GET
+            }
+            if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
+                $this->CreateOrUpdatePTZHtml(false);    // 1x GetZoomFocus (+ Cache)
+            }
+            if ($this->ReadPropertyBoolean("EnableApiFTP")) {
+                $this->UpdateFtpStatus();               // 1x GetFtp(V20/Legacy)
+            }
+            if ($this->ReadPropertyBoolean("EnableApiAlarm")) {
+                $this->UpdateMdSensitivityStatus();     // 1x GetMdAlarm/GetAlarm
+            }
+            if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+                $this->UpdateSirenStatus();             // 1x GetAudioAlarm(V20/Legacy)
+            }
+        } finally {
+            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
     }
 
@@ -1341,19 +1361,14 @@ class Reolink extends IPSModule
         ];
 
         foreach ($map as $ident => $newVal) {
-            if ($newVal === null) {
-                continue;
-            }
+            if ($newVal === null) continue;
             $id = @$this->GetIDForIdent($ident);
-            if ($id === false) {
-                continue;
-            }
+            if ($id === false) continue;
+
             $oldVal = GetValue($id);
             if ($oldVal !== $newVal) {
                 $this->SetValue($ident, $newVal);
                 $this->dbg('SPOTLIGHT', 'Var geändert', ['ident' => $ident, 'old' => $oldVal, 'new' => $newVal]);
-            } else {
-                $this->dbg('SPOTLIGHT', 'Unverändert', ['ident' => $ident, 'value' => $newVal], true);
             }
         }
     }
@@ -1385,38 +1400,26 @@ class Reolink extends IPSModule
         $fields = [
             ['ident' => 'EmailNotify',   'key' => 'enabled',     'cast' => 'bool'],
             ['ident' => 'EmailInterval', 'key' => 'intervalSec', 'cast' => 'int'],
-            ['ident' => 'EmailContent',  'key' => 'contentMode', 'cast' => 'int'], // 0..3
+            ['ident' => 'EmailContent',  'key' => 'contentMode', 'cast' => 'int'],
         ];
 
         foreach ($fields as $f) {
             $key = $f['key'];
-            if (!array_key_exists($key, $st) || $st[$key] === null) {
-                continue; // nichts zu setzen
-            }
+            if (!array_key_exists($key, $st) || $st[$key] === null) continue;
 
             $id = @$this->GetIDForIdent($f['ident']);
-            if ($id === false) {
-                continue; // Variable existiert (noch) nicht
-            }
+            if ($id === false) continue;
 
             $old = GetValue($id);
-            $new = $st[$key];
-
-            if ($f['cast'] === 'bool') {
-                $new = (bool)$new;
-            } else { // int
-                $new = (int)$new;
-            }
+            $new = ($f['cast'] === 'bool') ? (bool)$st[$key] : (int)$st[$key];
 
             if ($old !== $new) {
                 $this->SetValue($f['ident'], $new);
                 $this->dbg('EMAIL', 'Var geändert', ['ident' => $f['ident'], 'old' => $old, 'new' => $new]);
             }
-            else {
-                $this->dbg('EMAIL', 'Unverändert', ['ident' => $f['ident'], 'value' => $new], true);
-            }
         }
     }
+
 
     // Liest den Email-Zustand GENAU EINMAL und normalisiert ihn
     private function GetEmailState(): ?array

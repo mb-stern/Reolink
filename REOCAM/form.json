@@ -37,7 +37,7 @@
         { "type": "CheckBox", "name": "EnableApiEmail",       "caption": "E-Mail-Alarm" },
         { "type": "CheckBox", "name": "EnableApiPTZ",         "caption": "PTZ / Presets / Zoom" },
         { "type": "CheckBox", "name": "EnableApiFTP",         "caption": "FTP-Upload" },
-        { "type": "CheckBox", "name": "EnableApiAlarm",       "caption": "Bewegungs-Alarm" },
+        { "type": "CheckBox", "name": "EnableApiSensitivity", "caption": "Sensitivität" },
         { "type": "CheckBox", "name": "EnableApiSiren",       "caption": "Sirene" }
       ]
     },
