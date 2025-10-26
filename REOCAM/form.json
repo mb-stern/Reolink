@@ -33,7 +33,7 @@
       "type": "ExpansionPanel",
       "caption": "API-Funktionen",
       "items": [
-        { "type": "CheckBox", "name": "EnableApiWhiteLed",    "caption": "LED-Scheinwerfer (Spotlight)" },
+        { "type": "CheckBox", "name": "EnableApiWhiteLed",    "caption": "LED-Scheinwerfer" },
         { "type": "CheckBox", "name": "EnableApiEmail",       "caption": "E-Mail Alarm" },
         { "type": "CheckBox", "name": "EnableApiFTP",         "caption": "FTP" },
         { "type": "CheckBox", "name": "EnableApiSensitivity", "caption": "Sensitivität" },

@@ -41,12 +41,10 @@ class Reolink extends IPSModule
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
 
         // Attribute
-        $this->RegisterAttributeBoolean("ApiInitialized", false);
         $this->RegisterAttributeBoolean("TokenRefreshing", false);
         $this->RegisterAttributeInteger("ApiTokenExpiresAt", 0);
         $this->RegisterAttributeString("CurrentHook", "");
         $this->RegisterAttributeString("ApiToken", "");
-        $this->RegisterAttributeString("EmailApiVersion", "");
         $this->RegisterAttributeString("PtzStyle", "");
         $this->RegisterAttributeString("PtzPresetsCache", "");
         $this->RegisterAttributeString("AbilityCache", "");
@@ -87,14 +85,12 @@ class Reolink extends IPSModule
 
         $this->SetStatus(102);
 
-        // Hook etc. (wie gehabt) …
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
             $this->dbg('WEBHOOK', 'Hook init', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
         }
 
-        // Stream & UI (wie gehabt) …
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) { $this->RemoveSnapshots(); }
@@ -102,7 +98,6 @@ class Reolink extends IPSModule
         if ($this->ReadPropertyBoolean("ShowTestElements")) { $this->CreateTestElements(); } else { $this->RemoveTestElements(); }
         if ($this->ReadPropertyBoolean("ShowVisitorElements")) { $this->CreateVisitorElements(); } else { $this->RemoveVisitorElements(); }
 
-        // Polling
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = max(1, (int)$this->ReadPropertyInteger("PollingInterval"));
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
@@ -119,15 +114,11 @@ class Reolink extends IPSModule
         $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
         $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren);
 
-        // Variablen anlegen/aufräumen (wie gehabt)
         $this->CreateOrUpdateApiVariablesUnified();
 
         if ($anyFeatureOn) {
-            // 1) Token holen (setzt Erneuerungstimer selbst)
             $this->GetToken();
-            // 2) EINMALIGER Refresh jetzt (kein Timer parallel!)
-            $this->ExecuteApiRequests(true); // force first run
-            // 3) Erst JETZT den periodischen Timer aktivieren
+            $this->ExecuteApiRequests(true); 
             $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         } else {
             $this->SetTimerInterval("ApiRequestTimer", 0);
@@ -184,12 +175,12 @@ class Reolink extends IPSModule
                 if ($ok) {
                     SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 } else {
-                    $this->UpdateFtpStatus(); // zurücklesen, falls Set scheitert
+                    $this->UpdateFtpStatus(); 
                 }
                 break;
 
             case 'MdSensitivity':
-                $lvl = max(1, min(50, (int)$Value));   // <-- 1..50
+                $lvl = max(1, min(50, (int)$Value)); 
                 $ok = $this->SetMdSensitivity($lvl);
                 if ($ok) {
                     $this->SetValue('MdSensitivity', $lvl);
@@ -213,18 +204,13 @@ class Reolink extends IPSModule
         return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
     }
 
-    // ---------------------------
-    // DEBUG / LOGGING (immer aktiv, mit Redaction)
-    // ---------------------------
     private function dbg(string $topic, string $message, $data = null, bool $ignored = false): void
     {
-        // $ignored ist nur für API-Kompatibilität zu älterem Code; Debug ist immer aktiv.
         $label = strtoupper($topic);
         $text  = $message;
         if ($data !== null) {
             $text .= ' | ' . $this->toStr($this->redactDeep($data));
         }
-        // 0 => "string"
         $this->SendDebug($label, $text, 0);
     }
 
@@ -282,6 +268,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // Webhook + Formular
     // ---------------------------
+
     public function GetConfigurationForm()
     {
         $formPath = __DIR__ . '/form.json';
@@ -371,7 +358,6 @@ class Reolink extends IPSModule
         $ptz = null;
         $raw = @file_get_contents('php://input');
 
-        // JSON-Payload
         if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data) && isset($data['ptz'])) {
@@ -380,7 +366,6 @@ class Reolink extends IPSModule
                 if (isset($data['name'])) $_REQUEST['name'] = $data['name'];
             }
         }
-        // Query / Form
         if ($ptz === null) {
             if (isset($_POST['ptz'])) { $ptz = (string)$_POST['ptz']; }
             elseif (isset($_GET['ptz'])) { $ptz = (string)$_GET['ptz']; }
@@ -394,7 +379,6 @@ class Reolink extends IPSModule
             return;
         }
 
-        // Alarm/AI-Daten
         if ($raw !== false && $raw !== '') {
             $data = json_decode($raw, true);
             if (is_array($data)) {
@@ -415,6 +399,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // Bewegungen / Snapshots / Archiv
     // ---------------------------
+
     private function ProcessAllData($data)
     {
         if (!isset($data['alarm']['type'])) return;
@@ -574,7 +559,7 @@ class Reolink extends IPSModule
             $this->dbg('SNAPSHOT', "Neues Medienobjekt", ['ident' => $snapshotIdent, 'mediaID' => $mediaID]);
         }
 
-        $snapshotUrl = $this->GetSnapshotURL(); // enthält user/pass → wird geschwärzt
+        $snapshotUrl = $this->GetSnapshotURL(); 
         $fileName = $booleanIdent . "_" . $mediaID . ".jpg";
         $filePath = IPS_GetKernelDir() . "media/" . $fileName;
 
@@ -617,7 +602,6 @@ class Reolink extends IPSModule
             $archiveIdent = "Archive_" . $cat;
             $cid = @$this->GetIDForIdent($archiveIdent);
             if ($cid && IPS_ObjectExists($cid)) {
-                // alle Medien in der Kategorie löschen
                 foreach (IPS_GetChildrenIDs($cid) as $childID) {
                     if (IPS_MediaExists($childID)) {
                         IPS_DeleteMedia($childID, true);
@@ -733,6 +717,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // Polling (AI State)
     // ---------------------------
+
     public function Polling()
     {
         if (!$this->isActive() || !$this->ReadPropertyBoolean("EnablePolling")) {
@@ -795,6 +780,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // API / HTTP / Token
     // ---------------------------
+
     private function apiBase(): string
     {
         $ip = $this->ReadPropertyString("CameraIP");
@@ -803,10 +789,8 @@ class Reolink extends IPSModule
 
     private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
     {
-        // Kurzinfo
         $this->dbg($topic, "HTTP POST", ['url' => $url]);
 
-        // Request/Response (bereits geschwärzt über dbg)
         $this->dbg($topic, "REQUEST", $payload);
 
         $ch = curl_init($url);
@@ -964,12 +948,13 @@ class Reolink extends IPSModule
     // ---------------------------
     // Variablen an/abbauen (API)
     // ---------------------------
+
     private function CreateOrUpdateApiVariablesUnified(): void
     {
         // -------- White LED --------
         if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
-                IPS_CreateVariableProfile("REOCAM.WLED", 1); // Integer
+                IPS_CreateVariableProfile("REOCAM.WLED", 1); 
             }
             IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
@@ -1066,17 +1051,14 @@ class Reolink extends IPSModule
     {
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
-
-        // --- Parallel- und Schnellfeuer-Schutz ---
+      
         $sem = "REOCAM_{$this->InstanceID}_Exec";
         if (function_exists('IPS_SemaphoreEnter')) {
             if (!IPS_SemaphoreEnter($sem, 2000)) {
-                // Ein Lauf ist noch aktiv → abbrechen
                 return;
             }
         }
         try {
-            // 500ms Cool-Down gegen nahezu zeitgleiche Trigger
             $last = (int)($this->ReadAttributeInteger('ExecLastTs') ?? 0);
             $now  = time();
             if (!$force && ($now - $last) < 1) {
@@ -1084,31 +1066,29 @@ class Reolink extends IPSModule
             }
             $this->WriteAttributeInteger('ExecLastTs', $now);
 
-            // --- State lesen/aktualisieren (je Domain maximal 1 GET) ---
             if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-                $this->UpdateWhiteLedStatus();          // 1x GetWhiteLed
+                $this->UpdateWhiteLedStatus();          /
             }
             if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-                $this->EmailApply(null, null, null);    // reines GET
+                $this->EmailApply(null, null, null);    
             }
             if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-                $this->CreateOrUpdatePTZHtml(false);    // 1x GetZoomFocus (+ Cache)
+                $this->CreateOrUpdatePTZHtml(false);    
             }
             if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-                $this->UpdateFtpStatus();               // 1x GetFtp(V20/Legacy)
+                $this->UpdateFtpStatus();               
             }
             if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-                $this->UpdateMdSensitivityStatus();     // 1x GetMdAlarm/GetAlarm
+                $this->UpdateMdSensitivityStatus();    
             }
             if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-                $this->UpdateSirenStatus();             // 1x GetAudioAlarm(V20/Legacy)
+                $this->UpdateSirenStatus();             
             }
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
     }
 
-    // ---- Ability Cache + zentrale Versionserkennung ----
     private function apiGetAbilityCached(): array
     {
         $attrName = 'AbilityCache';
@@ -1131,13 +1111,6 @@ class Reolink extends IPSModule
         return $ability;
     }
 
-    /**
-     * $domain:
-     *  - 'schedule' -> V20/LEGACY via Ability.scheduleVersion.ver
-     *  - 'email'    -> probe GetEmailV20
-     *  - 'ftp'      -> probe GetFtpV20 / GetFtp
-     *  - 'audio'    -> probe GetAudioAlarmV20 / GetAudioAlarm
-     */
     private function ApiVersion(string $domain): string
     {
         $ability = $this->apiGetAbilityCached();
@@ -1147,7 +1120,6 @@ class Reolink extends IPSModule
             return ($ver === 1) ? 'V20' : 'LEGACY';
         }
 
-        // Für API-Domänen, die Reolink nicht zuverlässig in Ability ausweist – Probe Calls:
         switch ($domain) {
             case 'email':
                 $t = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
@@ -1169,59 +1141,10 @@ class Reolink extends IPSModule
         return 'NONE';
     }
 
-    // ---- Profile-Helfer ----
-    private function ensureIntegerProfile(string $name, int $min, int $max, int $step, array $assocs = []): void
-    {
-        if (!IPS_VariableProfileExists($name)) {
-            IPS_CreateVariableProfile($name, 1); // 1 = Integer
-        }
-        IPS_SetVariableProfileValues($name, $min, $max, $step);
-        // Associations zurücksetzen (sonst sammeln sich alte an)
-        // Workaround: Profil einmal löschen & neu anlegen – oder Associations gezielt setzen:
-        // Wir setzen hier nur die gewünschten:
-        // (Keine API für "clear" – bei Bedarf einfach neu erstellen)
-        foreach ($assocs as $val => $text) {
-            IPS_SetVariableProfileAssociation($name, (int)$val, (string)$text, "", -1);
-        }
-    }
-
-    private function ensureBoolProfile(string $name, string $offCaption = 'Aus', string $onCaption = 'An'): void
-    {
-        if (!IPS_VariableProfileExists($name)) {
-            IPS_CreateVariableProfile($name, 0); // 0 = Boolean
-        }
-        // Bei Bool-Profilen werden Associations über 0/1 gesetzt:
-        IPS_SetVariableProfileAssociation($name, 0, $offCaption, "", -1);
-        IPS_SetVariableProfileAssociation($name, 1, $onCaption,  "", -1);
-    }
-
-    // ---- Variablen-Helfer ----
-    private function ensureVarBoolean(string $ident, string $name, string $profile, int $pos, bool $enableAction = true): void
-    {
-        if (!@$this->GetIDForIdent($ident)) {
-            $this->RegisterVariableBoolean($ident, $name, $profile, $pos);
-            if ($enableAction) $this->EnableAction($ident);
-        }
-    }
-
-    private function ensureVarInteger(string $ident, string $name, string $profile, int $pos, bool $enableAction = true): void
-    {
-        if (!@$this->GetIDForIdent($ident)) {
-            $this->RegisterVariableInteger($ident, $name, $profile, $pos);
-            if ($enableAction) $this->EnableAction($ident);
-        }
-    }
-
-    private function ensureVarString(string $ident, string $name, string $profile, int $pos): void
-    {
-        if (!@$this->GetIDForIdent($ident)) {
-            $this->RegisterVariableString($ident, $name, $profile, $pos);
-        }
-    }
-
     // ---------------------------
     // Spotlight (White LED)
     // ---------------------------
+
     private function SendLedRequest(array $ledParams): bool
     {
         $payload = [[
@@ -1322,7 +1245,6 @@ class Reolink extends IPSModule
 
     private function GetEmailState(): ?array
     {
-        // 1) V20 versuchen
         $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0) && isset($res[0]['value']['Email'])) {
             $e = $res[0]['value']['Email'];
@@ -1338,7 +1260,6 @@ class Reolink extends IPSModule
             return ['enabled'=>$enabled,'intervalSec'=>$intervalSec,'contentMode'=>$contentMode];
         }
 
-        // 2) Legacy-Fallback
         $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]], 'EMAIL', true);
         if (is_array($res) && (($res[0]['code'] ?? -1) === 0) && isset($res[0]['value']['Email'])) {
             $e = $res[0]['value']['Email'];
@@ -1356,7 +1277,6 @@ class Reolink extends IPSModule
     {
         $wantSet = ($enabled !== null || $intervalSec !== null || $contentMode !== null);
 
-        // --- Nur lesen? Dann KEIN ApiVersion()-Probe-Call → genau 1 GET ---
         if (!$wantSet) {
             $state = $this->GetEmailState();
             if (is_array($state)) {
@@ -1364,16 +1284,13 @@ class Reolink extends IPSModule
             } else {
                 $this->dbg('EMAIL', 'GetEmailState FAIL (no data)');
             }
-            // Bei reinem GET interpretieren wir "ok" als true
             return true;
         }
 
-        // --- Ab hier: SET-Pfad (Versionserkennung nur beim Setzen nötig) ---
         $ver   = $this->ApiVersion('email');
         $okSet = true;
 
         if ($ver === 'V20') {
-            // Alles in EINEM SetEmailV20-Call, falls Felder gesetzt
             $email = [];
             if ($enabled !== null) {
                 $email['enable'] = $enabled ? 1 : 0;
@@ -1385,7 +1302,6 @@ class Reolink extends IPSModule
                 }
             }
             if ($contentMode !== null) {
-                // Mapping Content-Mode → textType/attachmentType
                 switch ($contentMode) {
                     case 0: $email += ["textType" => 1, "attachmentType" => 0]; break; // Text
                     case 1: $email += ["textType" => 0, "attachmentType" => 1]; break; // Nur Bild
@@ -1402,7 +1318,6 @@ class Reolink extends IPSModule
                 }
             }
         } else {
-            // LEGACY: zuerst versuchen, alles in einem Rutsch zu setzen
             $email = [];
             if ($enabled !== null) {
                 $email['schedule']['enable'] = $enabled ? 1 : 0;
@@ -1414,7 +1329,6 @@ class Reolink extends IPSModule
                 }
             }
             if ($contentMode !== null) {
-                // Mapping Content-Mode → attachment (Legacy)
                 $att = ['0', 'onlyPicture', 'picture', 'video'][$contentMode] ?? '0';
                 $email['attachment'] = $att;
             }
@@ -1423,7 +1337,6 @@ class Reolink extends IPSModule
                 $res   = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => $email] ]], 'EMAIL', true);
                 $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
 
-                // Fallback: Feld-für-Feld setzen, wenn "alles auf einmal" nicht klappt
                 if (!$okSet) {
                     $okSet = true;
                     if ($enabled !== null) {
@@ -1449,7 +1362,6 @@ class Reolink extends IPSModule
             }
         }
 
-        // --- Nach dem Set genau EINEN GET ausführen und Variablen synchronisieren ---
         $state = $this->GetEmailState();
         if (is_array($state)) {
             $this->ApplyEmailStateToVars($state);
@@ -1463,6 +1375,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ / Zoom
     // ---------------------------
+
     private function CreateOrUpdatePTZHtml(bool $reloadPresets = false): void
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
@@ -1473,7 +1386,6 @@ class Reolink extends IPSModule
             $hook = $this->RegisterHook();
         }
 
-        // ---- Presets: aus Cache, nur bei Bedarf von der Kamera holen ----
         $presets = [];
         if (!$reloadPresets) {
             $cached = $this->ReadAttributeString("PtzPresetsCache");
@@ -1483,12 +1395,11 @@ class Reolink extends IPSModule
             }
         }
         if (empty($presets)) {
-            $presets = $this->getPresetList(); // <<< API-CALL NUR HIER (selten)
+            $presets = $this->getPresetList(); 
             $this->WriteAttributeString("PtzPresetsCache", json_encode($presets, JSON_UNESCAPED_UNICODE));
         }
 
-        // ---- Zoom-Info: 1 schlanker Call pro Zyklus ----
-        $zInfo = $this->getZoomInfo(); // <<< EIN API-CALL pro Refresh
+        $zInfo = $this->getZoomInfo(); 
         $zMin = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
         $zMax = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
         $zPos = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
@@ -1897,8 +1808,8 @@ class Reolink extends IPSModule
         $ok = $this->ptzSetPreset($id);
         if ($ok && $name) { $this->ptzRenamePreset($id, $name); }
         if ($ok) {
-            $this->WriteAttributeString("PtzPresetsCache", "");   // Cache leeren
-            $this->CreateOrUpdatePTZHtml(true);                   // Presets neu holen
+            $this->WriteAttributeString("PtzPresetsCache", "");   
+            $this->CreateOrUpdatePTZHtml(true);                   
         }
         return $ok;
     }
@@ -1928,58 +1839,53 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ Presets: Set/Rename/Clear
     // ---------------------------
-    // 1) Anlegen/Speichern
     private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
         $entry = ['id'=>$id, 'enable'=>1];
         if ($nameForCreate !== null && $nameForCreate !== '') {
             $n = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $nameForCreate);
             $entry['name'] = mb_substr($n, 0, 32, 'UTF-8');
         }
-        // bevorzugt: nested unter PtzPreset → table[]
         $ok = is_array($this->postCmdDual(
             'SetPtzPreset',
             ['channel'=>0, 'table'=>[ $entry ]],
-            'PtzPreset',  // <<< WICHTIG
-            /*suppress*/ true
+            'PtzPreset', 
+            true
         ));
-        // Fallback: flat (ohne table)
+        
         if (!$ok) {
             $flat = ['channel'=>0, 'id'=>$id, 'enable'=>1] + (isset($entry['name'])?['name'=>$entry['name']]:[]);
             $ok = is_array($this->postCmdDual(
                 'SetPtzPreset',
                 $flat,
-                'PtzPreset',  // <<< WICHTIG
-                /*suppress*/ true
+                'PtzPreset',
+                true
             ));
         }
         if (!$ok) $this->dbg('PTZ/SetPtzPreset', 'Fehlgeschlagen', $entry);
         return (bool)$ok;
     }
 
-    // 2) Umbenennen
     private function ptzRenamePreset(int $id, string $name): bool {
         $name = trim($name);
         if ($name === '') return false;
         $name = preg_replace('/[^\p{L}\p{N}\s\-\_\.]/u', '', $name);
         $name = mb_substr($name, 0, 32, 'UTF-8');
 
-        // bevorzugt: nested via table[]
         $ok = is_array($this->postCmdDual(
             'SetPtzPreset',
             ['channel'=>0, 'table'=>[ ['id'=>$id, 'name'=>$name] ]],
-            'PtzPreset',  // <<< WICHTIG
-            /*suppress*/ true
+            'PtzPreset', 
+            true
         ));
         if (!$ok) {
-            // Fallback: flat
             $ok = is_array($this->postCmdDual(
                 'SetPtzPreset',
                 ['channel'=>0, 'id'=>$id, 'name'=>$name],
-                'PtzPreset',  // <<< WICHTIG
-                /*suppress*/ true
+                'PtzPreset', 
+                true
             ));
         }
-        // letzte Fallbacks (einige ältere FWs)
+    
         if (!$ok) {
             $ok = is_array($this->postCmdDual('PtzPreset', ['channel'=>0,'id'=>$id,'name'=>$name,'cmd'=>'SetName'], 'PtzPreset', true))
             ?: is_array($this->postCmdDual('PtzCtrl',   ['channel'=>0,'op'=>'SetPresetName','id'=>$id,'name'=>$name], 'PtzCtrl', true));
@@ -1988,21 +1894,21 @@ class Reolink extends IPSModule
         return (bool)$ok;
     }
 
-    // 3) Löschen/Clear
+    
     private function ptzClearPreset(int $id): bool {
-        // robust: enable=0 + name='' über SetPtzPreset
+        /
         $ok = is_array($this->postCmdDual(
             'SetPtzPreset',
             ['channel'=>0, 'table'=>[ ['id'=>$id, 'enable'=>0, 'name'=>''] ]],
-            'PtzPreset',   // <<< WICHTIG
-            /*suppress*/ true
+            'PtzPreset',   
+            true
         ));
         if (!$ok) {
             $ok = is_array($this->postCmdDual(
                 'SetPtzPreset',
                 ['channel'=>0, 'id'=>$id, 'enable'=>0, 'name'=>''],
-                'PtzPreset',   // <<< WICHTIG
-                /*suppress*/ true
+                'PtzPreset', 
+                true
             ));
         }
         if (!$ok) $this->dbg('PTZ/Clear', 'enable=0 fehlgeschlagen', ['id'=>$id]);
@@ -2015,8 +1921,7 @@ class Reolink extends IPSModule
 
     private function UpdateFtpStatus(): void
     {
-        // Version erkennen (du hast bereits ApiVersion('ftp'))
-        $ver = $this->ApiVersion('ftp'); // 'V20' | 'LEGACY' | 'NONE'
+        $ver = $this->ApiVersion('ftp');
 
         $enabled = null;
 
@@ -2032,7 +1937,7 @@ class Reolink extends IPSModule
             $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', /*suppress*/ true);
             if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
                 $v = $res[0]['value']['Ftp'] ?? null;
-                // Bei Legacy sitzt das Flag ggf. unter schedule.enable
+                
                 if (is_array($v)) {
                     if (array_key_exists('enable', $v)) {
                         $enabled = ((int)$v['enable'] === 1);
@@ -2051,7 +1956,6 @@ class Reolink extends IPSModule
             return;
         }
 
-        // --- Nur schreiben, wenn sich der Wert geändert hat ---
         $id = @$this->GetIDForIdent('FTPEnabled');
         if ($id !== false) {
             $old = GetValueBoolean($id);
@@ -2068,31 +1972,37 @@ class Reolink extends IPSModule
         $ok  = false;
 
         if ($ver === "V20") {
-            $r = $this->apiCall([[ "cmd"=>"SetFtpV20",
-                "param"=>[ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+            $r = $this->apiCall([[
+                "cmd"   => "SetFtpV20",
+                "param" => [ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
             ]], 'FTP', true);
             $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-        } elseif ($ver === "LEGACY" || $ver === "LEGACY_A1") {
-            // zuerst Ftp.enable direkt
-            $p = [[ "cmd"=>"SetFtp", "param"=>[ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ] ]];
-            if ($ver === "LEGACY_A1") $p[0]["action"] = 1;
-            $r1 = $this->apiCall($p, 'FTP', true);
+
+        } elseif ($ver === "LEGACY") {
+            $r1 = $this->apiCall([[
+                "cmd"   => "SetFtp",
+                "param" => [ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+            ]], 'FTP', true);
             $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
 
-            // Fallback: schedule.enable
             if (!$ok) {
-                $p2 = [[ "cmd"=>"SetFtp", "param"=>[ "Ftp" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ] ]];
-                if ($ver === "LEGACY_A1") $p2[0]["action"] = 1;
-                $r2 = $this->apiCall($p2, 'FTP', true);
+                $r2 = $this->apiCall([[
+                    "cmd"   => "SetFtp",
+                    "param" => [ "Ftp" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ]
+                ]], 'FTP', true);
                 $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
             }
+
+        } else {
+            // NONE
+            $this->dbg('FTP', 'Keine FTP-API verfügbar');
+            return false;
         }
 
         if ($ok) {
-            // UI-sync
             $this->UpdateFtpStatus();
         } else {
-            $this->dbg('FTP', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt');
+            $this->dbg('FTP', 'Setzen fehlgeschlagen');
         }
         return $ok;
     }
@@ -2133,19 +2043,16 @@ class Reolink extends IPSModule
 
     public function SetMdSensitivity(int $level): bool
     {
-        // UI: 1..50
         $level = max(1, min(50, $level));
-        // Kamera erwartet invertiert: 50..1
         $levelCam = 51 - $level;
 
         $state = $this->GetMdSensitivity();
         if ($state === null) return false;
 
-        $ver      = $state['apiVer'];                    // 'V20'|'LEGACY'
+        $ver      = $state['apiVer'];                    
         $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
         $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
 
-        // vorhandene Segmente übernehmen, nur sensitivity angleichen (mit Kamera-Wert!)
         $segments = $state['segments'];
         if (empty($segments)) {
             $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
@@ -2162,7 +2069,7 @@ class Reolink extends IPSModule
                         "type"       => "md",
                         "useNewSens" => 1,
                         "newSens"    => [
-                            "sensDef" => $levelCam,   // ebenfalls invertiert setzen
+                            "sensDef" => $levelCam,   
                             "sens"    => $segments
                         ],
                         "channel"    => 0
@@ -2173,7 +2080,6 @@ class Reolink extends IPSModule
             return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
         }
 
-        // LEGACY
         $payload = [[
             "cmd"   => $cmdSet,
             "param" => [
@@ -2196,10 +2102,8 @@ class Reolink extends IPSModule
         $st = $this->GetMdSensitivity();
         if (!$st) return;
 
-        // Kamera liefert 1..50
         $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
 
-        // UI zeigt invertiert (50..1)
         $lvlUI = 51 - $lvlCam;
 
         if ((int)GetValue($vid) !== $lvlUI) {
@@ -2230,7 +2134,6 @@ class Reolink extends IPSModule
         };
         $walk($raw);
 
-        // grobe Plausibilitätsprüfung
         $filtered = [];
         foreach ($out as $s) {
             $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
@@ -2258,7 +2161,6 @@ class Reolink extends IPSModule
 
     private function apiGetNode(array $resp, string $key)
     {
-        // nimmt entweder value[$key] ODER initial[$key]
         $root = $resp[0] ?? [];
         $v = $root['value'][$key] ?? null;
         if ($v === null) $v = $root['initial'][$key] ?? null;
@@ -2273,14 +2175,13 @@ class Reolink extends IPSModule
     {
         $isV20 = ($this->ApiVersion('audio') === 'V20');
 
-        // Erst lesen, damit wir das Schedule-Table unverändert zurückschreiben
         $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
         $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO_GET');
         if (!is_array($res) || ($res[0]['code']??1) !== 0) return false;
         $audio = $res[0]['value']['Audio'] ?? null;
         if (!is_array($audio)) return false;
 
-        $audio['enable'] = $on ? 1 : 0; // nur Toggle!
+        $audio['enable'] = $on ? 1 : 0; 
 
         $setCmd = $isV20 ? 'SetAudioAlarmV20' : 'SetAudioAlarm';
         $payload = [ [ "cmd"=>$setCmd, "param"=>["Audio"=>$audio] ] ];
@@ -2293,10 +2194,9 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("SirenEnabled");
         if ($vid === false) return;
 
-        // 1) V20 versuchen
         $res = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "action"=>1, "param"=>["channel"=>0] ]], 'SIRENE', true);
         if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) {
-            // 2) Legacy-Fallback
+            
             $res = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "action"=>1, "param"=>["channel"=>0] ]], 'SIRENE', true);
             if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
         }
