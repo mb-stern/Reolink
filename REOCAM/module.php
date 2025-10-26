@@ -2447,168 +2447,80 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("PushEnabled");
         if ($vid === false) return;
 
-        // Primär: aus Alarm-Linkages lesen (MD/AI)
-        $flag = $this->ReadPushEnabledFromAlarms();
-        if ($flag !== null) {
-            if ((bool)GetValue($vid) !== (bool)$flag) {
-                $this->SetValue("PushEnabled", (bool)$flag);
-            }
-            return;
-        }
-
-        // Fallbacks – wenn FW wirklich keine Linkages liefert:
-        // a) GetPush (manche LEGACY liefern schedule.enable)
-        $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $node = $res[0]['value']['Push'] ?? ($res[0]['value'] ?? null);
+        // 1) Einfach: GetPush (einige FW haben enable direkt oder unter schedule.enable)
+        $res = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], "PUSH", true);
+        if (is_array($res) && (($res[0]["code"] ?? -1) === 0)) {
+            $node = $res[0]["value"]["Push"] ?? ($res[0]["value"] ?? null);
             if (is_array($node)) {
-                $enabled = null;
-                if (isset($node['schedule']['enable'])) {
-                    $enabled = ((int)$node['schedule']['enable'] === 1);
-                } elseif (isset($node['enable'])) {
-                    $enabled = ((int)$node['enable'] === 1);
+                if (isset($node["enable"])) {
+                    $this->SetValue("PushEnabled", ((int)$node["enable"] === 1));
+                    return;
                 }
-                if ($enabled !== null) {
-                    $this->SetValue("PushEnabled", $enabled);
+                if (isset($node["schedule"]["enable"])) {
+                    $this->SetValue("PushEnabled", ((int)$node["schedule"]["enable"] === 1));
                     return;
                 }
             }
         }
 
-        // b) GetPushCfg – liefert oft nur Intervalle; hier kein enable → nichts setzen
-        $res2 = $this->apiCall([[ "cmd"=>"GetPushCfg", "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            // kein enable → bewusst nichts ändern
-            $this->dbg('PUSH', 'GetPushCfg ohne enable – Status bleibt unverändert');
+        // 2) Fallback (schlank): MD/Alarm lesen und nur flach nach linkage.push suchen
+        $cmd = ($this->ApiVersion("schedule") === "V20") ? "GetMdAlarm" : "GetAlarm";
+        $res2 = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], "PUSH", true);
+        if (is_array($res2) && (($res2[0]["code"] ?? -1) === 0)) {
+            $val = $res2[0]["value"] ?? $res2[0]["initial"] ?? [];
+            $arr = is_array($val) ? $val : [];
+
+            // minimaler, nicht-rekursiver Scan über ein paar typische Stellen
+            $candidates = [];
+            if (isset($arr["MdAlarm"])) $candidates[] = $arr["MdAlarm"];
+            if (isset($arr["Alarm"]))   $candidates[] = $arr["Alarm"];
+
+            foreach ($candidates as $n) {
+                // häufig: newSens.sens[] bzw. sens[]
+                $sens = $n["newSens"]["sens"] ?? $n["sens"] ?? [];
+                if (is_array($sens)) {
+                    foreach ($sens as $s) {
+                        if (isset($s["linkage"]["push"])) {
+                            $this->SetValue("PushEnabled", ((int)$s["linkage"]["push"] === 1));
+                            return;
+                        }
+                    }
+                }
+                // manchmal: linkage auf oberster Ebene
+                if (isset($n["linkage"]["push"])) {
+                    $this->SetValue("PushEnabled", ((int)$n["linkage"]["push"] === 1));
+                    return;
+                }
+            }
         }
+
+        // 3) GetPushCfg liefert meist nur Intervalle → bewusst nichts ändern
+        $this->dbg("PUSH", "Status unbestimmt (kein enable in GetPush / keine linkage.push gefunden)");
     }
 
     private function PushApply(bool $on): bool
     {
-        $flag = $on ? 1 : 0;
-        $ver  = $this->ApiVersion('push');
-        $ok   = false;
+        // Versuch A: direktes enable
+        $r1 = $this->apiCall([[
+            "cmd"   => "SetPush",
+            "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+        ]], "PUSH", true);
+        $ok = is_array($r1) && (($r1[0]["code"] ?? -1) === 0);
 
-        // --- 1) Primär: SetPushCfg (global) ---
-        if ($ver === 'CFG') {
-            $r = $this->apiCall([[ "cmd"=>"SetPushCfg",
-                "param"=>[ "Push" => [ "enable"=>$flag, "channel"=>0 ] ]
-            ]], 'PUSH', true);
-            $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        // Versuch B: schedule.enable
+        if (!$ok) {
+            $r2 = $this->apiCall([[
+                "cmd"   => "SetPush",
+                "param" => [ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ]
+            ]], "PUSH", true);
+            $ok = is_array($r2) && (($r2[0]["code"] ?? -1) === 0);
         }
 
-        // --- 2) V20 ---
-        if (!$ok && $ver === 'V20') {
-            $r = $this->apiCall([[ "cmd"=>"SetPushV20",
-                "param"=>[ "Push" => [ "enable"=>$flag, "channel"=>0 ] ]
-            ]], 'PUSH', true);
-            $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+        if ($ok) {
+            $this->UpdatePushStatus(); // ein einziger GET zur UI-Synchronisierung
+        } else {
+            $this->dbg("PUSH", "Setzen fehlgeschlagen (FW/Modell unterstützt den Pfad evtl. nicht)");
         }
-
-        // --- 3) Legacy ---
-        if (!$ok && $ver === 'LEGACY') {
-            // erst direktes enable …
-            $r1 = $this->apiCall([[ "cmd"=>"SetPush",
-                "param"=>[ "Push" => [ "enable"=>$flag, "channel"=>0 ] ]
-            ]], 'PUSH', true);
-            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-
-            // … dann Fallback: schedule.enable
-            if (!$ok) {
-                $r2 = $this->apiCall([[ "cmd"=>"SetPush",
-                    "param"=>[ "Push" => [ "schedule" => [ "enable"=>$flag ], "channel"=>0 ] ]
-                ]], 'PUSH', true);
-                $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-            }
-        }
-
-        if ($ok) { $this->UpdatePushStatus(); }
-        else     { $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt'); }
-
         return $ok;
     }
-
-    // --- PUSH: generisches enable aus verschiedensten Schemas extrahieren ---
-    private function parsePushEnableFromNode($node): ?bool
-    {
-        if (!is_array($node)) return null;
-
-        if (isset($node['enable'])) {
-            return ((int)$node['enable'] === 1);
-        }
-        if (isset($node['schedule']['enable'])) {
-            return ((int)$node['schedule']['enable'] === 1);
-        }
-
-        // Generischer Fallback: linkage.push irgendwo im Baum?
-        $enabled = null;
-        $scan = function($x) use (&$scan, &$enabled) {
-            if (!is_array($x)) return;
-            if (isset($x['linkage']) && is_array($x['linkage']) && array_key_exists('push', $x['linkage'])) {
-                $v = $x['linkage']['push'];
-                $val = is_bool($v) ? $v : ((int)$v === 1);
-                $enabled = ($enabled === null) ? $val : ($enabled || $val);
-            }
-            foreach ($x as $v) if (is_array($v)) $scan($v);
-        };
-        $scan($node);
-        return $enabled; // kann null bleiben, wenn nichts gefunden
-    }
-
-    // Sucht rekursiv nach linkage.push in beliebiger Alarm-Struktur.
-    // Liefert true, wenn irgendwo push=1; false, wenn überall 0; null, wenn push nirgendwo vorkommt.
-    private function mdExtractPushFlag($node): ?bool
-    {
-        if (!is_array($node)) return null;
-        $found = false;
-        $on    = false;
-
-        $walk = function($x) use (&$walk, &$found, &$on) {
-            if (!is_array($x)) return;
-            // häufige Pfade: segmente unter newSens.sens[] oder sens[]; manchmal auch direkt unter node.linkage
-            if (isset($x['linkage']) && is_array($x['linkage']) && array_key_exists('push', $x['linkage'])) {
-                $found = true;
-                $v = $x['linkage']['push'];
-                $on = $on || (is_bool($v) ? $v : ((int)$v === 1));
-            }
-            foreach ($x as $v) if (is_array($v)) $walk($v);
-        };
-        $walk($node);
-
-        return $found ? $on : null;
-    }
-
-    // Liest Push enable aus MD-/AI-Alarm-Konfig (Linkage.push).
-    // Rückgabe: true/false oder null, wenn nichts Auffindbares.
-    private function ReadPushEnabledFromAlarms(): ?bool
-    {
-        // 1) Motion Detection (MD)
-        $ver  = $this->ApiVersion('schedule');         // 'V20' | 'LEGACY'
-        $cmdG = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
-
-        $res = $this->apiCall([[ "cmd"=>$cmdG, "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
-            $flag = $this->mdExtractPushFlag($node);
-            if ($flag !== null) return $flag;
-        }
-
-        // 2) AI-Alarme (falls MD nichts liefert) – einige Modelle haben Push nur dort
-        foreach (['people','vehicle','dog_cat'] as $type) {
-            $res2 = $this->apiCall([[
-                "cmd"   => "GetAiAlarm",
-                "action"=> 1,
-                "param" => [ "AiAlarm" => ["type"=>$type, "channel"=>0] ]
-            ]], 'PUSH', true);
-            if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-                // die Struktur variiert → einfach ganze value auf push scannen
-                $node = $res2[0]['value']['AiAlarm'] ?? ($res2[0]['value'] ?? null);
-                $flag = $this->mdExtractPushFlag($node);
-                if ($flag !== null) return $flag;
-            }
-        }
-
-        return null;
-    }
-
 }
