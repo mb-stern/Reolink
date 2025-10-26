@@ -992,7 +992,7 @@ class Reolink extends IPSModule
             // WhiteLed (bool)
             $id = @$this->GetIDForIdent("WhiteLed");
             if ($id === false) {
-                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 0);
+                $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 1);
                 $this->EnableAction("WhiteLed");
             } else {
                 IPS_SetName($id, "LED Status");
@@ -1004,7 +1004,7 @@ class Reolink extends IPSModule
             // Mode (int, Profil REOCAM.WLED)
             $id = @$this->GetIDForIdent("Mode");
             if ($id === false) {
-                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 0);
+                $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
                 $this->EnableAction("Mode");
             } else {
                 IPS_SetName($id, "LED Modus");
@@ -1016,7 +1016,7 @@ class Reolink extends IPSModule
             // Bright (int, 0..100)
             $id = @$this->GetIDForIdent("Bright");
             if ($id === false) {
-                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 0);
+                $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
                 $this->EnableAction("Bright");
             } else {
                 IPS_SetName($id, "LED Helligkeit");
