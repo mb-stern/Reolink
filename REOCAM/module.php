@@ -2497,101 +2497,72 @@ class Reolink extends IPSModule
 
     private function UpdatePushStatus(): void
     {
-        $idVar = @$this->GetIDForIdent("PushEnabled");
-        if ($idVar === false) return;
+        $vid = @$this->GetIDForIdent("PushEnabled");
+        if ($vid === false) return;
 
-        $enabled = null;
-
-        // --- V20 mit action:1
-        $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
-        if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
-            $push = $r[0]['value']['Push'] ?? null;
-            if (is_array($push)) {
-                if (array_key_exists('enable', $push)) {
-                    $enabled = ((int)$push['enable'] === 1);
-                } elseif (isset($push['schedule']['enable'])) {
-                    $enabled = ((int)$push['schedule']['enable'] === 1);
-                }
-            }
+        $active = $this->ReadPushLinkageState();
+        if ($active === null) {
+            $this->dbg('PUSH', 'Zustand nicht ermittelbar (kein MD/Schedule im Response)');
+            return;
         }
 
-        // --- Fallback: V20 ohne action
-        if ($enabled === null) {
-            $r = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
-                $push = $r[0]['value']['Push'] ?? null;
-                if (is_array($push)) {
-                    if (array_key_exists('enable', $push)) {
-                        $enabled = ((int)$push['enable'] === 1);
-                    } elseif (isset($push['schedule']['enable'])) {
-                        $enabled = ((int)$push['schedule']['enable'] === 1);
-                    }
-                }
-            }
-        }
-
-        // --- Legacy: GetPush mit/ohne action
-        if ($enabled === null) {
-            $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0], "action"=>1 ]], 'PUSH', true);
-            if (!(is_array($r) && (($r[0]['code'] ?? -1) === 0))) {
-                $r = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
-            }
-            if (is_array($r) && (($r[0]['code'] ?? -1) === 0)) {
-                $node = $r[0]['value']['Push'] ?? ($r[0]['value'] ?? null);
-                if (is_array($node)) {
-                    if (array_key_exists('enable', $node)) {
-                        $enabled = ((int)$node['enable'] === 1);
-                    } elseif (isset($node['schedule']['enable'])) {
-                        $enabled = ((int)$node['schedule']['enable'] === 1);
-                    }
-                }
-            }
-        }
-
-        // --- FINALER Fallback: Linkage in der Bewegungserkennung (echter, realer Push-Schalter)
-        $linkage = $this->ReadPushLinkageState();
-        if ($linkage !== null) {
-            // Linkage hat Vorrang, weil viele Firmwares GetPush(V20) nicht konsistent pflegen
-            $enabled = $linkage;
-        }
-
-        if ($enabled !== null) {
-            if ((bool)GetValue($idVar) !== (bool)$enabled) {
-                $this->SetValue("PushEnabled", (bool)$enabled);
-            }
+        $cur = (bool)GetValue($vid);
+        if ($cur !== $active) {
+            $this->SetValue('PushEnabled', $active);
+            $this->dbg('PUSH', 'Var geändert', ['new' => $active]);
+        } else {
+            $this->dbg('PUSH', 'Unverändert', ['value' => $active], true);
         }
     }
 
     private function PushApply(bool $on): bool
     {
         $ver = $this->ApiVersion('push');
+        $ok  = false;
 
-        $ok = false;
-        if ($ver === 'V20') {
-            // V20: eigener Endpunkt
-            $r = $this->apiCall([[ 
+        if ($ver === "V20") {
+            // 7 Tage à 48 Slots
+            $row = str_repeat($on ? '1' : '0', 48);
+            $table = [
+                'Sun' => $row, 'Mon' => $row, 'Tue' => $row, 'Wed' => $row,
+                'Thu' => $row, 'Fri' => $row, 'Sat' => $row,
+                // Einige FW liefern/erwarten zusätzlich eine MD-Gesamtkette:
+                'MD'  => str_repeat($on ? '1' : '0', 7 * 48)
+            ];
+
+            $r = $this->apiCall([[
                 "cmd"   => "SetPushV20",
-                "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
+                "param" => [ "Push" => [ "schedule" => [ "table" => $table ], "channel" => 0 ] ]
             ]], 'PUSH', true);
             $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-        } else {
-            // Legacy: erst enable, dann ggf. schedule.enable
-            $r1 = $this->apiCall([[ 
-                "cmd"   => "SetPush",
-                "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ] 
-            ]], 'PUSH', true);
-            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+
+            // Fallback: reines enable (falls Tabelle nicht unterstützt)
             if (!$ok) {
-                $r2 = $this->apiCall([[ 
-                    "cmd"   => "SetPush",
-                    "param" => [ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ] 
+                $r = $this->apiCall([[
+                    "cmd"   => "SetPushV20",
+                    "param" => [ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
                 ]], 'PUSH', true);
+                $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
+            }
+
+        } else { // LEGACY
+            // Erst schedule.enable, dann Fallback auf top-level enable
+            $p = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ] ]];
+            $r1 = $this->apiCall($p, 'PUSH', true);
+            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+
+            if (!$ok) {
+                $p2 = [[ "cmd"=>"SetPush", "param"=>[ "Push" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ] ]];
+                $r2 = $this->apiCall($p2, 'PUSH', true);
                 $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
             }
         }
 
-        if ($ok) { $this->UpdatePushStatus(); }
-        else     { $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. FW/Variante nicht unterstützt'); }
+        if ($ok) {
+            $this->UpdatePushStatus(); // UI sync über die MD-Prüfung
+        } else {
+            $this->dbg('PUSH', 'Setzen fehlgeschlagen – evtl. Firmware-Variante nicht unterstützt');
+        }
         return $ok;
     }
 
@@ -2635,5 +2606,94 @@ class Reolink extends IPSModule
         };
 
         return $hasPush($node) ? true : false;
+    }
+
+    // --- PUSH: robustes Parsen der MD-Schedule ---
+    private function parsePushScheduleActiveFromNode($pushNode): ?bool
+    {
+        // Knoten angleichen (manchmal liegt Push direkt unter value/initial, manchmal unter value.Push)
+        $push = null;
+        if (is_array($pushNode)) {
+            $push = $pushNode['Push'] ?? $pushNode;
+        }
+        if (!is_array($push)) {
+            return null;
+        }
+
+        // 1) Bevorzugt: schedule.table.MD
+        if (isset($push['schedule']) && is_array($push['schedule'])) {
+            $table = $push['schedule']['table'] ?? null;
+            if (is_array($table)) {
+                $md = $table['MD'] ?? null;
+
+                // a) MD als String (häufig)
+                if (is_string($md) && $md !== '') {
+                    // Sobald irgendwo eine '1' vorkommt, ist Push aktiv
+                    return (strpos($md, '1') !== false);
+                }
+                // b) MD als Array von Tages-Strings (manche FW)
+                if (is_array($md)) {
+                    $concat = '';
+                    foreach ($md as $row) {
+                        if (is_string($row)) $concat .= $row;
+                    }
+                    if ($concat !== '') {
+                        return (strpos($concat, '1') !== false);
+                    }
+                }
+
+                // Alternativ: einige FW hinterlegen Tagesnamen (Sun..Sat)
+                $days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                $concatDays = '';
+                foreach ($days as $d) {
+                    if (isset($table[$d]) && is_string($table[$d])) {
+                        $concatDays .= $table[$d];
+                    }
+                }
+                if ($concatDays !== '') {
+                    return (strpos($concatDays, '1') !== false);
+                }
+            }
+
+            // Fallback: schedule.enable (wenn MD fehlt)
+            if (isset($push['schedule']['enable'])) {
+                return ((int)$push['schedule']['enable'] === 1);
+            }
+        }
+
+        // Letzter Fallback: top-level enable (nicht zuverlässig, aber besser als nichts)
+        if (isset($push['enable'])) {
+            return ((int)$push['enable'] === 1);
+        }
+
+        return null;
+    }
+
+    // --- Nur EINEN gezielten Read durchführen und den Zustand ableiten ---
+    private function ReadPushLinkageState(): ?bool
+    {
+        // 1) V20 versuchen
+        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            $node = $res[0]['value'] ?? ($res[0]['initial'] ?? null);
+            if (is_array($node)) {
+                $active = $this->parsePushScheduleActiveFromNode($node);
+                if ($active !== null) return $active;
+            }
+        }
+
+        // 2) Legacy-Fallback (einige FW verlangen action=1)
+        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true);
+        if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
+            $res2 = $this->apiCall([[ "cmd"=>"GetPush", "param"=>["channel"=>0] ]], 'PUSH', true);
+        }
+        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
+            $node = $res2[0]['value'] ?? ($res2[0]['initial'] ?? null);
+            if (is_array($node)) {
+                return $this->parsePushScheduleActiveFromNode($node);
+            }
+        }
+
+        return null; // nicht ermittelbar
     }
 }
