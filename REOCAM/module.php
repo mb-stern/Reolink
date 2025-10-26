@@ -2069,59 +2069,55 @@ class Reolink extends IPSModule
 
     private function GetMdSensitivity(): ?array
     {
-        $ver = $this->DetectScheduleVersion();     // 'V20'|'LEGACY'
+        $ver = $this->DetectScheduleVersion(); // 'V20'|'LEGACY'
         $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
 
         $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM');
         if (!is_array($res) || ($res[0]['code']??1) !== 0) return null;
 
-        // hier der Fix: 'value' ODER 'initial'
         $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
         if (!is_array($node)) return null;
 
-        // V20 (newSens) oder Legacy (sens[])
-        if (!empty($node['newSens']['sens'])) {
-            // Kamera liefert ein ARRAY mit 4 Scheiben
-            $sens = $node['newSens']['sens'];
-            // nimm 1. Eintrag (oder bilde Mittelwert) – Hauptsache ein 1..50 Wert
-            $lvl  = (int)($sens[0]['sensitivity'] ?? 0);
-            return ['mode'=>'NEW', 'data'=>['sens'=>$sens, 'sensDef'=>(int)($node['newSens']['sensDef'] ?? $lvl)]];
+        $sensDef = null;
+        $segments = [];
+        if (!empty($node['newSens'])) {
+            $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
+            $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
+        } elseif (!empty($node['sens'])) {
+            $segments = $this->mdNormalizeSegments($node['sens']);
         }
-        if (!empty($node['sens']) && is_array($node['sens'])) {
-            return ['mode'=>'OLD', 'data'=>$node['sens']];
-        }
-        return null;
+
+        $active = $this->mdPickActiveNow($segments, $sensDef);
+
+        return [
+            'apiVer'   => $ver,
+            'sensDef'  => $sensDef,
+            'segments' => $segments,
+            'active'   => $active
+        ];
     }
 
     public function SetMdSensitivity(int $level): bool
     {
         $level = max(1, min(50, $level));
 
-        $ver   = $this->DetectScheduleVersion();       // 'V20'|'LEGACY'
-        $state = $this->GetMdSensitivity();            // nutzt jetzt initial/value sauber
+        $state = $this->GetMdSensitivity();
         if ($state === null) return false;
 
+        $ver      = $state['apiVer'];                    // 'V20'|'LEGACY'
+        $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
         $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
-        $paramKey = ($ver === 'V20') ? 'MdAlarm'    : 'Alarm';
 
-        if ($state['mode'] === 'NEW') {
-            // vorhandene Zeit-Scheiben übernehmen, ABER nur begin/end + sensitivity senden!
-            $in  = $state['data']['sens'];                // 4 Blöcke aus Get
-            $out = [];
-            foreach ($in as $s) {
-                $out[] = [
-                    'beginHour'   => (int)($s['beginHour'] ?? 0),
-                    'beginMin'    => (int)($s['beginMin']  ?? 0),
-                    'endHour'     => (int)($s['endHour']   ?? 23),
-                    'endMin'      => (int)($s['endMin']    ?? 59),
-                    'sensitivity' => $level
-                ];
-            }
-            // falls aus irgendeinem Grund leer: eine Volltags-Scheibe setzen
-            if (!$out) {
-                $out = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$level ]];
-            }
+        // vorhandene Segmente übernehmen, nur sensitivity angleichen
+        $segments = $state['segments'];
+        if (empty($segments)) {
+            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$level ]];
+        } else {
+            foreach ($segments as &$s) { $s['sensitivity'] = $level; }
+            unset($s);
+        }
 
+        if ($ver === 'V20') {
             $payload = [[
                 "cmd"   => $cmdSet,
                 "param" => [
@@ -2129,40 +2125,28 @@ class Reolink extends IPSModule
                         "type"       => "md",
                         "useNewSens" => 1,
                         "newSens"    => [
-                            "sensDef" => $level,   // sinnvolle Default-Spiegelung
-                            "sens"    => $out
+                            "sensDef" => $level,
+                            "sens"    => $segments
                         ],
                         "channel"    => 0
                     ]
                 ]
             ]];
-
             $res = $this->apiCall($payload, 'ALARM_SET');
             return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
         }
 
-        // LEGACY: bestehende vier Blöcke behalten, nur sensitivity je Block aktualisieren
-        $sens = array_map(function($s) use($level){
-            return [
-                'beginHour'   => (int)($s['beginHour'] ?? 0),
-                'beginMin'    => (int)($s['beginMin']  ?? 0),
-                'endHour'     => (int)($s['endHour']   ?? 23),
-                'endMin'      => (int)($s['endMin']    ?? 59),
-                'sensitivity' => $level
-            ];
-        }, $state['data']);
-
+        // LEGACY
         $payload = [[
             "cmd"   => $cmdSet,
             "param" => [
                 $paramKey => [
-                    "type" => "md",
-                    "sens" => $sens,
+                    "type"    => "md",
+                    "sens"    => $segments,
                     "channel" => 0
                 ]
             ]
         ]];
-
         $res = $this->apiCall($payload, 'ALARM_SET');
         return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
     }
@@ -2172,28 +2156,63 @@ class Reolink extends IPSModule
         $vid = @$this->GetIDForIdent("MdSensitivity");
         if ($vid === false) return;
 
-        $ver = $this->DetectScheduleVersion();
-        $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
+        $st = $this->GetMdSensitivity();
+        if (!$st) return;
 
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'ALARM', true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
-
-        $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
-        if (!is_array($node)) return;
-
-        $level = null;
-        if (!empty($node['newSens']['sens'])) {
-            // nimm z.B. ersten Block
-            $level = (int)($node['newSens']['sens'][0]['sensitivity'] ?? 0);
-        } elseif (!empty($node['sens']) && is_array($node['sens'])) {
-            $level = (int)($node['sens'][0]['sensitivity'] ?? 0);
+        // Zeige die aktuell wirksame Empfindlichkeit (Zeitplan berücksichtigt)
+        $lvl = max(1, min(50, (int)($st['active'] ?? 0)));
+        if ((int)GetValue($vid) !== $lvl) {
+            $this->SetValue("MdSensitivity", $lvl);
         }
-        if ($level === null) return;
+    }
 
-        $level = max(1, min(50, $level));
-        if ((int)GetValue($vid) !== $level) {
-            $this->SetValue("MdSensitivity", $level);
+    private function mdNormalizeSegments($raw): array
+    {
+        $out = [];
+        $push = function($a) use (&$out) {
+            $out[] = [
+                'beginHour'   => (int)($a['beginHour'] ?? 0),
+                'beginMin'    => (int)($a['beginMin']  ?? 0),
+                'endHour'     => (int)($a['endHour']   ?? 23),
+                'endMin'      => (int)($a['endMin']    ?? 59),
+                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
+            ];
+        };
+        $walk = function($node) use (&$walk, $push) {
+            if (is_array($node)) {
+                if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
+                    $push($node);
+                } else {
+                    foreach ($node as $v) $walk($v);
+                }
+            }
+        };
+        $walk($raw);
+
+        // grobe Plausibilitätsprüfung
+        $filtered = [];
+        foreach ($out as $s) {
+            $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
+            if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
+            if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
+            $filtered[] = $s;
         }
+        return array_values($filtered);
+    }
+
+    private function mdPickActiveNow(array $segments, ?int $sensDef): int
+    {
+        $now = (int)date('G')*60 + (int)date('i');
+        foreach ($segments as $s) {
+            $start = $s['beginHour']*60 + $s['beginMin'];
+            $end   = $s['endHour']*60   + $s['endMin'];
+            if ($start <= $end) {
+                if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
+            } else {
+                if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
+            }
+        }
+        return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
     }
 
     private function apiGetNode(array $resp, string $key)
