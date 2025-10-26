@@ -50,6 +50,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("PtzStyle", "");
         $this->RegisterAttributeString("PtzPresetsCache", "");
         $this->RegisterAttributeString("AbilityCache", "");
+        $this->RegisterAttributeInteger("ExecLastTs", 0);
 
 
         // Timer
