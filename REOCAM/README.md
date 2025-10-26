@@ -139,6 +139,7 @@ Je nach Konfiguration werden automatisch angelegt:
 ### Version 2.10 (26.10.2025)
 - Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden.
 - API-Punkt 'FTP-Upload', 'Sensitivität' und 'Sirene' hinzugefügt.
+- Weitere Code-Optimierungen
 
 ### Version 2.9 (23.10.2025)
 - Verbesserte Erkennung der Server-IP-Adresse im Konfigurationsformular

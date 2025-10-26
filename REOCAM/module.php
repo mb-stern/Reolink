@@ -2015,34 +2015,49 @@ class Reolink extends IPSModule
 
     private function UpdateFtpStatus(): void
     {
-        $idVar = @$this->GetIDForIdent("FTPEnabled");
-        if ($idVar === false) return;
+        // Version erkennen (du hast bereits ApiVersion('ftp'))
+        $ver = $this->ApiVersion('ftp'); // 'V20' | 'LEGACY' | 'NONE'
 
-        // V20 zuerst
-        $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            $ftp = $res[0]['value']['Ftp'] ?? null;
-            if (is_array($ftp) && array_key_exists('enable', $ftp)) {
-                $this->SetValue("FTPEnabled", ((int)$ftp['enable'] === 1));
+        $enabled = null;
+
+        if ($ver === 'V20') {
+            $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', /*suppress*/ true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                $v = $res[0]['value']['Ftp'] ?? null;
+                if (is_array($v) && array_key_exists('enable', $v)) {
+                    $enabled = ((int)$v['enable'] === 1);
+                }
             }
+        } elseif ($ver === 'LEGACY') {
+            $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', /*suppress*/ true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                $v = $res[0]['value']['Ftp'] ?? null;
+                // Bei Legacy sitzt das Flag ggf. unter schedule.enable
+                if (is_array($v)) {
+                    if (array_key_exists('enable', $v)) {
+                        $enabled = ((int)$v['enable'] === 1);
+                    } elseif (isset($v['schedule']['enable'])) {
+                        $enabled = ((int)$v['schedule']['enable'] === 1);
+                    }
+                }
+            }
+        } else {
+            $this->dbg('FTP', 'Keine FTP-API verfügbar');
             return;
         }
 
-        // Legacy Fallback (mit/ohne action)
-        $res2 = $this->apiCall([[ "cmd"=>"GetFtp", "action"=>1, "param"=>["channel"=>0] ]], 'FTP', true);
-        if (!(is_array($res2) && (($res2[0]['code'] ?? -1) === 0))) {
-            $res2 = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
+        if ($enabled === null) {
+            $this->dbg('FTP', 'Ungültige Antwort oder fehlendes enable-Flag', $ver);
+            return;
         }
-        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
-            $node = $res2[0]['value']['Ftp'] ?? ($res2[0]['value'] ?? null);
-            $enabled = null;
-            if (isset($node['schedule']['enable'])) {
-                $enabled = ((int)$node['schedule']['enable'] === 1);
-            } elseif (isset($node['enable'])) {
-                $enabled = ((int)$node['enable'] === 1);
-            }
-            if ($enabled !== null) {
-                $this->SetValue("FTPEnabled", $enabled);
+
+        // --- Nur schreiben, wenn sich der Wert geändert hat ---
+        $id = @$this->GetIDForIdent('FTPEnabled');
+        if ($id !== false) {
+            $old = GetValueBoolean($id);
+            if ($old !== $enabled) {
+                SetValueBoolean($id, $enabled);
+                $this->dbg('FTP', 'Var geändert', ['old' => $old, 'new' => $enabled]);
             }
         }
     }
