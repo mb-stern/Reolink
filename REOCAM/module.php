@@ -2495,19 +2495,67 @@ class Reolink extends IPSModule
     private function UpdatePushStatus(): void
     {
         $vid = @$this->GetIDForIdent("PushEnabled");
-        if ($vid === false) {
-            return;
+        if ($vid === false) return;
+
+        // --- 1) V20: genau 1x GetPushV20 ---
+        $res = $this->apiCall([[ "cmd"=>"GetPushV20", "param"=>["channel"=>0] ]], 'PUSH', /*suppress*/ true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            $push = $res[0]['value']['Push'] ?? null;
+
+            // Primärquelle: MD-Schedule (entscheidend für "Push EIN/AUS")
+            $md = $push['schedule']['table']['MD'] ?? null;
+            if (is_string($md) && $md !== '') {
+                // mindestens ein Zeitslot aktiv?
+                $isOn = (strpbrk($md, '1') !== false);
+                if ((bool)GetValue($vid) !== $isOn) {
+                    $this->SetValue("PushEnabled", $isOn);
+                }
+                return; // fertig – nicht weiter fallen
+            }
+
+            // Fallback, falls MD fehlt (seltene FWs):
+            // Wenn alle AI-Tabellen vorhanden sind, OR darüber bilden,
+            // ansonsten letzter Notanker: "enable".
+            $tab = $push['schedule']['table'] ?? [];
+            $aiStrs = [];
+            foreach (['AI_PEOPLE','AI_VEHICLE','AI_DOG_CAT'] as $k) {
+                if (isset($tab[$k]) && is_string($tab[$k])) $aiStrs[] = $tab[$k];
+            }
+            if (!empty($aiStrs)) {
+                $any1 = false;
+                foreach ($aiStrs as $s) { if (strpbrk($s, '1') !== false) { $any1 = true; break; } }
+                if ((bool)GetValue($vid) !== $any1) {
+                    $this->SetValue("PushEnabled", $any1);
+                }
+                return;
+            }
+
+            // Letzter V20-Notanker (nicht zuverlässig, aber besser als nichts)
+            if (isset($push['enable'])) {
+                $isOn = ((int)$push['enable'] === 1);
+                if ((bool)GetValue($vid) !== $isOn) {
+                    $this->SetValue("PushEnabled", $isOn);
+                }
+                return;
+            }
+            return; // V20 da, aber nichts Verwertbares
         }
-        $state = $this->ReadPushLinkageState();
-        if ($state === null) {
-            return; // nichts ändern
-        }
-        $old = (bool) GetValue($vid);
-        if ($old !== $state) {
-            $this->SetValue('PushEnabled', $state);
-            $this->dbg('PUSH', 'Status aktualisiert (MD-Schedule)', ['value' => $state]);
-        } else {
-            $this->dbg('PUSH', 'Status unverändert (MD-Schedule)', ['value' => $state]);
+
+        // --- 2) Legacy: 1x GetPush (mit/ohne action=1) ---
+        $res2 = $this->apiCall([[ "cmd"=>"GetPush", "action"=>1, "param"=>["channel"=>0] ]], 'PUSH', true)
+            ?:  $this->apiCall([[ "cmd"=>"GetPush",              "param"=>["channel"=>0] ]], 'PUSH', true);
+
+        if (is_array($res2) && (($res2[0]['code'] ?? -1) === 0)) {
+            $node = $res2[0]['value']['Push'] ?? ($res2[0]['value'] ?? null);
+            $enabled = null;
+            if (isset($node['schedule']['enable'])) {
+                $enabled = ((int)$node['schedule']['enable'] === 1);
+            } elseif (isset($node['enable'])) {
+                $enabled = ((int)$node['enable'] === 1);
+            }
+            if ($enabled !== null && (bool)GetValue($vid) !== $enabled) {
+                $this->SetValue("PushEnabled", $enabled);
+            }
         }
     }
 
