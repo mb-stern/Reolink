@@ -241,33 +241,28 @@ class Reolink extends IPSModule
                 $lk = strtolower((string)$k);
 
                 if (in_array($lk, ['password','pass','pwd','token','apikey','authorization','auth','bearer','secret'], true)) {
-                    // Egal welcher Typ -> komplett schwärzen
                     $out[$k] = '***';
-                    continue;
-                }
 
-                if (in_array($lk, ['user','username'], true)) {
-                    // NEU: bei Arrays rekursiv weiter, bei Strings maskieren
-                    if (is_array($v)) {
-                        $out[$k] = $this->redactDeep($v); // trifft dann auf 'userName' usw.
-                    } else {
+                } elseif (in_array($lk, ['user','username'], true)) {
+                    // Nur skalare Werte maskieren; bei Arrays rekursiv weitergehen
+                    if (is_scalar($v) || (is_object($v) && method_exists($v, '__toString'))) {
                         $out[$k] = $this->maskMiddle((string)$v);
+                    } else {
+                        $out[$k] = $this->redactDeep($v);
                     }
-                    continue;
-                }
 
-                $out[$k] = $this->redactDeep($v);
+                } else {
+                    $out[$k] = $this->redactDeep($v);
+                }
             }
             return $out;
         }
 
         if (is_string($value)) {
             $s = $value;
-            // URL-Parameter schwärzen
             $s = preg_replace('/([?&])(user|username)=([^&#\s]*)/i', '$1$2=***', $s);
             $s = preg_replace('/([?&])(password|pass|pwd)=([^&#\s]*)/i', '$1$2=***', $s);
             $s = preg_replace('/([?&])(token|apikey)=([^&#\s]*)/i', '$1$2=***', $s);
-            // Header-ähnlich
             $s = preg_replace('/(Authorization:\s*Bearer\s+)[^\s"]+/i', '$1***', $s);
             $s = preg_replace('/(Authorization:\s*Basic\s+)[A-Za-z0-9+\/=]+/i', '$1***', $s);
             return $s;
@@ -279,10 +274,8 @@ class Reolink extends IPSModule
     private function maskMiddle(string $s): string
     {
         if ($s === '') return '';
-        if (mb_strlen($s) <= 2) return '*';
-        $first = mb_substr($s, 0, 1);
-        $last  = mb_substr($s, -1);
-        return $first . '***' . $last;
+        if (mb_strlen($s) <= 2) return str_repeat('*', mb_strlen($s));
+        return mb_substr($s, 0, 1) . '***' . mb_substr($s, -1);
     }
 
     // ---------------------------
