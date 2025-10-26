@@ -115,9 +115,9 @@ class Reolink extends IPSModule
         $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
         $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableAlarm    = $this->ReadPropertyBoolean("EnableApiAlarm");
+        $enableSensitivity    = $this->ReadPropertyBoolean("EnableApiSensitivity");
         $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableAlarm || $enableSiren);
+        $anyFeatureOn   = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren);
 
         // Variablen anlegen/aufräumen (wie gehabt)
         $this->CreateOrUpdateApiVariablesUnified();
@@ -1187,7 +1187,7 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiFTP")) {
                 $this->UpdateFtpStatus();               // 1x GetFtp(V20/Legacy)
             }
-            if ($this->ReadPropertyBoolean("EnableApiAlarm")) {
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
                 $this->UpdateMdSensitivityStatus();     // 1x GetMdAlarm/GetAlarm
             }
             if ($this->ReadPropertyBoolean("EnableApiSiren")) {
