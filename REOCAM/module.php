@@ -2138,131 +2138,102 @@ class Reolink extends IPSModule
     // Sensitivity
     // ---------------------------
 
-    private function GetMdSensitivity(): ?array
-    {
-        $res = $this->Api('sensitivity', 'get', ['channel'=>0], 'SENS_GET');
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
+private function GetMdSensitivity(): ?array
+{
+    $ver = $this->ApiVersion('schedule');
+    $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        $root = $res[0]['value'] ?? $res[0]['initial'] ?? [];
-        if (!is_array($root)) return null;
+    $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'SENSITIVITY');
+    if (!is_array($res) || ($res[0]['code']??1) !== 0) return null;
 
-        $node   = isset($root['MdAlarm']) ? 'MdAlarm' : (isset($root['Alarm']) ? 'Alarm' : null);
-        if ($node === null) return null;
+    $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
+    if (!is_array($node)) return null;
 
-        $n = $root[$node];
-
-        // bevorzugt newSens, sonst sens[]
-        $useNew  = (int)($n['useNewSens'] ?? 0);
-        $sensDef = null;
-        $segments = [];
-
-        if ($useNew === 1 && isset($n['newSens']['sens']) && is_array($n['newSens']['sens'])) {
-            $sensDef  = isset($n['newSens']['sensDef']) ? (int)$n['newSens']['sensDef'] : null;
-            $segments = $n['newSens']['sens'];
-        } elseif (isset($n['sens']) && is_array($n['sens'])) {
-            $segments = $n['sens'];
-        }
-
-        // „aktives“ Segment (nur grob, falls du’s brauchst)
-        $now = (int)date('H')*60 + (int)date('i');
-        $active = null;
-        foreach ($segments as $s) {
-            $b = (int)($s['beginHour'] ?? 0)*60 + (int)($s['beginMin'] ?? 0);
-            $e = (int)($s['endHour']   ?? 23)*60 + (int)($s['endMin']  ?? 59);
-            if ($now >= $b && $now <= $e) { $active = $s; break; }
-        }
-
-        return [
-            'node'     => $node,     // 'MdAlarm' oder 'Alarm'
-            'useNew'   => $useNew,   // 0/1
-            'sensDef'  => $sensDef,  // optional
-            'segments' => $segments, // Array der Tages-Segmente
-            'active'   => $active
-        ];
+    $sensDef = null;
+    $segments = [];
+    if (!empty($node['newSens'])) {
+        $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
+        $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
+    } elseif (!empty($node['sens'])) {
+        $segments = $this->mdNormalizeSegments($node['sens']);
     }
 
-    public function SetMdSensitivity(int $level): bool
-    {
-        $level  = max(1, min(50, $level));
-        $camVal = 51 - $level; // Reolink invertiert
+    $active = $this->mdPickActiveNow($segments, $sensDef);
 
-        $st = $this->GetMdSensitivity();
-        if (!is_array($st)) return false;
+    return [
+        'apiVer'   => $ver,        // 'V20' | 'LEGACY'
+        'sensDef'  => $sensDef,    // optional
+        'segments' => $segments,   // normalisierte Segmente (Tagesfenster)
+        'active'   => $active
+    ];
+}
 
-        $node    = $st['node'];     // 'MdAlarm' oder 'Alarm'
-        $useNew  = (int)($st['useNew'] ?? 0);
-        $curSegs = $st['segments'] ?? [];
+public function SetMdSensitivity(int $level): bool
+{
+    $level = max(1, min(50, $level));
+    $levelCam = 51 - $level;
 
-        // Segmente patchen (Werte übernehmen, Defaults absichern)
-        $segments = [];
-        foreach ($curSegs as $s) {
-            if (!is_array($s)) continue;
-            $segments[] = [
-                'beginHour'   => (int)($s['beginHour'] ?? 0),
-                'beginMin'    => (int)($s['beginMin']  ?? 0),
-                'endHour'     => (int)($s['endHour']   ?? 23),
-                'endMin'      => (int)($s['endMin']    ?? 59),
-                'sensitivity' => $camVal,
-                // vorhandene Felder bewahren
-                'enable'      => isset($s['enable']) ? (int)$s['enable'] : 1,
-                'id'          => isset($s['id']) ? (int)$s['id'] : 0,
-                'priority'    => isset($s['priority']) ? (int)$s['priority'] : 0,
-            ];
-        }
-        if (!$segments) {
-            // Full-Day Fallback
-            $segments[] = [
-                'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,
-                'sensitivity'=>$camVal,'enable'=>1,'id'=>0,'priority'=>0
-            ];
-        }
+    $state = $this->GetMdSensitivity();
+    if ($state === null) return false;
 
-        // Payload je nach Schema aus dem GET
-        $payload = [];
-        if ($node === 'MdAlarm') {
-            if ($useNew === 1) {
-                $payload['MdAlarm'] = [
-                    'type'       => 'md',
-                    'useNewSens' => 1,
-                    'newSens'    => [
-                        'sensDef' => (int)($st['sensDef'] ?? $camVal),
-                        'sens'    => $segments
+    $ver      = $state['apiVer'];                    // 'V20' oder 'LEGACY'
+    $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
+    $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
+
+    $segments = $state['segments'];
+    if (empty($segments)) {
+        $segments = [[
+            'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam
+        ]];
+    } else {
+        foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
+        unset($s);
+    }
+
+    if ($ver === 'V20') {
+        // V20: useNewSens=1 + newSens.sensDef + newSens.sens[]
+        $payload = [[
+            "cmd"   => $cmdSet,
+            "param" => [
+                $paramKey => [
+                    "type"       => "md",
+                    "useNewSens" => 1,
+                    "newSens"    => [
+                        "sensDef" => $levelCam,
+                        "sens"    => $segments
                     ],
-                    'channel'    => 0
-                ];
-            } else {
-                $payload['MdAlarm'] = [
-                    'type'    => 'md',
-                    'sens'    => $segments,
-                    'channel' => 0
-                ];
-            }
-        } else { // 'Alarm'
-            $payload['Alarm'] = [
-                'type'    => 'md',
-                'sens'    => $segments,
-                'channel' => 0
-            ];
-        }
-
-        // EIN Set über deinen zentralen Router
-        $ok = (bool)$this->Api('sensitivity', 'set', $payload, 'SENS_SET', false);
-
-        // Minimaler Fallback: alternativen Node probieren (selten nötig)
-        if (!$ok) {
-            $alt = ($node === 'MdAlarm') ? 'Alarm' : 'MdAlarm';
-            $payload2 = [$alt => $payload[$node]];
-            $payload2[$alt]['channel'] = 0;
-            $ok = (bool)$this->Api('sensitivity', 'set', $payload2, 'SENS_SET', false);
-        }
-
+                    "channel"    => 0
+                ]
+            ]
+        ]];
+        $res = $this->apiCall($payload, 'ALARM_SET');
+        $ok  = (is_array($res) && ($res[0]['code'] ?? 1) === 0);
         if ($ok) {
             $vid = @$this->GetIDForIdent('MdSensitivity');
             if ($vid !== false) { $this->SetValue('MdSensitivity', $level); }
         }
-
         return $ok;
     }
+
+    // Legacy: sens[] setzen
+    $payload = [[
+        "cmd"   => $cmdSet,
+        "param" => [
+            $paramKey => [
+                "type"    => "md",
+                "sens"    => $segments,
+                "channel" => 0
+            ]
+        ]
+    ]];
+    $res = $this->apiCall($payload, 'ALARM_SET');
+    $ok  = (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+    if ($ok) {
+        $vid = @$this->GetIDForIdent('MdSensitivity');
+        if ($vid !== false) { $this->SetValue('MdSensitivity', $level); }
+    }
+    return $ok;
+}
 
     private function UpdateMdSensitivityStatus(): void
     {
