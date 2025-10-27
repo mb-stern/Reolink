@@ -1438,45 +1438,54 @@ class Reolink extends IPSModule
     public function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
         $get = $this->Api('email', 'get', ['channel'=>0], 'EMAIL_GET');
-        if (!is_array($get) || (($get[0]['code'] ?? -1) != 0)) {
+        if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
             $this->SendDebug('EMAIL', 'GET fehlgeschlagen', 0);
             return false;
         }
-        $email = $get[0]['value']['Email'] ?? $get[0]['initial']['Email'] ?? [];
-        if (!is_array($email)) $email = [];
+        $cur = $get[0]['value']['Email'] ?? $get[0]['initial']['Email'] ?? [];
+        if (!is_array($cur)) $cur = [];
 
-        if ($enable === null && $intervalSec === null && $contentMode === null) {
+        $wantSet = ($enable !== null || $intervalSec !== null || $contentMode !== null);
+        if (!$wantSet) {
             $this->UpdateEmailStatus();
             return true;
         }
 
+        $email = [];
+
         if ($enable !== null) {
             $email['enable'] = $enable ? 1 : 0;
-        } elseif (!isset($email['enable'])) {
-            $email['enable'] = 0;
+            $email['schedule']['enable'] = $enable ? 1 : 0;
         }
-        $email['channel'] = 0;
 
         if ($intervalSec !== null) {
-            $email['intervalSec'] = (int)$intervalSec;
-            $email['interval']    = (int)$intervalSec;
+            $str = $this->IntervalSecondsToString((int)$intervalSec); 
+            if ($str !== null) {
+                $email['interval'] = $str; 
+            } else {
+                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert (Sekunden nicht mappbar)', $intervalSec);
+            }
         }
 
         if ($contentMode !== null) {
- 
-            $email['content']     = (int)$contentMode;
-            $email['contentMode'] = (int)$contentMode;
-            $email['attachment']  = match ((int)$contentMode) {
+            $m = (int)$contentMode;
+
+            $email['textType'] = in_array($m, [0,2,3], true) ? 1 : 0;
+            $email['attachmentType'] = ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0)));
+
+
+            $email['attachment'] = match ($m) {
                 1 => 'onlyPicture',
                 2 => 'picture',
                 3 => 'video',
-                default => '0', 
+                default => '0', // oder 'no'
             };
         }
 
+
         $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
         if (!$ok) {
-            $this->SendDebug('EMAIL', 'SET fehlgeschlagen', 0);
+            $this->SendDebug('EMAIL', 'SET fehlgeschlagen', $email);
             return false;
         }
 
