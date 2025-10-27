@@ -1451,7 +1451,7 @@ class Reolink extends IPSModule
 
     public function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
-        // 1) aktuellen Zustand (für Merge & Statuslauf)
+        // 1) Lesen (für Statuslauf & Merge-Infos)
         $get = $this->Api('email', 'get', ['channel'=>0], 'EMAIL_GET');
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
             $this->SendDebug('EMAIL', 'GET fehlgeschlagen', 0);
@@ -1460,48 +1460,42 @@ class Reolink extends IPSModule
         $cur = $get[0]['value']['Email'] ?? $get[0]['initial']['Email'] ?? [];
         if (!is_array($cur)) $cur = [];
 
-        // 2) reiner Statuslauf -> nur Variablen synchronisieren
+        // 2) Reiner Statuslauf → nur Variablen synchronisieren
         $wantSet = ($enable !== null || $intervalSec !== null || $contentMode !== null);
         if (!$wantSet) {
             $this->UpdateEmailStatus();
             return true;
         }
 
-        // 3) Payload für V20 & Legacy (mit channel!)
-        $email = [];
-        $email['channel'] = 0; // <<< WICHTIG: ohne das ignorieren manche FW den Set!
+        // 3) Kombinierten Payload bauen (V20 + Legacy-Felder) – inkl. channel
+        $email = ['channel' => 0];
 
-        // enable
+        // enable (V20: enable; Legacy: schedule.enable)
         if ($enable !== null) {
-            $email['enable']             = $enable ? 1 : 0; // V20
-            $email['schedule']['enable'] = $enable ? 1 : 0; // Legacy
+            $email['enable']             = $enable ? 1 : 0;
+            $email['schedule']['enable'] = $enable ? 1 : 0;
         }
 
-        // interval (String)
+        // interval als String (wird von V20/Legacy akzeptiert)
         if ($intervalSec !== null) {
-            if (method_exists($this, 'IntervalSecondsToString')) {
-                $str = $this->IntervalSecondsToString((int)$intervalSec);
-            } else {
-                $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
-                $str = $map[(int)$intervalSec] ?? null;
-            }
+            $str = method_exists($this, 'IntervalSecondsToString')
+                ? $this->IntervalSecondsToString((int)$intervalSec)
+                : ([30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'][(int)$intervalSec] ?? null);
             if ($str !== null) {
-                $email['interval'] = $str; // von SetEmailV20/SetEmail akzeptiert
+                $email['interval'] = $str;
             } else {
-                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert: '.(string)$intervalSec, 0);
+                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert (nicht mappbar): '.(string)$intervalSec, 0);
             }
         }
 
-        // content (0=Text, 1=Nur Bild, 2=Text+Bild, 3=Text+Video)
+        // Inhalt (0=Text, 1=Nur Bild, 2=Text+Bild, 3=Text+Video)
         if ($contentMode !== null) {
             $m = (int)$contentMode;
-
             // V20 Felder
             $email['textType']       = in_array($m, [0,2,3], true) ? 1 : 0;
             $email['attachmentType'] = ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0)));
-
             // Legacy Feld
-            $email['attachment'] = match ($m) {
+            $email['attachment']     = match ($m) {
                 1 => 'onlyPicture',
                 2 => 'picture',
                 3 => 'video',
@@ -1509,17 +1503,63 @@ class Reolink extends IPSModule
             };
         }
 
-        // 4) senden
+        // 4) Versuche EINEN kombinierten Set
         $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
 
+        // 5) Fallback wie in deiner alten Version: Einzel-Sets pro Feld
         if (!$ok) {
-            $this->SendDebug('EMAIL', 'SET fehlgeschlagen, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), 0);
-            return false;
-        } else {
-            $this->SendDebug('EMAIL', 'SET ok, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), 0);
+            $this->SendDebug('EMAIL', 'Combined SET fehlgeschlagen – Fallback auf Einzel-Sets', 0);
+            $okAll = true;
+
+            if ($enable !== null) {
+                $payload = ['Email' => ['channel'=>0, 'enable' => ($enable?1:0), 'schedule'=>['enable'=>($enable?1:0)]]];
+                $r = (bool)$this->Api('email', 'set', $payload, 'EMAIL_SET', false);
+                $okAll = $okAll && $r;
+            }
+
+            if ($intervalSec !== null) {
+                $str = method_exists($this, 'IntervalSecondsToString')
+                    ? $this->IntervalSecondsToString((int)$intervalSec)
+                    : ([30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'][(int)$intervalSec] ?? null);
+                if ($str !== null) {
+                    $payload = ['Email' => ['channel'=>0, 'interval' => $str]];
+                    $r = (bool)$this->Api('email', 'set', $payload, 'EMAIL_SET', false);
+                    $okAll = $okAll && $r;
+                } else {
+                    $okAll = false;
+                }
+            }
+
+            if ($contentMode !== null) {
+                $m = (int)$contentMode;
+                $payloadV20 = [
+                    'Email' => [
+                        'channel'        => 0,
+                        'textType'       => in_array($m, [0,2,3], true) ? 1 : 0,
+                        'attachmentType' => ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0))),
+                    ]
+                ];
+                $payloadLegacy = [
+                    'Email' => [
+                        'channel'    => 0,
+                        'attachment' => match ($m) { 1=>'onlyPicture', 2=>'picture', 3=>'video', default=>'0' },
+                    ]
+                ];
+                // Schicke beide nacheinander – die FW nimmt den passenden an
+                $r1 = (bool)$this->Api('email', 'set', $payloadV20, 'EMAIL_SET', false);
+                $r2 = (bool)$this->Api('email', 'set', $payloadLegacy, 'EMAIL_SET', false);
+                $okAll = $okAll && ($r1 || $r2);
+            }
+
+            $ok = $okAll;
         }
 
-        // 5) Status nachziehen
+        if (!$ok) {
+            $this->SendDebug('EMAIL', 'SET final fehlgeschlagen', 0);
+            return false;
+        }
+
+        // 6) Status nachziehen (UI sofort korrekt)
         $this->UpdateEmailStatus();
         return true;
     }
