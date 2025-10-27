@@ -1468,39 +1468,54 @@ class Reolink extends IPSModule
         $email = [];
 
         if ($enable !== null) {
-            $email['enable'] = $enable ? 1 : 0;
-            $email['schedule']['enable'] = $enable ? 1 : 0;
+            $email['enable']              = $enable ? 1 : 0;       
+            $email['schedule']['enable']  = $enable ? 1 : 0;       
         }
 
         if ($intervalSec !== null) {
-            $str = $this->IntervalSecondsToString((int)$intervalSec); 
+            if (method_exists($this, 'IntervalSecondsToString')) {
+                $str = $this->IntervalSecondsToString((int)$intervalSec);
+            } else {
+               
+                $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
+                $str = $map[(int)$intervalSec] ?? null;
+            }
             if ($str !== null) {
                 $email['interval'] = $str; 
             } else {
-                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert (Sekunden nicht mappbar)', $intervalSec);
+                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert (nicht mappbar): '.(string)$intervalSec, 0);
             }
         }
 
         if ($contentMode !== null) {
             $m = (int)$contentMode;
 
-            $email['textType'] = in_array($m, [0,2,3], true) ? 1 : 0;
+            $email['textType']       = in_array($m, [0,2,3], true) ? 1 : 0;
             $email['attachmentType'] = ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0)));
-
 
             $email['attachment'] = match ($m) {
                 1 => 'onlyPicture',
                 2 => 'picture',
                 3 => 'video',
-                default => '0', 
+                default => '0',
             };
         }
 
-
         $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
+
         if (!$ok) {
-            $this->SendDebug('EMAIL', 'SET fehlgeschlagen', $email);
+            $this->SendDebug(
+                'EMAIL',
+                'SET fehlgeschlagen, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
+                0
+            );
             return false;
+        } else {
+            $this->SendDebug(
+                'EMAIL',
+                'SET ok, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
+                0
+            );
         }
 
         $this->UpdateEmailStatus();
