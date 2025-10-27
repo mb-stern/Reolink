@@ -1118,7 +1118,7 @@ class Reolink extends IPSModule
                 $this->UpdateWhiteLedStatus(); 
             }
             if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-                $this->EmailApply(null, null, null);    
+                $this->UpdateEmailStatus();  
             }
             if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
                 $this->CreateOrUpdatePTZHtml(false);    
@@ -1163,11 +1163,6 @@ class Reolink extends IPSModule
         return $ability;
     }
 
-    // ==========================================
-    // Zentraler Helper: Api()
-    // - pro Domain V20/Legacy nur EINMAL ermitteln (24h Cache)
-    // - GET kurz deduplizieren (Mikro-TTL), um Doppel-Requests zu vermeiden
-    // ==========================================
     private function Api(string $domain, string $op, array $param = [], string $topic = 'API', bool $verify = false, int $dedupeTtlMs = 300)
     {
         // (1) Version aus Cache lesen (24h)
@@ -1415,7 +1410,6 @@ class Reolink extends IPSModule
 
     public function EmailApply(bool $enable, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
-        // Aktuellen Stand lesen (wir übernehmen vorhandene Felder)
         $get = $this->Api('email', 'get', ['channel'=>0], 'EMAIL_GET');
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
             $this->SendDebug('EMAIL', 'Get fehlgeschlagen', 0);
@@ -1425,11 +1419,9 @@ class Reolink extends IPSModule
         $email = $get[0]['value']['Email'] ?? $get[0]['initial']['Email'] ?? [];
         if (!is_array($email)) $email = [];
 
-        // Pflichtfelder
         $email['enable']  = $enable ? 1 : 0;
         $email['channel'] = 0;
 
-        // Optional felder robust setzen (beide Schlüssel, da Modelle variieren)
         if ($intervalSec !== null) {
             $email['intervalSec'] = (int)$intervalSec;
             $email['interval']    = (int)$intervalSec;
@@ -1439,29 +1431,31 @@ class Reolink extends IPSModule
             $email['contentMode'] = (int)$contentMode;
         }
 
-        // Senden – Api() entscheidet SetEmailV20 vs. SetEmail
         $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
         if (!$ok) $this->SendDebug('EMAIL', 'Set fehlgeschlagen', 0);
 
-        // Optional: einmal nachziehen (kein Muss)
         if ($ok) $this->GetEmailState();
 
         return $ok;
     }
 
-    private function UpdateEmailStatus(): void
+    public function UpdateEmailStatus(): void
     {
+        $res = $this->Api('email', 'get', ['channel'=>0], 'EMAIL');
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
+
+        $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
+        if (!is_array($e)) return;
+
+        $enabled = isset($e['enable']) ? ((int)$e['enable'] === 1) : null;
+        if ($enabled === null) return;
+
         $vid = @$this->GetIDForIdent('EmailNotify');
-        if ($vid === false) return;
-
-        $st = $this->GetEmailState();
-        if ($st === null || !isset($st['enabled'])) return;
-
-        $cur = (bool)GetValue($vid);
-        if ($cur !== (bool)$st['enabled']) {
-            SetValueBoolean($vid, (bool)$st['enabled']);
+        if ($vid !== false && (bool)GetValue($vid) !== (bool)$enabled) {
+            SetValueBoolean($vid, (bool)$enabled);
         }
     }
+
 
     // ---------------------------
     // PTZ / Zoom
