@@ -1451,6 +1451,7 @@ class Reolink extends IPSModule
 
     public function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
+        // 1) aktuellen Zustand (für Merge & Statuslauf)
         $get = $this->Api('email', 'get', ['channel'=>0], 'EMAIL_GET');
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
             $this->SendDebug('EMAIL', 'GET fehlgeschlagen', 0);
@@ -1459,40 +1460,47 @@ class Reolink extends IPSModule
         $cur = $get[0]['value']['Email'] ?? $get[0]['initial']['Email'] ?? [];
         if (!is_array($cur)) $cur = [];
 
+        // 2) reiner Statuslauf -> nur Variablen synchronisieren
         $wantSet = ($enable !== null || $intervalSec !== null || $contentMode !== null);
         if (!$wantSet) {
             $this->UpdateEmailStatus();
             return true;
         }
 
+        // 3) Payload für V20 & Legacy (mit channel!)
         $email = [];
+        $email['channel'] = 0; // <<< WICHTIG: ohne das ignorieren manche FW den Set!
 
+        // enable
         if ($enable !== null) {
-            $email['enable']              = $enable ? 1 : 0;       
-            $email['schedule']['enable']  = $enable ? 1 : 0;       
+            $email['enable']             = $enable ? 1 : 0; // V20
+            $email['schedule']['enable'] = $enable ? 1 : 0; // Legacy
         }
 
+        // interval (String)
         if ($intervalSec !== null) {
             if (method_exists($this, 'IntervalSecondsToString')) {
                 $str = $this->IntervalSecondsToString((int)$intervalSec);
             } else {
-               
                 $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
                 $str = $map[(int)$intervalSec] ?? null;
             }
             if ($str !== null) {
-                $email['interval'] = $str; 
+                $email['interval'] = $str; // von SetEmailV20/SetEmail akzeptiert
             } else {
-                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert (nicht mappbar): '.(string)$intervalSec, 0);
+                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert: '.(string)$intervalSec, 0);
             }
         }
 
+        // content (0=Text, 1=Nur Bild, 2=Text+Bild, 3=Text+Video)
         if ($contentMode !== null) {
             $m = (int)$contentMode;
 
+            // V20 Felder
             $email['textType']       = in_array($m, [0,2,3], true) ? 1 : 0;
             $email['attachmentType'] = ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0)));
 
+            // Legacy Feld
             $email['attachment'] = match ($m) {
                 1 => 'onlyPicture',
                 2 => 'picture',
@@ -1501,23 +1509,17 @@ class Reolink extends IPSModule
             };
         }
 
+        // 4) senden
         $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
 
         if (!$ok) {
-            $this->SendDebug(
-                'EMAIL',
-                'SET fehlgeschlagen, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
-                0
-            );
+            $this->SendDebug('EMAIL', 'SET fehlgeschlagen, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), 0);
             return false;
         } else {
-            $this->SendDebug(
-                'EMAIL',
-                'SET ok, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
-                0
-            );
+            $this->SendDebug('EMAIL', 'SET ok, Payload='.json_encode($email, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), 0);
         }
 
+        // 5) Status nachziehen
         $this->UpdateEmailStatus();
         return true;
     }
