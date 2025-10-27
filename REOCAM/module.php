@@ -2301,7 +2301,7 @@ class Reolink extends IPSModule
             'channel'  => 0,
             'sensDef'  => $levelCam,   // von Legacy ignoriert
             'segments' => $segments
-        ], 'ALARM_SET', /*verify*/ true);
+        ], 'SENSITIVITY_SET', /*verify*/ true);
 
         $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
         if ($ok) {
