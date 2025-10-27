@@ -1163,11 +1163,6 @@ class Reolink extends IPSModule
         return $ability;
     }
 
-    // ==========================================
-    // Zentraler Helper: Api()
-    // - pro Domain V20/Legacy nur EINMAL ermitteln (24h Cache)
-    // - GET kurz deduplizieren (Mikro-TTL), um Doppel-Requests zu vermeiden
-    // ==========================================
     private function Api(string $domain, string $op, array $param = [], string $topic = 'API', bool $verify = false, int $dedupeTtlMs = 300)
     {
         // (1) Version aus Cache lesen (24h)
@@ -2172,65 +2167,104 @@ class Reolink extends IPSModule
         ];
     }
 
-    public function SetMdSensitivity(int $level): bool
+    private function SetMdSensitivity(int $level): bool
     {
-        $level = max(1, min(50, $level));
-        $levelCam = 51 - $level;
+        // 1) Clamp + Kamera-Wert (1..50 -> 50..1)
+        $level  = max(1, min(50, $level));
+        $camVal = 51 - $level;
 
-        // Lesen funktioniert bei dir bereits – wir verwenden es nur,
-        // um Version (V20/Legacy) und vorhandene Segmente zu kennen.
-        $state = $this->GetMdSensitivity();
-        if ($state === null) return false;
+        // 2) EIN GET über deinen Api()-Helper
+        $get = $this->Api('sensitivity', 'get', ['channel'=>0], 'SENS_GET');
+        if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
+            $this->SendDebug('SENS', 'GET fehlgeschlagen', 0);
+            return false;
+        }
 
-        $ver      = $state['apiVer'];                    // 'V20' oder 'LEGACY'
-        $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
-        $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
+        $root = $get[0]['value'] ?? $get[0]['initial'] ?? [];
+        $isV20 = isset($root['MdAlarm']) && is_array($root['MdAlarm']);
+        $cur   = $isV20 ? ($root['MdAlarm'] ?? []) : ($root['Alarm'] ?? []);
+        $node  = $isV20 ? 'MdAlarm' : 'Alarm';
 
-        // vorhandene Segmente übernehmen und alle auf den Zielwert setzen
-        $segments = $state['segments'];
-        if (empty($segments)) {
-            $segments = [[
-                'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,
-                'sensitivity'=>$levelCam
-            ]];
+        // 3) Segmente vorbereiten
+        $mkSegments = function(array $src, int $val, bool $forceEnable) {
+            $out = [];
+            if (isset($src) && is_array($src) && count($src) > 0) {
+                foreach ($src as $s) {
+                    if (!is_array($s)) continue;
+                    $s['sensitivity'] = $val;
+                    if ($forceEnable && array_key_exists('enable', $s)) $s['enable'] = 1;
+                    // Defaults absichern
+                    $s['beginHour'] = (int)($s['beginHour'] ?? 0);
+                    $s['beginMin']  = (int)($s['beginMin']  ?? 0);
+                    $s['endHour']   = (int)($s['endHour']   ?? 23);
+                    $s['endMin']    = (int)($s['endMin']    ?? 59);
+                    $out[] = $s;
+                }
+            }
+            if (!$out) {
+                $out[] = [
+                    'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,
+                    'sensitivity'=>$val
+                ];
+            }
+            return $out;
+        };
+
+        // 4) Payload bauen – je nach Schema aus dem GET
+        $payload = [];
+        if ($isV20) {
+            $useNew = (int)($cur['useNewSens'] ?? 1); // default 1
+            if ($useNew === 1 || isset($cur['newSens'])) {
+                // newSens aktiv: Segmente + sensDef setzen, Segmente enabled halten
+                $segments = $mkSegments($cur['newSens']['sens'] ?? [], $camVal, true);
+                $payload[$node] = [
+                    'type'       => 'md',
+                    'useNewSens' => 1,
+                    'newSens'    => [
+                        'sensDef' => (int)($cur['newSens']['sensDef'] ?? $camVal),
+                        'sens'    => $segments
+                    ],
+                    'channel'    => 0
+                ];
+                if (isset($cur['enable'])) $payload[$node]['enable'] = (int)$cur['enable'];
+            } else {
+                // altes v20-Schema (sens[])
+                $segments = $mkSegments($cur['sens'] ?? [], $camVal, isset($cur['sens'][0]['enable']));
+                $payload[$node] = [
+                    'type'    => 'md',
+                    'sens'    => $segments,
+                    'channel' => 0
+                ];
+                if (isset($cur['enable'])) $payload[$node]['enable'] = (int)$cur['enable'];
+            }
         } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-            unset($s);
+            // Legacy
+            $segments = $mkSegments($cur['sens'] ?? [], $camVal, false);
+            $payload[$node] = [
+                'type'    => 'md',
+                'sens'    => $segments,
+                'channel' => 0
+            ];
         }
 
-        if ($ver === 'V20') {
-            // V20: newSens aktiv mit sensDef + sens[]
-            $payload = [[
-                "cmd"   => $cmdSet,
-                "param" => [
-                    $paramKey => [
-                        "type"       => "md",
-                        "useNewSens" => 1,
-                        "newSens"    => [
-                            "sensDef" => $levelCam,
-                            "sens"    => $segments
-                        ],
-                        "channel"    => 0
-                    ]
-                ]
-            ]];
-            $res = $this->apiCall($payload, 'ALARM_SET');
-            return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+        // 5) EIN SET über deinen Api()-Helper
+        $ok = (bool)$this->Api('sensitivity', 'set', $payload, 'SENS_SET', false);
+
+        // 6) Kleiner Fallback: anderer Node, falls erster abgelehnt
+        if (!$ok) {
+            $alt = ($node === 'MdAlarm') ? 'Alarm' : 'MdAlarm';
+            $payload2 = [ $alt => $payload[$node] ];
+            $payload2[$alt]['channel'] = 0;
+            $ok = (bool)$this->Api('sensitivity', 'set', $payload2, 'SENS_SET', false);
         }
 
-        // Legacy: sens[] ohne newSens
-        $payload = [[
-            "cmd"   => $cmdSet,
-            "param" => [
-                $paramKey => [
-                    "type"    => "md",
-                    "sens"    => $segments,
-                    "channel" => 0
-                ]
-            ]
-        ]];
-        $res = $this->apiCall($payload, 'ALARM_SET');
-        return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+        // 7) UI nachziehen (optional)
+        if ($ok) {
+            $vid = @$this->GetIDForIdent('MdSensitivity');
+            if ($vid !== false) $this->SetValue('MdSensitivity', $level);
+        }
+
+        return $ok;
     }
 
     private function UpdateMdSensitivityStatus(): void
