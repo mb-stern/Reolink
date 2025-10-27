@@ -2269,40 +2269,45 @@ class Reolink extends IPSModule
     ];
 }
 
+    public function SetMdSensitivity(int $level): bool
+    {
+        // UI 1..50 -> Kamera 50..1
+        $level    = max(1, min(50, $level));
+        $levelCam = 51 - $level;
 
-public function SetMdSensitivity(int $level): bool
-{
-    // UI 1..50 -> Kamera 50..1
-    $level    = max(1, min(50, $level));
-    $levelCam = 51 - $level;
+        $state = $this->GetMdSensitivity();
+        if ($state === null) return false;
 
-    $state = $this->GetMdSensitivity();
-    if ($state === null) return false;
+        $segments = $state['segments'];
+        if (empty($segments)) {
+            $segments = [[
+                'beginHour'=>0,'beginMin'=>0,
+                'endHour'=>23,'endMin'=>59,
+                'sensitivity'=>$levelCam
+            ]];
+        } else {
+            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
+            unset($s);
+        }
 
-    $segments = $state['segments'];
-    if (empty($segments)) {
-        $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
-    } else {
-        foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-        unset($s);
+        // WICHTIG: verify=true -> Api() macht danach direkt einen GET (frisch) und cached ihn
+        $res = $this->Api('sensitivity', 'set', [
+            'channel'  => 0,
+            'sensDef'  => $levelCam,   // von Legacy ignoriert
+            'segments' => $segments
+        ], 'ALARM_SET', /*verify*/ true);
+
+        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if ($ok) {
+            // Write-through: UI sofort aktualisieren (ohne auf späteren Poll zu warten)
+            $vid = @$this->GetIDForIdent('MdSensitivity');
+            if ($vid !== false) {
+                $this->SetValue('MdSensitivity', $level);
+            }
+        }
+
+        return $ok;
     }
-
-    // Api() kümmert sich (per cmdMap) um SetMdAlarm vs SetAlarm
-    $res = $this->Api('sensitivity', 'set', [
-        'channel'  => 0,
-        // V20 nutzt sensDef; Legacy ignoriert es
-        'sensDef'  => $levelCam,
-        'segments' => $segments
-    ], 'ALARM_SET');
-
-    $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-    if ($ok) {
-        $vid = @$this->GetIDForIdent('MdSensitivity');
-        if ($vid !== false) { $this->SetValue('MdSensitivity', $level); }
-    }
-    return $ok;
-}
-
 
     private function UpdateMdSensitivityStatus(): void
     {
