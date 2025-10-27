@@ -1278,7 +1278,94 @@ class Reolink extends IPSModule
             }
         }
 
-        // (5) SET → kein sofortiges Re-Read (optional verify)
+        // (5) SET → Sonderfall sensitivity (richtige Payload je Firmware) + optional verify
+        if ($op === 'set' && $domain === 'sensitivity') {
+            $segments = $param['segments'] ?? [];
+            $sensDef  = isset($param['sensDef']) ? (int)$param['sensDef'] : null;
+            $channel  = (int)($param['channel'] ?? 0);
+
+            // Erst auf Basis der ermittelten $ver versuchen …
+            $ok = false;
+            $resp = null;
+
+            if ($ver === 'v20') {
+                // V20: SetMdAlarm mit useNewSens/newSens
+                $payloadV20 = [[
+                    'cmd'   => 'SetMdAlarm',
+                    'param' => [
+                        'MdAlarm' => [
+                            'type'       => 'md',
+                            'useNewSens' => 1,
+                            'newSens'    => [
+                                'sensDef' => (int)($sensDef ?? 10),
+                                'sens'    => $segments
+                            ],
+                            'channel'    => $channel
+                        ]
+                    ]
+                ]];
+                $resp = $this->apiCall($payloadV20, $topic, false);
+                $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
+
+                // Fallback auf Legacy falls V20 scheitert
+                if (!$ok) {
+                    $payloadLegacy = [[
+                        'cmd'   => 'SetAlarm',
+                        'param' => [
+                            'Alarm' => [
+                                'type'    => 'md',
+                                'sens'    => $segments,
+                                'channel' => $channel
+                            ]
+                        ]
+                    ]];
+                    $resp = $this->apiCall($payloadLegacy, $topic, false);
+                    $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
+                }
+            } else {
+                // Legacy: SetAlarm
+                $payloadLegacy = [[
+                    'cmd'   => 'SetAlarm',
+                    'param' => [
+                        'Alarm' => [
+                            'type'    => 'md',
+                            'sens'    => $segments,
+                            'channel' => $channel
+                        ]
+                    ]
+                ]];
+                $resp = $this->apiCall($payloadLegacy, $topic, false);
+                $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
+
+                // Fallback auf V20, falls Legacy scheitert
+                if (!$ok) {
+                    $payloadV20 = [[
+                        'cmd'   => 'SetMdAlarm',
+                        'param' => [
+                            'MdAlarm' => [
+                                'type'       => 'md',
+                                'useNewSens' => 1,
+                                'newSens'    => [
+                                    'sensDef' => (int)($sensDef ?? 10),
+                                    'sens'    => $segments
+                                ],
+                                'channel'    => $channel
+                            ]
+                        ]
+                    ]];
+                    $resp = $this->apiCall($payloadV20, $topic, false);
+                    $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
+                }
+            }
+
+            if ($ok && $verify) {
+                // nach erfolgreichem Set optionalen Verifikations-Read
+                return $this->Api($domain, 'get', ['channel'=>$channel], $topic, false, $dedupeTtlMs);
+            }
+            return $ok;
+        }
+
+        // (5) SET → Standardpfad für alle anderen Domains (kein sofortiges Re-Read)
         $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$param ]], $topic, false);
         $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
         if ($ok && $verify) {
