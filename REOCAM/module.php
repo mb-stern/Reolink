@@ -2138,19 +2138,28 @@ class Reolink extends IPSModule
     // Sensitivity
     // ---------------------------
 
+// ---------------------------
+// Sensitivity (über Api())
+// ---------------------------
+
 private function GetMdSensitivity(): ?array
 {
-    $ver = $this->ApiVersion('schedule');
-    $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
+    // Version einmalig holen (Api() braucht sie intern auch)
+    $verRaw = (string)$this->ApiVersion('sensitivity');
+    $ver    = strtoupper($verRaw ?: 'LEGACY'); // 'V20' | 'LEGACY'
 
-    $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'SENSITIVITY');
-    if (!is_array($res) || ($res[0]['code']??1) !== 0) return null;
+    // GET via Api() mit Action-Fallback (1 -> 0) intern
+    $res = $this->Api('sensitivity', 'get', ['channel' => 0], 'SENSITIVITY');
+    if (!is_array($res) || ($res[0]['code'] ?? 1) !== 0) return null;
 
+    // passender Node-Key je Version
     $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
     if (!is_array($node)) return null;
 
-    $sensDef = null;
+    $sensDef  = null;
     $segments = [];
+
+    // V20 -> useNewSens/newSens.{sensDef,sens[]}; Legacy -> sens[]
     if (!empty($node['newSens'])) {
         $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
         $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
@@ -2161,96 +2170,57 @@ private function GetMdSensitivity(): ?array
     $active = $this->mdPickActiveNow($segments, $sensDef);
 
     return [
-        'apiVer'   => $ver,        // 'V20' | 'LEGACY'
-        'sensDef'  => $sensDef,    // optional
-        'segments' => $segments,   // normalisierte Segmente (Tagesfenster)
-        'active'   => $active
+        'apiVer'   => $ver,       // 'V20'|'LEGACY'
+        'sensDef'  => $sensDef,   // null bei Legacy möglich
+        'segments' => $segments,  // normalisiert
+        'active'   => $active     // Kamerawert (1..50, 50 = geringste Empf. wenn invertiert)
     ];
 }
 
 public function SetMdSensitivity(int $level): bool
 {
-    $level = max(1, min(50, $level));
-    $levelCam = 51 - $level;
+    // UI 1..50 -> Kamera 50..1 invertieren
+    $level     = max(1, min(50, $level));
+    $levelCam  = 51 - $level;
 
     $state = $this->GetMdSensitivity();
     if ($state === null) return false;
 
-    $ver      = $state['apiVer'];                    // 'V20' oder 'LEGACY'
-    $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
-    $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
-
     $segments = $state['segments'];
     if (empty($segments)) {
-        $segments = [[
-            'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam
-        ]];
+        $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
     } else {
         foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
         unset($s);
     }
 
-    if ($ver === 'V20') {
-        // V20: useNewSens=1 + newSens.sensDef + newSens.sens[]
-        $payload = [[
-            "cmd"   => $cmdSet,
-            "param" => [
-                $paramKey => [
-                    "type"       => "md",
-                    "useNewSens" => 1,
-                    "newSens"    => [
-                        "sensDef" => $levelCam,
-                        "sens"    => $segments
-                    ],
-                    "channel"    => 0
-                ]
-            ]
-        ]];
-        $res = $this->apiCall($payload, 'ALARM_SET');
-        $ok  = (is_array($res) && ($res[0]['code'] ?? 1) === 0);
-        if ($ok) {
-            $vid = @$this->GetIDForIdent('MdSensitivity');
-            if ($vid !== false) { $this->SetValue('MdSensitivity', $level); }
-        }
-        return $ok;
-    }
+    // Einheitliche SET-Parametrisierung: Api()-Domain-Adapter baut je Version den richtigen Payload
+    $ok = $this->Api('sensitivity', 'set', [
+        'channel'  => 0,
+        'sensDef'  => $levelCam,   // wird bei LEGACY ignoriert
+        'segments' => $segments
+    ], 'ALARM_SET');
 
-    // Legacy: sens[] setzen
-    $payload = [[
-        "cmd"   => $cmdSet,
-        "param" => [
-            $paramKey => [
-                "type"    => "md",
-                "sens"    => $segments,
-                "channel" => 0
-            ]
-        ]
-    ]];
-    $res = $this->apiCall($payload, 'ALARM_SET');
-    $ok  = (is_array($res) && ($res[0]['code'] ?? 1) === 0);
-    if ($ok) {
-        $vid = @$this->GetIDForIdent('MdSensitivity');
-        if ($vid !== false) { $this->SetValue('MdSensitivity', $level); }
-    }
-    return $ok;
+    return (is_array($ok) && ($ok[0]['code'] ?? 1) === 0);
 }
 
-    private function UpdateMdSensitivityStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("MdSensitivity");
-        if ($vid === false) return;
+private function UpdateMdSensitivityStatus(): void
+{
+    $vid = @$this->GetIDForIdent("MdSensitivity");
+    if ($vid === false) return;
 
-        $st = $this->GetMdSensitivity();
-        if (!$st) return;
+    $st = $this->GetMdSensitivity();
+    if (!$st) return;
 
-        $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
+    // Kamerawert -> UI invertieren
+    $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
+    $lvlUI  = 51 - $lvlCam;
 
-        $lvlUI = 51 - $lvlCam;
-
-        if ((int)GetValue($vid) !== $lvlUI) {
-            $this->SetValue("MdSensitivity", $lvlUI);
-        }
+    if ((int)GetValue($vid) !== $lvlUI) {
+        $this->SetValue("MdSensitivity", $lvlUI);
     }
+}
+
 
     private function mdNormalizeSegments($raw): array
     {
