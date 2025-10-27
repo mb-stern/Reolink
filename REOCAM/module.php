@@ -2174,34 +2174,89 @@ class Reolink extends IPSModule
 
     public function SetMdSensitivity(int $level): bool
     {
+        // 1) Clamp + Kamera-Wert berechnen (Reolink: invertiert)
         $level = max(1, min(50, $level));
-        $levelCam = 51 - $level;
+        $camVal = 51 - $level;
 
-        $state = $this->GetMdSensitivity();
-        if ($state === null) return false;
-
-        $segments = $state['segments'];
-        if (empty($segments)) {
-            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
-        } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-            unset($s);
+        // 2) Aktuellen Zustand holen, um Struktur zu übernehmen
+        $get = $this->Api('sensitivity', 'get', ['channel'=>0], 'SENS_GET');
+        if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
+            $this->SendDebug('SENS', 'GET fehlgeschlagen', 0);
+            return false;
         }
 
-        // Param-Schlüssel wie in deinem Code: 'MdAlarm' funktioniert bei v20 und wird von einigen Legacy-Geräten akzeptiert
-        $param = [
-            'MdAlarm' => [
-                'enable'   => 1,
-                'schedule' => [],
-                'sens'     => [], // optional – deine Geräte interpretieren meist 'newSens' oder 'sens'
-                'channel'  => 0,
-            ]
-        ];
-        // Falls deine Kamera 'newSens' erwartet, kannst du hier auf 'newSens'=>['sens'=>$segments,'sensDef'=>null] wechseln.
-        // Viele Modelle akzeptieren auch direkt 'sens' als Liste:
-        $param['MdAlarm']['sens'] = $segments;
+        // Node & Struktur erkennen
+        $root = $get[0]['value']  ?? $get[0]['initial'] ?? [];
+        $nodeKey = null;
+        if (isset($root['MdAlarm']) && is_array($root['MdAlarm'])) $nodeKey = 'MdAlarm';  // V20
+        elseif (isset($root['Alarm']) && is_array($root['Alarm'])) $nodeKey = 'Alarm';    // Legacy
 
-        return (bool)$this->Api('sensitivity', 'set', $param, 'SENSITIVITY', false);
+        $cur = $nodeKey ? $root[$nodeKey] : [];
+
+        // 3) Segmente übernehmen/erzeugen und Sensitivität setzen
+        $payload = [ $nodeKey ?? 'MdAlarm' => [ 'channel' => 0 ] ];
+
+        // enable beibehalten, falls vorhanden
+        if (isset($cur['enable'])) {
+            $payload[$nodeKey]['enable'] = (int)$cur['enable'];
+        }
+
+        // Variante A: neue Struktur (newSens.sens[])
+        if (isset($cur['newSens']) && is_array($cur['newSens']) && isset($cur['newSens']['sens']) && is_array($cur['newSens']['sens'])) {
+            $segments = $cur['newSens']['sens'];
+            foreach ($segments as &$s) {
+                if (is_array($s)) $s['sensitivity'] = $camVal;
+            }
+            unset($s);
+            $payload[$nodeKey]['newSens'] = [
+                'sens'    => $segments,
+                // sensDef, falls vorhanden, beibehalten
+                'sensDef' => isset($cur['newSens']['sensDef']) ? (int)$cur['newSens']['sensDef'] : null
+            ];
+        }
+        // Variante B: ältere Struktur (sens[])
+        elseif (isset($cur['sens']) && is_array($cur['sens'])) {
+            $segments = $cur['sens'];
+            foreach ($segments as &$s) {
+                if (is_array($s)) $s['sensitivity'] = $camVal;
+            }
+            unset($s);
+            $payload[$nodeKey]['sens'] = $segments;
+        }
+        // Variante C: nichts vorhanden → Full-Day Segment anlegen
+        else {
+            $payload[$nodeKey]['sens'] = [[
+                'beginHour'   => 0,
+                'beginMin'    => 0,
+                'endHour'     => 23,
+                'endMin'      => 59,
+                'sensitivity' => $camVal
+            ]];
+        }
+
+        // 4) SET senden – erster Versuch mit erkanntem NodeKey
+        $ok = (bool)$this->Api('sensitivity', 'set', $payload, 'SENS_SET', false);
+
+        // 5) Fallback: falls NodeKey unbekannt war oder FW den Key nicht mag, Zweitversuch mit dem anderen Key
+        if (!$ok) {
+            $altKey = ($nodeKey === 'MdAlarm') ? 'Alarm' : 'MdAlarm';
+            $payload2 = [ $altKey => $payload[$nodeKey ?? 'MdAlarm'] ];
+            $payload2[$altKey]['channel'] = 0;
+            $ok = (bool)$this->Api('sensitivity', 'set', $payload2, 'SENS_SET', false);
+        }
+
+        // 6) Erfolgreich? Optional lokale Variable nachziehen (wie in deiner RequestAction)
+        if ($ok) {
+            $vid = @$this->GetIDForIdent('MdSensitivity');
+            if ($vid !== false) {
+                // wir speichern weiterhin den 1..50 User-Wert
+                $this->SetValue('MdSensitivity', $level);
+            }
+        } else {
+            $this->SendDebug('SENS', 'SET fehlgeschlagen', 0);
+        }
+
+        return $ok;
     }
 
     private function UpdateMdSensitivityStatus(): void
