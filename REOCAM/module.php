@@ -1165,6 +1165,13 @@ class Reolink extends IPSModule
 
     private function Api(string $domain, string $op, array $param = [], string $topic = 'API', bool $verify = false, int $dedupeTtlMs = 300)
     {
+        // ---------- Topic-Automatik ----------
+        $topicIsDefault = ($topic === 'API' || $topic === '' || $topic === null);
+        $topicBase      = strtoupper($domain);
+        // Für GET => TOPIC, für SET => TOPIC-SET
+        $effTopicGet    = $topicIsDefault ? $topicBase : $topic;
+        $effTopicSet    = $topicIsDefault ? ($topicBase . '-SET') : $topic;
+
         // (1) Version aus Cache lesen (24h)
         $verRaw = $this->ReadAttributeString('ApiVersionCache');
         $verMap = $verRaw ? json_decode($verRaw, true) : [];
@@ -1241,9 +1248,9 @@ class Reolink extends IPSModule
         $bucket = $cmdMap[$domain][$ver] ?? ($cmdMap[$domain]['legacy'] ?? ['get'=>'GetAbility','set'=>'SetAbility']);
         $cmd    = $bucket[$op] ?? reset($bucket);
 
-        // (4) GET → kurzer Dedupe-Cache
+        // (4) GET → dedupe-cache
         if ($op === 'get') {
-            $key = $topic . ':' . $domain . ':' . $cmd . ':' . md5(json_encode($param, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+            $key = $effTopicGet . ':' . $domain . ':' . $cmd . ':' . md5(json_encode($param, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
             $sem = "REOCAM_{$this->InstanceID}_AF-$key";
             $cacheRaw = $this->ReadAttributeString('ApiCache');
             $cacheMap = $cacheRaw ? json_decode($cacheRaw, true) : [];
@@ -1258,12 +1265,12 @@ class Reolink extends IPSModule
                     return $cacheMap[$key]['resp'];
                 }
                 $action = ($domain === 'sensitivity') ? 1 : 0;
-                $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>$action, 'param'=>$param ]], $topic, true);
+                $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>$action, 'param'=>$param ]], $effTopicGet, true);
 
                 if ($domain === 'sensitivity') {
                     // Fallback auf action:0, falls action:1 nicht geht
                     if (!is_array($resp) || (($resp[0]['code'] ?? -1) !== 0)) {
-                        $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$param ]], $topic, true);
+                        $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$param ]], $effTopicGet, true);
                     }
                 }
 
@@ -1284,7 +1291,6 @@ class Reolink extends IPSModule
             $sensDef  = isset($param['sensDef']) ? (int)$param['sensDef'] : null;
             $channel  = (int)($param['channel'] ?? 0);
 
-            // Erst auf Basis der ermittelten $ver versuchen …
             $ok = false;
             $resp = null;
 
@@ -1304,10 +1310,10 @@ class Reolink extends IPSModule
                         ]
                     ]
                 ]];
-                $resp = $this->apiCall($payloadV20, $topic, false);
+                $resp = $this->apiCall($payloadV20, $effTopicSet, false);
                 $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
 
-                // Fallback auf Legacy falls V20 scheitert
+                // Fallback Legacy
                 if (!$ok) {
                     $payloadLegacy = [[
                         'cmd'   => 'SetAlarm',
@@ -1319,7 +1325,7 @@ class Reolink extends IPSModule
                             ]
                         ]
                     ]];
-                    $resp = $this->apiCall($payloadLegacy, $topic, false);
+                    $resp = $this->apiCall($payloadLegacy, $effTopicSet, false);
                     $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
                 }
             } else {
@@ -1334,10 +1340,10 @@ class Reolink extends IPSModule
                         ]
                     ]
                 ]];
-                $resp = $this->apiCall($payloadLegacy, $topic, false);
+                $resp = $this->apiCall($payloadLegacy, $effTopicSet, false);
                 $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
 
-                // Fallback auf V20, falls Legacy scheitert
+                // Fallback V20
                 if (!$ok) {
                     $payloadV20 = [[
                         'cmd'   => 'SetMdAlarm',
@@ -1353,23 +1359,23 @@ class Reolink extends IPSModule
                             ]
                         ]
                     ]];
-                    $resp = $this->apiCall($payloadV20, $topic, false);
+                    $resp = $this->apiCall($payloadV20, $effTopicSet, false);
                     $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
                 }
             }
 
             if ($ok && $verify) {
-                // nach erfolgreichem Set optionalen Verifikations-Read
-                return $this->Api($domain, 'get', ['channel'=>$channel], $topic, false, $dedupeTtlMs);
+                // Nach erfolgreichem Set: sofortiger GET (mit GET-Topic, ohne -SET)
+                return $this->Api($domain, 'get', ['channel'=>$channel], $topicIsDefault ? $effTopicGet : $topic, false, $dedupeTtlMs);
             }
             return $ok;
         }
 
-        // (5) SET → Standardpfad für alle anderen Domains (kein sofortiges Re-Read)
-        $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$param ]], $topic, false);
+        // (5) SET → Standardpfad alle anderen Domains
+        $resp = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$param ]], $effTopicSet, false);
         $ok   = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
         if ($ok && $verify) {
-            return $this->Api($domain, 'get', $param, $topic, false, $dedupeTtlMs);
+            return $this->Api($domain, 'get', $param, $topicIsDefault ? $effTopicGet : $topic, false, $dedupeTtlMs);
         }
         return $ok;
     }
