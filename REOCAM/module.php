@@ -1398,39 +1398,53 @@ class Reolink extends IPSModule
     private function GetEmailState(): ?array
     {
         $res = $this->Api('email', 'get', ['channel'=>0], 'EMAIL');
-        if (!is_array($res) || (($res[0]['code'] ?? -1) != 0)) return null;
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $this->SendDebug('EMAIL', 'GetEmailState fehlgeschlagen', 0);
+            return null;
+        }
 
         $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
         if (!is_array($e)) return null;
 
-        $enabled = isset($e['enable']) ? ((int)$e['enable'] === 1) : null;
-
-        $intervalSec = null;
-        if (isset($e['intervalSec'])) {
-            $intervalSec = (int)$e['intervalSec'];
-        } elseif (isset($e['interval'])) {
-            $map = [
-                '30 Seconds' => 30, '1 Minute' => 60, '5 Minutes' => 300,
-                '10 Minutes' => 600, '30 Minutes' => 1800
-            ];
-            $intervalSec = $map[$e['interval']] ?? null;
+        $enabled = null;
+        if (array_key_exists('enable', $e)) {
+            $enabled = ((int)$e['enable'] === 1);
+        } elseif (isset($e['schedule']['enable'])) {
+            $enabled = ((int)$e['schedule']['enable'] === 1);
         }
 
-        $mode = null;
-        if (isset($e['content'])) {
-            $mode = (int)$e['content'];
-        } elseif (isset($e['contentMode'])) {
-            $mode = (int)$e['contentMode'];
-        } elseif (isset($e['attachment'])) {
-            $mode = match ($e['attachment']) {
-                'onlyPicture' => 1, 'picture' => 2, 'video' => 3, default => 0,
-            };
+        $intervalSec = null;
+        if (isset($e['interval'])) {
+            $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
+        } elseif (isset($e['intervalSec'])) {
+            $intervalSec = (int)$e['intervalSec'];
+        }
+
+        $contentMode = null;
+
+        if (isset($e['textType']) || isset($e['attachmentType'])) {
+            $text = (int)($e['textType'] ?? 1);
+            $att  = (int)($e['attachmentType'] ?? 0);
+            if ($text === 1 && $att === 0)      $contentMode = 0;
+            elseif ($text === 0 && $att === 1)  $contentMode = 1;
+            elseif ($text === 1 && $att === 1)  $contentMode = 2;
+            elseif ($text === 1 && $att === 2)  $contentMode = 3;
+            else                                $contentMode = 0;
+        }
+        elseif (isset($e['attachment'])) {
+            $contentMode = [
+                '0'            => 0,
+                'no'           => 0,
+                'onlyPicture'  => 1,
+                'picture'      => 2,
+                'video'        => 3
+            ][(string)$e['attachment']] ?? 0;
         }
 
         return [
             'enabled'     => $enabled,
             'intervalSec' => $intervalSec,
-            'mode'        => $mode,
+            'contentMode' => $contentMode,
             'raw'         => $e
         ];
     }
@@ -1478,7 +1492,7 @@ class Reolink extends IPSModule
                 1 => 'onlyPicture',
                 2 => 'picture',
                 3 => 'video',
-                default => '0', // oder 'no'
+                default => '0', 
             };
         }
 
@@ -1495,59 +1509,27 @@ class Reolink extends IPSModule
 
     public function UpdateEmailStatus(): void
     {
-        $res = $this->Api('email', 'get', ['channel'=>0], 'EMAIL');
-        if (!is_array($res) || (($res[0]['code'] ?? -1) != 0)) {
-            $this->SendDebug('EMAIL', 'UpdateEmailStatus: GET fehlgeschlagen', 0);
-            return;
-        }
+        $st = $this->GetEmailState();
+        if (!is_array($st)) return;
 
-        $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
-        if (!is_array($e)) return;
-
-        
-        if (array_key_exists('enable', $e)) {
-            $vid = @$this->GetIDForIdent('EmailNotify');
-            if ($vid !== false) {
-                $val = ((int)$e['enable'] === 1);
-                if ((bool)GetValue($vid) !== $val) SetValueBoolean($vid, $val);
+        $vid = @$this->GetIDForIdent('EmailNotify');
+        if ($vid !== false && $st['enabled'] !== null) {
+            if ((bool)GetValue($vid) !== (bool)$st['enabled']) {
+                SetValueBoolean($vid, (bool)$st['enabled']);
             }
         }
 
-        $intervalSec = null;
-        if (isset($e['intervalSec'])) {
-            $intervalSec = (int)$e['intervalSec'];
-        } elseif (isset($e['interval']) && is_string($e['interval'])) {
-          
-            $map = [
-                '30 Seconds' => 30, '1 Minute' => 60, '5 Minutes' => 300,
-                '10 Minutes' => 600, '30 Minutes' => 1800
-            ];
-            $intervalSec = $map[$e['interval']] ?? null;
-        }
-        if ($intervalSec !== null) {
-            $vid = @$this->GetIDForIdent('EmailInterval');
-            if ($vid !== false && (int)GetValue($vid) !== $intervalSec) {
-                SetValueInteger($vid, $intervalSec);
+        $vid = @$this->GetIDForIdent('EmailInterval');
+        if ($vid !== false && $st['intervalSec'] !== null) {
+            if ((int)GetValue($vid) !== (int)$st['intervalSec']) {
+                SetValueInteger($vid, (int)$st['intervalSec']);
             }
         }
 
-        $mode = null;
-        if (isset($e['content'])) {
-            $mode = (int)$e['content'];
-        } elseif (isset($e['contentMode'])) {
-            $mode = (int)$e['contentMode'];
-        } elseif (isset($e['attachment']) && is_string($e['attachment'])) {
-            $mode = match ($e['attachment']) {
-                'onlyPicture' => 1,
-                'picture'     => 2,
-                'video'       => 3,
-                default       => 0, // Text
-            };
-        }
-        if ($mode !== null) {
-            $vid = @$this->GetIDForIdent('EmailContent');
-            if ($vid !== false && (int)GetValue($vid) !== $mode) {
-                SetValueInteger($vid, $mode);
+        $vid = @$this->GetIDForIdent('EmailContent');
+        if ($vid !== false && $st['contentMode'] !== null) {
+            if ((int)GetValue($vid) !== (int)$st['contentMode']) {
+                SetValueInteger($vid, (int)$st['contentMode']);
             }
         }
     }
