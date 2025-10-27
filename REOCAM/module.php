@@ -156,23 +156,39 @@ class Reolink extends IPSModule
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
-            case "EmailNotify":
-                $ok = $this->EmailApply((bool)$Value, null, null);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
-                else     { $this->EmailApply(null, null, null); } // zurücklesen
+            case "EmailNotify": {
+                $val = (bool)$Value;
+                $ok  = $this->EmailApply($val, null, null);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), $val);
+                } else {
+                    $this->UpdateEmailStatus();
+                }
                 break;
+            }
 
-            case "EmailInterval":
-                $ok = $this->EmailApply(null, (int)$Value, null);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
-                else     { $this->EmailApply(null, null, null); }
+            case "EmailInterval": {
+                $val = (int)$Value;
+                $ok  = $this->EmailApply(null, $val, null);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), $val);
+                } else {
+                    $this->UpdateEmailStatus();
+                }
                 break;
+            }
 
-            case "EmailContent":
-                $ok = $this->EmailApply(null, null, (int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
-                else     { $this->EmailApply(null, null, null); }
+            case "EmailContent": {
+                $val = max(0, min(3, (int)$Value));
+                $ok  = $this->EmailApply(null, null, $val);
+                if ($ok) {
+                    SetValue($this->GetIDForIdent($Ident), $val);
+                } else {
+                    $this->UpdateEmailStatus();
+                }
                 break;
+            }
+
 
             case "FTPEnabled":
                 $ok = $this->FtpApply((bool)$Value);
@@ -1118,7 +1134,7 @@ class Reolink extends IPSModule
                 $this->UpdateWhiteLedStatus(); 
             }
             if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-                $this->EmailApply(null, null, null);    
+                $this->UpdateEmailStatus();  
             }
             if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
                 $this->CreateOrUpdatePTZHtml(false);    
@@ -1163,11 +1179,6 @@ class Reolink extends IPSModule
         return $ability;
     }
 
-    // ==========================================
-    // Zentraler Helper: Api()
-    // - pro Domain V20/Legacy nur EINMAL ermitteln (24h Cache)
-    // - GET kurz deduplizieren (Mikro-TTL), um Doppel-Requests zu vermeiden
-    // ==========================================
     private function Api(string $domain, string $op, array $param = [], string $topic = 'API', bool $verify = false, int $dedupeTtlMs = 300)
     {
         // (1) Version aus Cache lesen (24h)
@@ -1387,125 +1398,149 @@ class Reolink extends IPSModule
     private function GetEmailState(): ?array
     {
         $res = $this->Api('email', 'get', ['channel'=>0], 'EMAIL');
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
+        if (!is_array($res) || (($res[0]['code'] ?? -1) != 0)) return null;
 
         $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
         if (!is_array($e)) return null;
 
         $enabled = isset($e['enable']) ? ((int)$e['enable'] === 1) : null;
 
-        // v20 liefert häufig 'intervalSec', ältere 'interval'
         $intervalSec = null;
-        if (isset($e['intervalSec'])) $intervalSec = (int)$e['intervalSec'];
-        elseif (isset($e['interval'])) $intervalSec = (int)$e['interval'];
+        if (isset($e['intervalSec'])) {
+            $intervalSec = (int)$e['intervalSec'];
+        } elseif (isset($e['interval'])) {
+            $map = [
+                '30 Seconds' => 30, '1 Minute' => 60, '5 Minutes' => 300,
+                '10 Minutes' => 600, '30 Minutes' => 1800
+            ];
+            $intervalSec = $map[$e['interval']] ?? null;
+        }
 
-        // content/attachments etc. enthält dein Modul bereits – wir mappen schlank
-        $contentMode = isset($e['content']) ? (int)$e['content'] : (isset($e['contentMode']) ? (int)$e['contentMode'] : null);
+        $mode = null;
+        if (isset($e['content'])) {
+            $mode = (int)$e['content'];
+        } elseif (isset($e['contentMode'])) {
+            $mode = (int)$e['contentMode'];
+        } elseif (isset($e['attachment'])) {
+            $mode = match ($e['attachment']) {
+                'onlyPicture' => 1, 'picture' => 2, 'video' => 3, default => 0,
+            };
+        }
 
         return [
             'enabled'     => $enabled,
             'intervalSec' => $intervalSec,
-            'contentMode' => $contentMode
+            'mode'        => $mode,
+            'raw'         => $e
         ];
     }
 
-    private function EmailApply(?bool $enabled = null, ?int $intervalSec = null, ?int $contentMode = null): bool
+    public function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
-        $wantSet = ($enabled !== null || $intervalSec !== null || $contentMode !== null);
+        $get = $this->Api('email', 'get', ['channel'=>0], 'EMAIL_GET');
+        if (!is_array($get) || (($get[0]['code'] ?? -1) != 0)) {
+            $this->SendDebug('EMAIL', 'GET fehlgeschlagen', 0);
+            return false;
+        }
+        $email = $get[0]['value']['Email'] ?? $get[0]['initial']['Email'] ?? [];
+        if (!is_array($email)) $email = [];
 
-        if (!$wantSet) {
-            $state = $this->GetEmailState();
-            if (is_array($state)) {
-                $this->ApplyEmailStateToVars($state);
-            } else {
-                $this->dbg('EMAIL', 'GetEmailState FAIL (no data)');
-            }
+        if ($enable === null && $intervalSec === null && $contentMode === null) {
+            $this->UpdateEmailStatus();
             return true;
         }
 
-        $ver   = $this->ApiVersion('email');
-        $okSet = true;
+        if ($enable !== null) {
+            $email['enable'] = $enable ? 1 : 0;
+        } elseif (!isset($email['enable'])) {
+            $email['enable'] = 0;
+        }
+        $email['channel'] = 0;
 
-        if ($ver === 'V20') {
-            $email = [];
-            if ($enabled !== null) {
-                $email['enable'] = $enabled ? 1 : 0;
-            }
-            if ($intervalSec !== null) {
-                $str = $this->IntervalSecondsToString($intervalSec);
-                if ($str !== null) {
-                    $email['interval'] = $str;
-                }
-            }
-            if ($contentMode !== null) {
-                switch ($contentMode) {
-                    case 0: $email += ["textType" => 1, "attachmentType" => 0]; break; // Text
-                    case 1: $email += ["textType" => 0, "attachmentType" => 1]; break; // Nur Bild
-                    case 2: $email += ["textType" => 1, "attachmentType" => 1]; break; // Text + Bild
-                    case 3: $email += ["textType" => 1, "attachmentType" => 2]; break; // Text + Video
-                }
-            }
+        if ($intervalSec !== null) {
+            $email['intervalSec'] = (int)$intervalSec;
+            $email['interval']    = (int)$intervalSec;
+        }
 
-            if (!empty($email)) {
-                $res   = $this->apiCall([[ "cmd" => "SetEmailV20", "param" => ["Email" => $email] ]], 'EMAIL');
-                $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-                if (!$okSet) {
-                    $this->dbg('EMAIL', 'SetEmailV20 FAIL', $res);
-                }
-            }
-        } else {
-            $email = [];
-            if ($enabled !== null) {
-                $email['schedule']['enable'] = $enabled ? 1 : 0;
-            }
-            if ($intervalSec !== null) {
-                $str = $this->IntervalSecondsToString($intervalSec);
-                if ($str !== null) {
-                    $email['interval'] = $str;
-                }
-            }
-            if ($contentMode !== null) {
-                $att = ['0', 'onlyPicture', 'picture', 'video'][$contentMode] ?? '0';
-                $email['attachment'] = $att;
-            }
+        if ($contentMode !== null) {
+ 
+            $email['content']     = (int)$contentMode;
+            $email['contentMode'] = (int)$contentMode;
+            $email['attachment']  = match ((int)$contentMode) {
+                1 => 'onlyPicture',
+                2 => 'picture',
+                3 => 'video',
+                default => '0', 
+            };
+        }
 
-            if (!empty($email)) {
-                $res   = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => $email] ]], 'EMAIL', true);
-                $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
+        if (!$ok) {
+            $this->SendDebug('EMAIL', 'SET fehlgeschlagen', 0);
+            return false;
+        }
 
-                if (!$okSet) {
-                    $okSet = true;
-                    if ($enabled !== null) {
-                        $r = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => ["schedule" => ["enable" => ($enabled ? 1 : 0)]]] ]], 'EMAIL', true);
-                        $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
-                    }
-                    if ($intervalSec !== null) {
-                        $str = $this->IntervalSecondsToString($intervalSec);
-                        if ($str !== null) {
-                            $r = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => ["interval" => $str]] ]], 'EMAIL', true);
-                            $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
-                        }
-                    }
-                    if ($contentMode !== null) {
-                        $att = ['0', 'onlyPicture', 'picture', 'video'][$contentMode] ?? '0';
-                        $r = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => ["attachment" => $att]] ]], 'EMAIL', true);
-                        $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
-                    }
-                    if (!$okSet) {
-                        $this->dbg('EMAIL', 'SetEmail (fallback) FAIL');
-                    }
-                }
+        $this->UpdateEmailStatus();
+        return true;
+    }
+
+    public function UpdateEmailStatus(): void
+    {
+        $res = $this->Api('email', 'get', ['channel'=>0], 'EMAIL');
+        if (!is_array($res) || (($res[0]['code'] ?? -1) != 0)) {
+            $this->SendDebug('EMAIL', 'UpdateEmailStatus: GET fehlgeschlagen', 0);
+            return;
+        }
+
+        $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
+        if (!is_array($e)) return;
+
+        
+        if (array_key_exists('enable', $e)) {
+            $vid = @$this->GetIDForIdent('EmailNotify');
+            if ($vid !== false) {
+                $val = ((int)$e['enable'] === 1);
+                if ((bool)GetValue($vid) !== $val) SetValueBoolean($vid, $val);
             }
         }
 
-        $state = $this->GetEmailState();
-        if (is_array($state)) {
-            $this->ApplyEmailStateToVars($state);
-        } else {
-            $this->dbg('EMAIL', 'GetEmailState FAIL (no data)');
+        $intervalSec = null;
+        if (isset($e['intervalSec'])) {
+            $intervalSec = (int)$e['intervalSec'];
+        } elseif (isset($e['interval']) && is_string($e['interval'])) {
+          
+            $map = [
+                '30 Seconds' => 30, '1 Minute' => 60, '5 Minutes' => 300,
+                '10 Minutes' => 600, '30 Minutes' => 1800
+            ];
+            $intervalSec = $map[$e['interval']] ?? null;
+        }
+        if ($intervalSec !== null) {
+            $vid = @$this->GetIDForIdent('EmailInterval');
+            if ($vid !== false && (int)GetValue($vid) !== $intervalSec) {
+                SetValueInteger($vid, $intervalSec);
+            }
         }
 
-        return $okSet;
+        $mode = null;
+        if (isset($e['content'])) {
+            $mode = (int)$e['content'];
+        } elseif (isset($e['contentMode'])) {
+            $mode = (int)$e['contentMode'];
+        } elseif (isset($e['attachment']) && is_string($e['attachment'])) {
+            $mode = match ($e['attachment']) {
+                'onlyPicture' => 1,
+                'picture'     => 2,
+                'video'       => 3,
+                default       => 0, // Text
+            };
+        }
+        if ($mode !== null) {
+            $vid = @$this->GetIDForIdent('EmailContent');
+            if ($vid !== false && (int)GetValue($vid) !== $mode) {
+                SetValueInteger($vid, $mode);
+            }
+        }
     }
 
     // ---------------------------
