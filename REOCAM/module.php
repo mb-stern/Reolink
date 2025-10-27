@@ -1397,41 +1397,37 @@ class Reolink extends IPSModule
 
     private function GetEmailState(): ?array
     {
-        $ver = $this->ApiVersion('email'); // benutzt deine bestehende Versionsprüfung
-        $cmd = ($ver === 'V20') ? 'GetEmailV20' : 'GetEmail';
-
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'param'=>['channel'=>0] ]], 'EMAIL', true);
+        $res = $this->Api('email', 'get', ['channel'=>0], 'EMAIL');
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
 
         $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
         if (!is_array($e)) return null;
 
-        // enabled
+        // enabled: V20 → enable, Legacy → schedule.enable
         $enabled = null;
-        if ($ver === 'V20') {
-            if (array_key_exists('enable', $e)) $enabled = ((int)$e['enable'] === 1);
-        } else {
-            if (isset($e['schedule']['enable'])) $enabled = ((int)$e['schedule']['enable'] === 1);
+        if (array_key_exists('enable', $e)) {
+            $enabled = ((int)$e['enable'] === 1);
+        } elseif (isset($e['schedule']['enable'])) {
+            $enabled = ((int)$e['schedule']['enable'] === 1);
         }
 
-        // interval → Sekunden (API liefert String wie "5 Minutes")
+        // interval (API liefert String wie "5 Minutes"); falls zusätzlich intervalSec kommt: nehmen
         $intervalSec = null;
-        if (isset($e['interval'])) {
-            if (method_exists($this, 'IntervalStringToSeconds')) {
-                $intervalSec = $this->IntervalStringToSeconds((string)$e['interval']);
-            } else {
-                $map = ['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800];
-                $intervalSec = $map[(string)$e['interval']] ?? null;
-            }
-        } elseif (isset($e['intervalSec'])) {
-            $intervalSec = (int)$e['intervalSec']; // falls FW zusätzlich liefert
+        if (isset($e['intervalSec'])) {
+            $intervalSec = (int)$e['intervalSec'];
+        } elseif (isset($e['interval'])) {
+            $map = [
+                '30 Seconds'=>30, '1 Minute'=>60, '5 Minutes'=>300,
+                '10 Minutes'=>600, '30 Minutes'=>1800
+            ];
+            $intervalSec = $map[(string)$e['interval']] ?? null;
         }
 
-        // content 0..3 normalisieren
+        // content:
         // V20: textType (0/1) + attachmentType (0=none,1=picture,2=video)
         // Legacy: attachment ('0','onlyPicture','picture','video')
         $contentMode = null;
-        if ($ver === 'V20') {
+        if (isset($e['textType']) || isset($e['attachmentType'])) {
             $text = (int)($e['textType'] ?? 1);
             $att  = (int)($e['attachmentType'] ?? 0);
             if ($text === 1 && $att === 0)      $contentMode = 0; // Text
@@ -1439,12 +1435,10 @@ class Reolink extends IPSModule
             elseif ($text === 1 && $att === 1)  $contentMode = 2; // Text+Bild
             elseif ($text === 1 && $att === 2)  $contentMode = 3; // Text+Video
             else                                $contentMode = 0;
-        } else {
-            if (isset($e['attachment'])) {
-                $contentMode = [
-                    '0'=>0, 'no'=>0, 'onlyPicture'=>1, 'picture'=>2, 'video'=>3
-                ][(string)$e['attachment']] ?? 0;
-            }
+        } elseif (isset($e['attachment'])) {
+            $contentMode = [
+                '0'=>0, 'no'=>0, 'onlyPicture'=>1, 'picture'=>2, 'video'=>3
+            ][(string)$e['attachment']] ?? 0;
         }
 
         return [
@@ -1455,103 +1449,93 @@ class Reolink extends IPSModule
         ];
     }
 
-    private function EmailApply(?bool $enabled = null, ?int $intervalSec = null, ?int $contentMode = null): bool
+
+    private function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
         // Nur lesen?
-        if ($enabled === null && $intervalSec === null && $contentMode === null) {
+        if ($enable === null && $intervalSec === null && $contentMode === null) {
             $this->UpdateEmailStatus();
             return true;
         }
 
-        $ver = $this->ApiVersion('email');
+        // Kombi-Payload aufbauen (funktioniert für V20 & Legacy)
+        $email = ['channel'=>0];
 
-        // ---------- Kombinierter SET ----------
-        $ok = false;
-        if ($ver === 'V20') {
-            $email = ['channel'=>0];
-            if ($enabled !== null)     $email['enable'] = $enabled ? 1 : 0;
-            if ($intervalSec !== null) {
-                $str = method_exists($this,'IntervalSecondsToString')
-                    ? $this->IntervalSecondsToString($intervalSec)
-                    : (['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800][$intervalSec] ?? null);
-                if ($str) $email['interval'] = $str;
-            }
-            if ($contentMode !== null) {
-                switch ((int)$contentMode) {
-                    case 0: $email['textType']=1; $email['attachmentType']=0; break;
-                    case 1: $email['textType']=0; $email['attachmentType']=1; break;
-                    case 2: $email['textType']=1; $email['attachmentType']=1; break;
-                    case 3: $email['textType']=1; $email['attachmentType']=2; break;
-                }
-            }
-            $res = $this->apiCall([[ 'cmd'=>'SetEmailV20', 'param'=>['Email'=>$email] ]], 'EMAIL');
-            $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-        } else {
-            // LEGACY
-            $email = ['channel'=>0];
-            if ($enabled !== null)     $email['schedule']['enable'] = $enabled ? 1 : 0;
-            if ($intervalSec !== null) {
-                $str = method_exists($this,'IntervalSecondsToString')
-                    ? $this->IntervalSecondsToString($intervalSec)
-                    : (['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800][$intervalSec] ?? null);
-                if ($str) $email['interval'] = $str;
-            }
-            if ($contentMode !== null) {
-                $email['attachment'] = match ((int)$contentMode) {
-                    1=>'onlyPicture', 2=>'picture', 3=>'video', default=>'0'
-                };
-            }
-            $res = $this->apiCall([[ 'cmd'=>'SetEmail', 'param'=>['Email'=>$email] ]], 'EMAIL', true);
-            $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if ($enable !== null) {
+            // V20
+            $email['enable'] = $enable ? 1 : 0;
+            // Legacy
+            $email['schedule']['enable'] = $enable ? 1 : 0;
         }
 
-        // ---------- Fallback: Einzel-Sets (nur falls Kombi-Set scheitert) ----------
+        if ($intervalSec !== null) {
+            // als String senden (von beiden akzeptiert)
+            $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
+            $str = $map[(int)$intervalSec] ?? null;
+            if ($str !== null) {
+                $email['interval'] = $str;
+            } else {
+                $this->SendDebug('EMAIL', 'Ungueltiger Interval-Wert: '.(string)$intervalSec, 0);
+            }
+        }
+
+        if ($contentMode !== null) {
+            $m = (int)$contentMode;
+            // V20-Felder
+            $email['textType']       = in_array($m, [0,2,3], true) ? 1 : 0;
+            $email['attachmentType'] = ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0)));
+            // Legacy-Feld
+            $email['attachment']     = match ($m) {
+                1 => 'onlyPicture',
+                2 => 'picture',
+                3 => 'video',
+                default => '0',
+            };
+        }
+
+        // 1) Kombi-SET (Api mappt intern SetEmailV20/SetEmail)
+        $ok = (bool)$this->Api('email', 'set', ['Email'=>$email], 'EMAIL_SET', false);
+
+        // 2) Fallback auf Einzel-Sets, falls Kombi-SET nicht akzeptiert wurde
         if (!$ok) {
-            $ok = true;
-            if ($enabled !== null) {
-                if ($ver === 'V20') {
-                    $r = $this->apiCall([[ 'cmd'=>'SetEmailV20', 'param'=>['Email'=>['channel'=>0,'enable'=>($enabled?1:0)]] ]], 'EMAIL');
-                } else {
-                    $r = $this->apiCall([[ 'cmd'=>'SetEmail',    'param'=>['Email'=>['channel'=>0,'schedule'=>['enable'=>($enabled?1:0)]] ] ]], 'EMAIL', true);
-                }
-                $ok = $ok && is_array($r) && (($r[0]['code'] ?? -1) === 0);
+            $okAll = true;
+
+            if ($enable !== null) {
+                $payload = ['Email'=>['channel'=>0, 'enable'=>($enable?1:0), 'schedule'=>['enable'=>($enable?1:0)]]];
+                $r = (bool)$this->Api('email', 'set', $payload, 'EMAIL_SET', false);
+                $okAll = $okAll && $r;
             }
 
             if ($intervalSec !== null) {
-                $str = method_exists($this,'IntervalSecondsToString')
-                    ? $this->IntervalSecondsToString($intervalSec)
-                    : (['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800][$intervalSec] ?? null);
-                if ($str) {
-                    if ($ver === 'V20') {
-                        $r = $this->apiCall([[ 'cmd'=>'SetEmailV20', 'param'=>['Email'=>['channel'=>0,'interval'=>$str]] ]], 'EMAIL');
-                    } else {
-                        $r = $this->apiCall([[ 'cmd'=>'SetEmail',    'param'=>['Email'=>['channel'=>0,'interval'=>$str]] ]], 'EMAIL', true);
-                    }
-                    $ok = $ok && is_array($r) && (($r[0]['code'] ?? -1) === 0);
+                $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
+                $str = $map[(int)$intervalSec] ?? null;
+                if ($str !== null) {
+                    $payload = ['Email'=>['channel'=>0, 'interval'=>$str]];
+                    $r = (bool)$this->Api('email', 'set', $payload, 'EMAIL_SET', false);
+                    $okAll = $okAll && $r;
                 } else {
-                    $ok = false;
+                    $okAll = false;
                 }
             }
 
             if ($contentMode !== null) {
-                if ($ver === 'V20') {
-                    $payload = ['channel'=>0];
-                    switch ((int)$contentMode) {
-                        case 0: $payload += ['textType'=>1,'attachmentType'=>0]; break;
-                        case 1: $payload += ['textType'=>0,'attachmentType'=>1]; break;
-                        case 2: $payload += ['textType'=>1,'attachmentType'=>1]; break;
-                        case 3: $payload += ['textType'=>1,'attachmentType'=>2]; break;
-                    }
-                    $r = $this->apiCall([[ 'cmd'=>'SetEmailV20', 'param'=>['Email'=>$payload] ]], 'EMAIL');
-                } else {
-                    $att = match ((int)$contentMode) { 1=>'onlyPicture', 2=>'picture', 3=>'video', default=>'0' };
-                    $r   = $this->apiCall([[ 'cmd'=>'SetEmail', 'param'=>['Email'=>['channel'=>0,'attachment'=>$att]] ]], 'EMAIL', true);
-                }
-                $ok = $ok && is_array($r) && (($r[0]['code'] ?? -1) === 0);
+                $m = (int)$contentMode;
+                $payloadV20 = ['Email'=>['channel'=>0,
+                    'textType'=> in_array($m,[0,2,3],true) ? 1 : 0,
+                    'attachmentType'=> ($m===1?1:($m===2?1:($m===3?2:0))),
+                ]];
+                $payloadLegacy = ['Email'=>['channel'=>0,
+                    'attachment'=> match($m){1=>'onlyPicture',2=>'picture',3=>'video',default=>'0'}
+                ]];
+                $r1 = (bool)$this->Api('email', 'set', $payloadV20,   'EMAIL_SET', false);
+                $r2 = (bool)$this->Api('email', 'set', $payloadLegacy,'EMAIL_SET', false);
+                $okAll = $okAll && ($r1 || $r2);
             }
+
+            $ok = $okAll;
         }
 
-        // Status nachziehen (kein weiterer Probe-Call, nur 1 GET intern)
+        // Status nachziehen
         $this->UpdateEmailStatus();
         return $ok;
     }
@@ -1576,7 +1560,6 @@ class Reolink extends IPSModule
             SetValueInteger($id, (int)$st['contentMode']);
         }
     }
-
 
     // ---------------------------
     // PTZ / Zoom
