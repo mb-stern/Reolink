@@ -2169,54 +2169,60 @@ class Reolink extends IPSModule
 
     private function SetMdSensitivity(int $level): bool
     {
-        // 1) Clamp + Kamera-Wert (1..50 -> 50..1)
+        // clamp & Reolink-invertiert (1..50 -> 50..1)
         $level  = max(1, min(50, $level));
         $camVal = 51 - $level;
 
-        // 2) EIN GET über deinen Api()-Helper
+        // 1) EIN GET über deinen zentralen Helper
         $get = $this->Api('sensitivity', 'get', ['channel'=>0], 'SENS_GET');
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) {
             $this->SendDebug('SENS', 'GET fehlgeschlagen', 0);
             return false;
         }
 
-        $root = $get[0]['value'] ?? $get[0]['initial'] ?? [];
-        $isV20 = isset($root['MdAlarm']) && is_array($root['MdAlarm']);
-        $cur   = $isV20 ? ($root['MdAlarm'] ?? []) : ($root['Alarm'] ?? []);
+        $value = $get[0]['value'] ?? $get[0]['initial'] ?? [];
+        $isV20 = isset($value['MdAlarm']) && is_array($value['MdAlarm']);
         $node  = $isV20 ? 'MdAlarm' : 'Alarm';
+        $cur   = $value[$node] ?? [];
 
-        // 3) Segmente vorbereiten
-        $mkSegments = function(array $src, int $val, bool $forceEnable) {
+        // 2) Quelle der Segmente bestimmen
+        $useNew = (int)($cur['useNewSens'] ?? ($isV20 ? 1 : 0));
+
+        // Helfer: Segmente patchen (sensitivity, enable, Defaults, id/priority erhalten)
+        $patchSegments = function(array $src, int $val, bool $forceEnable) {
             $out = [];
-            if (isset($src) && is_array($src) && count($src) > 0) {
-                foreach ($src as $s) {
-                    if (!is_array($s)) continue;
-                    $s['sensitivity'] = $val;
-                    if ($forceEnable && array_key_exists('enable', $s)) $s['enable'] = 1;
-                    // Defaults absichern
-                    $s['beginHour'] = (int)($s['beginHour'] ?? 0);
-                    $s['beginMin']  = (int)($s['beginMin']  ?? 0);
-                    $s['endHour']   = (int)($s['endHour']   ?? 23);
-                    $s['endMin']    = (int)($s['endMin']    ?? 59);
-                    $out[] = $s;
-                }
+            foreach ($src as $s) {
+                if (!is_array($s)) continue;
+                $out[] = [
+                    'beginHour'   => (int)($s['beginHour'] ?? 0),
+                    'beginMin'    => (int)($s['beginMin']  ?? 0),
+                    'endHour'     => (int)($s['endHour']   ?? 23),
+                    'endMin'      => (int)($s['endMin']    ?? 59),
+                    'sensitivity' => $val,
+                    // vorhandene Felder bewahren
+                    'enable'      => $forceEnable ? 1 : (isset($s['enable']) ? (int)$s['enable'] : 1),
+                    'id'          => isset($s['id'])       ? (int)$s['id']       : 0,
+                    'priority'    => isset($s['priority']) ? (int)$s['priority'] : 0,
+                ];
             }
             if (!$out) {
+                // Full-Day Fallback
                 $out[] = [
                     'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,
-                    'sensitivity'=>$val
+                    'sensitivity'=>$val,'enable'=>1,'id'=>0,'priority'=>0
                 ];
             }
             return $out;
         };
 
-        // 4) Payload bauen – je nach Schema aus dem GET
+        // 3) Payload bauen (nur einen aktiven Zweig setzen)
         $payload = [];
         if ($isV20) {
-            $useNew = (int)($cur['useNewSens'] ?? 1); // default 1
             if ($useNew === 1 || isset($cur['newSens'])) {
-                // newSens aktiv: Segmente + sensDef setzen, Segmente enabled halten
-                $segments = $mkSegments($cur['newSens']['sens'] ?? [], $camVal, true);
+                $src = (isset($cur['newSens']['sens']) && is_array($cur['newSens']['sens'])) ? $cur['newSens']['sens']
+                    : ((isset($cur['sens']) && is_array($cur['sens'])) ? $cur['sens'] : []);
+                $segments = $patchSegments($src, $camVal, true);
+
                 $payload[$node] = [
                     'type'       => 'md',
                     'useNewSens' => 1,
@@ -2228,8 +2234,9 @@ class Reolink extends IPSModule
                 ];
                 if (isset($cur['enable'])) $payload[$node]['enable'] = (int)$cur['enable'];
             } else {
-                // altes v20-Schema (sens[])
-                $segments = $mkSegments($cur['sens'] ?? [], $camVal, isset($cur['sens'][0]['enable']));
+                // altes V20-Schema mit sens[]
+                $src = (isset($cur['sens']) && is_array($cur['sens'])) ? $cur['sens'] : [];
+                $segments = $patchSegments($src, $camVal, isset($src[0]['enable']));
                 $payload[$node] = [
                     'type'    => 'md',
                     'sens'    => $segments,
@@ -2238,8 +2245,9 @@ class Reolink extends IPSModule
                 if (isset($cur['enable'])) $payload[$node]['enable'] = (int)$cur['enable'];
             }
         } else {
-            // Legacy
-            $segments = $mkSegments($cur['sens'] ?? [], $camVal, false);
+            // Legacy: nur sens[]
+            $src = (isset($cur['sens']) && is_array($cur['sens'])) ? $cur['sens'] : [];
+            $segments = $patchSegments($src, $camVal, false);
             $payload[$node] = [
                 'type'    => 'md',
                 'sens'    => $segments,
@@ -2247,18 +2255,18 @@ class Reolink extends IPSModule
             ];
         }
 
-        // 5) EIN SET über deinen Api()-Helper
+        // 4) EIN SET über deinen zentralen Helper
         $ok = (bool)$this->Api('sensitivity', 'set', $payload, 'SENS_SET', false);
 
-        // 6) Kleiner Fallback: anderer Node, falls erster abgelehnt
+        // 5) Minimaler Fallback: anderen Node probieren (einige FW sind zickig)
         if (!$ok) {
             $alt = ($node === 'MdAlarm') ? 'Alarm' : 'MdAlarm';
-            $payload2 = [ $alt => $payload[$node] ];
+            $payload2 = [$alt => $payload[$node]];
             $payload2[$alt]['channel'] = 0;
             $ok = (bool)$this->Api('sensitivity', 'set', $payload2, 'SENS_SET', false);
         }
 
-        // 7) UI nachziehen (optional)
+        // 6) lokale Variable nachziehen (optional)
         if ($ok) {
             $vid = @$this->GetIDForIdent('MdSensitivity');
             if ($vid !== false) $this->SetValue('MdSensitivity', $level);
