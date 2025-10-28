@@ -105,7 +105,7 @@ Je nach Konfiguration werden automatisch angelegt:
 | LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
 | E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
 | PTZ | String | HTML-Element für PTZ-Steuerung |
-| FTP | Boolean | FTP-Upload |
+| FTP | Boolean | FTP-Upload-Steuerung |
 | Bewegung Sensitivität  | Integer | Bewegungsempfindlichkeit |
 | Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
 | Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
