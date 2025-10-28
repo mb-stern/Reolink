@@ -70,6 +70,9 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
+        $this->WriteAttributeString('ApiVersionCache', '{}');
+$this->WriteAttributeString('ApiCache', '{}');
+
         $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
             $this->SetStatus(104);
@@ -2307,12 +2310,17 @@ class Reolink extends IPSModule
     return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
-    private function recordSet(array $payload): bool 
+    private function recordSet(array $payload): bool
     {
         $ver = $this->apiProbe('record', 'SetRecV20', 'SetRec', 0);
         $cmd = ($ver === 'v20') ? 'SetRecV20' : 'SetRec';
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$payload ]], 'RECORD-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+
+        $r0  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ true);
+        $ok0 = is_array($r0) && (($r0[0]['code'] ?? -1) === 0);
+        if ($ok0) return true;
+
+        $r1  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 1, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ false);
+        return is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
     }
 
     private function UpdateRecStatus(): void
@@ -2339,6 +2347,7 @@ class Reolink extends IPSModule
 
     public function SetRecEnabled(bool $on): bool
     {
+        // Aktuellen Record-Status holen (du hast recordGet() ja schon)
         $get = $this->recordGet();
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) return false;
 
@@ -2348,13 +2357,18 @@ class Reolink extends IPSModule
         $rec['enable']  = $on ? 1 : 0;
         $rec['channel'] = 0;
 
-        $ok = (bool)$this->Api('record', 'set', ['Rec'=>$rec], 'REC', false);
+        // Direkt setzen ohne Api()-Helper
+        $ok = $this->recordSet(['Rec' => $rec]);
+
+        // Fallback für ältere Legacy-Firmwares: schedule.enable
         if (!$ok) {
-            // Legacy-Fallback: schedule.enable
-            $param2 = ['Rec' => ['schedule'=>['enable'=>($on?1:0)], 'channel'=>0]];
-            $ok = (bool)$this->Api('record', 'set', $param2, 'REC', false);
+            $param2 = ['Rec' => ['schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0]];
+            $ok = $this->recordSet($param2);
         }
-        if ($ok) $this->UpdateRecStatus();
+
+        if ($ok) {
+            $this->UpdateRecStatus();
+        }
         return $ok;
     }
 }
