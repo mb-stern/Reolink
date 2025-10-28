@@ -138,8 +138,8 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
-- Zurücksetzen des Versions-Cache in die API-Funktionen eingefügt, falls Kammera nach Update die neue API unterstützt.
-- Konfiguratisonsformular überarbeitet.
+- Zurücksetzen des Versions-Cache in die API-Funktionen eingefügt, falls Kamera nach Update die neue API unterstützt.
+- Konfigurationsformular überarbeitet.
 
 ### Version 2.10 (26.10.2025)
 - Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden.
