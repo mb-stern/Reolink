@@ -931,6 +931,13 @@ class Reolink extends IPSModule
     // API / HTTP / Token
     // ---------------------------
 
+    public function ResetApiCache(): void
+    {
+        $this->WriteAttributeString('ApiVersionCache', '{}');
+        $this->WriteAttributeString('ApiCache', '{}');
+        $this->SendDebug('API', 'Cache manuell gelöscht', 0);
+    }
+
     public function GetToken()
     {
         if (!$this->isActive()) {
