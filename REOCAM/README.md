@@ -77,7 +77,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Benutzername** | Benutzername für den Zugriff. |
 | **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
 | **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
-| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. |
+| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
 | **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
 | **Intelligente Bewegungserkennung** | Erstellt Variablen für Personen, Tiere, Fahrzeuge, Bewegung und Besucher. |
 | **Schnappschüsse anzeigen** | Zeigt den letzten Schnappschuss jeder Erkennungsart. |
@@ -135,6 +135,10 @@ Je nach Konfiguration werden automatisch angelegt:
 ---
 
 ## 8. Versionen
+
+### Version 2.11 (28.10.2025)
+- API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
+- Zurücksetzen des Versions-Cache in die API-Funktionen eingefügt, falls Kammera nach Update die neue API unterstützt.
 
 ### Version 2.10 (26.10.2025)
 - Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden.
