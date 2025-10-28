@@ -39,54 +39,23 @@
         { "type": "CheckBox", "name": "EnableApiSensitivity", "caption": "Sensitivität" },
         { "type": "CheckBox", "name": "EnableApiSiren",       "caption": "Sirene" },
         { "type": "CheckBox", "name": "EnableApiRecord",      "caption": "Kameraaufzeichnung" },
-        { "type": "CheckBox", "name": "EnableApiPTZ",         "caption": "PTZ / Presets / Zoom" }
+        { "type": "CheckBox", "name": "EnableApiPTZ",         "caption": "PTZ / Presets / Zoom" },
+        { "type": "Button", "caption": "API-Version Cache zurücksetzen", "onClick": "IPS_RequestAction($id, 'ResetApiCache', true); echo 'Cache gelöscht.';"}
       ]
     },
     {
-      "type": "CheckBox",
-      "name": "EnablePolling",
-      "caption": "Polling aktivieren (für Kameras ohne Webhook-Unterstützung)"
-    },
-    {
-      "type": "NumberSpinner",
-      "name": "PollingInterval",
-      "caption": "Polling-Intervall",
-      "suffix": "Sekunden",
-      "minimum": 2,
-      "maximum": 3600
-    },
-
-    {
-      "type": "CheckBox",
-      "name": "ShowTestElements",
-      "caption": "Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)"
-    },
-    {
-      "type": "CheckBox",
-      "name": "ShowVisitorElements",
-      "caption": "Besucher-Erkennung aktivieren (für Doorbell)"
-    },
-    {
-      "type": "CheckBox",
-      "name": "ShowMoveVariables",
-      "caption": "Intelligente Bewegungserkennung"
-    },
-    {
-      "type": "CheckBox",
-      "name": "ShowSnapshots",
-      "caption": "Schnappschüsse anzeigen"
-    },
-    {
-      "type": "CheckBox",
-      "name": "ShowArchives",
-      "caption": "Bildarchive anzeigen"
-    },
-    {
-      "type": "NumberSpinner",
-      "name": "MaxArchiveImages",
-      "caption": "Maximale Anzahl Archivbilder",
-      "minimum": 1,
-      "suffix": "Bilder"
+      "type": "ExpansionPanel",
+      "caption": "Bewegungserkennung/Aufnahmen",
+      "items": [
+    {"type": "CheckBox", "name": "EnablePolling", "caption": "Polling aktivieren (für Kameras ohne Webhook-Unterstützung)"  },
+    {"type": "NumberSpinner", "name": "PollingInterval",  "caption": "Polling-Intervall", "suffix": "Sekunden", "minimum": 2, "maximum": 3600  },
+    {"type": "CheckBox", "name": "ShowTestElements", "caption": "Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)" },
+    {"type": "CheckBox", "name": "ShowVisitorElements", "caption": "Besucher-Erkennung aktivieren (für Doorbell)" },
+    {"type": "CheckBox",  "name": "ShowMoveVariables", "caption": "Intelligente Bewegungserkennung" },
+    {"type": "CheckBox", "name": "ShowSnapshots", "caption": "Schnappschüsse anzeigen" },
+    {"type": "CheckBox", "name": "ShowArchives", "caption": "Bildarchive anzeigen" },
+    {"type": "NumberSpinner", "name": "MaxArchiveImages", "caption": "Maximale Anzahl Archivbilder", "minimum": 1, "suffix": "Bilder" }
+    ]
     },
     {
       "type": "Label",
