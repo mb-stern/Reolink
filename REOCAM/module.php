@@ -70,9 +70,6 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        $this->WriteAttributeString('ApiVersionCache', '{}');
-$this->WriteAttributeString('ApiCache', '{}');
-
         $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
             $this->SetStatus(104);
