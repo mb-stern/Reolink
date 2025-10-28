@@ -45,7 +45,7 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "Bewegungserkennung",
+      "caption": "Bewegungserkennung/Aufnahmen",
       "items": [
     {"type": "CheckBox", "name": "EnablePolling", "caption": "Polling aktivieren (für Kameras ohne Webhook-Unterstützung)"  },
     {"type": "NumberSpinner", "name": "PollingInterval",  "caption": "Polling-Intervall", "suffix": "Sekunden", "minimum": 2, "maximum": 3600  },
