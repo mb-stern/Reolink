@@ -201,14 +201,13 @@ class Reolink extends IPSModule
             case 'SirenAction':
                 $val = (int)$Value;
                 $ok = false;
-                if ($val === 0) {                 // Stop (manuell)
+                if ($val === 0) {                 
                     $ok = $this->SirenManualSwitch(false);
-                } elseif ($val === 100) {         // Start (manuell)
+                } elseif ($val === 100) {       
                     $ok = $this->SirenManualSwitch(true);
-                } elseif ($val >= 1 && $val <= 5) { // 1×..5× abspielen
+                } elseif ($val >= 1 && $val <= 5) { 
                     $ok = $this->SirenPlayTimes($val);
                 }
-                // nach Ausführung wieder auf 0 setzen, damit die Auswahl "entprellt"
                 if ($ok) { $this->SetValue('SirenAction', 0); }
                 break;
 
@@ -1991,11 +1990,13 @@ class Reolink extends IPSModule
     private function ftpGet(): ?array
     {
         $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
+        if ($ver === 'unsupported') return null;
+
         $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
 
         $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ true);
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ false);
+            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'FTP');
         }
         return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
@@ -2003,6 +2004,8 @@ class Reolink extends IPSModule
     private function ftpSet(bool $on): bool
     {
         $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
+        if ($ver === 'unsupported') return false;
+
         $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
 
         $p1  = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
@@ -2019,7 +2022,7 @@ class Reolink extends IPSModule
         $ok2 = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
         if ($ok2) return true;
 
-        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ false);
+        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET');
         return is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
     }
 
