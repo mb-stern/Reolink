@@ -40,7 +40,7 @@
         { "type": "CheckBox", "name": "EnableApiSiren",       "caption": "Sirene" },
         { "type": "CheckBox", "name": "EnableApiRecord",      "caption": "Kameraaufzeichnung" },
         { "type": "CheckBox", "name": "EnableApiPTZ",         "caption": "PTZ / Presets / Zoom" },
-        { "type": "Button", "caption": "API-Version Cache zurücksetzen", "onClick": "Reolink_ResetApiCache($id);"}
+        { "type": "Button", "caption": "API-Version Cache zurücksetzen", "onClick": "IPS_RequestAction($id, 'ResetApiCache', true); echo 'Cache gelöscht.';"}
       ]
     },
     {
