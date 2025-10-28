@@ -1977,34 +1977,39 @@ class Reolink extends IPSModule
     // FTP EIN/AUS
     // ---------------------------
 
-    private function ftpGet(): ?array 
+    private function ftpGet(): ?array
     {
         $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
-        if ($ver === 'unsupported') {
-            $this->dbg('FTP', 'Dieses Modell unterstützt FTP nicht');
-            return null;
-        }
         $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP');
+
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ false);
+        }
         return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
-    private function ftpSet(bool $on): bool 
+    private function ftpSet(bool $on): bool
     {
         $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
-        if ($ver === 'unsupported') {
-            $this->dbg('FTP', 'Dieses Modell unterstützt FTP nicht (SET verworfen)');
-            return false;
-        }
         $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
-        $p1  = [ 'Ftp' => [ 'enable' => ($on?1:0), 'channel'=>0 ] ];
+
+        $p1  = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
         $r1  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
         $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
         if ($ok1) return true;
 
-        $p2  = [ 'Ftp' => [ 'schedule'=>['enable'=>($on?1:0)], 'channel'=>0 ] ];
-        $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET');
-        return (is_array($r2) && (($r2[0]['code'] ?? -1) === 0));
+        $r1b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
+        $ok1b = is_array($r1b) && (($r1b[0]['code'] ?? -1) === 0);
+        if ($ok1b) return true;
+
+        $p2  = [ 'Ftp' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ];
+        $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ true);
+        $ok2 = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+        if ($ok2) return true;
+
+        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ false);
+        return is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
     }
 
     private function UpdateFtpStatus(): void
@@ -2024,21 +2029,17 @@ class Reolink extends IPSModule
         if ($enabled === null) return;
 
         $id = @$this->GetIDForIdent('FTPEnabled');
-        if ($id !== false) {
-            $old = GetValueBoolean($id);
-            if ($old !== $enabled) {
-                SetValueBoolean($id, $enabled);
-                $this->dbg('FTP', 'Var geändert', ['old'=>$old,'new'=>$enabled]);
-            }
+        if ($id !== false && (bool)GetValue($id) !== $enabled) {
+            SetValueBoolean($id, $enabled);
+            $this->dbg('FTP', 'Var geändert', ['old' => (bool)GetValue($id), 'new' => $enabled]);
         }
     }
 
     private function FtpApply(bool $on): bool
     {
-    $ok = $this->ftpSet($on);
+        $ok = $this->ftpSet($on);
         if ($ok) $this->UpdateFtpStatus();
         else     $this->dbg('FTP', 'Setzen fehlgeschlagen');
-
         return $ok;
     }
 
