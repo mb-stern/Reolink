@@ -1620,9 +1620,6 @@ class Reolink extends IPSModule
         if (!is_string($old) || $old !== $html) {
             $this->SetValue($ident, $html);
         }
-        else {
-        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
-        }       
     }
 
     private function HandlePtzCommand(string $cmd): bool
