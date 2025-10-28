@@ -218,6 +218,10 @@ class Reolink extends IPSModule
                 else     { $this->UpdateRecStatus(); }
                 break;
 
+            case 'ResetApiCache':
+                $this->ResetApiCache();
+                return;
+
             default:
                 throw new Exception("Invalid Ident");
         }
