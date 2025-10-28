@@ -871,7 +871,7 @@ class Reolink extends IPSModule
 
         // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 6);
+            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
         } else {
             $this->UnregisterVariable("PTZ_HTML");
         }
