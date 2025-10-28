@@ -1192,9 +1192,14 @@ class Reolink extends IPSModule
         // 3) Probiere Legacy
         $rLeg = $this->apiCall([[ 'cmd'=>$cmdLegacy, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
         $okLeg = is_array($rLeg) && (($rLeg[0]['code'] ?? -1) === 0);
-        $ver = $okLeg ? 'legacy' : 'legacy'; // fallback
-        $this->apiVersionSet($domain, $ver);
-        return $ver;
+        
+        if ($okLeg) {
+        $this->apiVersionSet($domain, 'legacy');
+        return 'legacy';
+        }
+
+        $this->apiVersionSet($domain, 'unsupported');
+        return 'unsupported';
     }
 
     // ---------------------------
@@ -1974,22 +1979,29 @@ class Reolink extends IPSModule
 
     private function ftpGet(): ?array 
     {
-    $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
-    $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
-    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP');
-    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+        $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
+        if ($ver === 'unsupported') {
+            $this->dbg('FTP', 'Dieses Modell unterstützt FTP nicht');
+            return null;
+        }
+        $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
     private function ftpSet(bool $on): bool 
     {
         $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
+        if ($ver === 'unsupported') {
+            $this->dbg('FTP', 'Dieses Modell unterstützt FTP nicht (SET verworfen)');
+            return false;
+        }
         $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
-        // Variante 1: enable
         $p1  = [ 'Ftp' => [ 'enable' => ($on?1:0), 'channel'=>0 ] ];
         $r1  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
         $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
         if ($ok1) return true;
-        // Legacy-Sonderfall: schedule.enable
+
         $p2  = [ 'Ftp' => [ 'schedule'=>['enable'=>($on?1:0)], 'channel'=>0 ] ];
         $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET');
         return (is_array($r2) && (($r2[0]['code'] ?? -1) === 0));
