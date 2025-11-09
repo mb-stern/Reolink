@@ -50,7 +50,8 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString("PtzPresetsCache", "");
         $this->RegisterAttributeString("AbilityCache", "");
         $this->RegisterAttributeInteger("ExecLastTs", 0);
-
+        $this->RegisterAttributeString('ApiVersionCache', '{}');
+        $this->RegisterAttributeString('ApiCache', '{}');
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -200,14 +201,13 @@ class Reolink extends IPSModule
             case 'SirenAction':
                 $val = (int)$Value;
                 $ok = false;
-                if ($val === 0) {                 // Stop (manuell)
+                if ($val === 0) {                 
                     $ok = $this->SirenManualSwitch(false);
-                } elseif ($val === 100) {         // Start (manuell)
+                } elseif ($val === 100) {       
                     $ok = $this->SirenManualSwitch(true);
-                } elseif ($val >= 1 && $val <= 5) { // 1×..5× abspielen
+                } elseif ($val >= 1 && $val <= 5) { 
                     $ok = $this->SirenPlayTimes($val);
                 }
-                // nach Ausführung wieder auf 0 setzen, damit die Auswahl "entprellt"
                 if ($ok) { $this->SetValue('SirenAction', 0); }
                 break;
 
@@ -216,6 +216,10 @@ class Reolink extends IPSModule
                 if ($ok) { $this->SetValue('RecEnabled', (bool)$Value); }
                 else     { $this->UpdateRecStatus(); }
                 break;
+
+            case 'ResetApiCache':
+                $this->ResetApiCache();
+                return;
 
             default:
                 throw new Exception("Invalid Ident");
@@ -801,8 +805,265 @@ class Reolink extends IPSModule
     }
 
     // ---------------------------
+    // API Variablen erstellen/löschen
+    // ---------------------------
+
+    private function CreateOrUpdateApiVariablesUnified(): void
+    {
+        // -------- White LED --------
+        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
+            if (!IPS_VariableProfileExists("REOCAM.WLED")) {
+                IPS_CreateVariableProfile("REOCAM.WLED", 1); 
+            }
+            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1);
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
+
+            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 1);
+            $this->EnableAction("WhiteLed");
+
+            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
+            $this->EnableAction("Mode");
+
+            $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
+            $this->EnableAction("Bright");
+        } else {
+            $this->UnregisterVariable("WhiteLed");
+            $this->UnregisterVariable("Mode");
+            $this->UnregisterVariable("Bright");
+        }
+
+        // -------- Email --------
+        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
+            if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
+                IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
+            }
+            IPS_SetVariableProfileValues("REOCAM.EmailInterval", 30, 1800, 1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
+
+            if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
+                IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
+            }
+            IPS_SetVariableProfileValues("REOCAM.EmailContent", 0, 3, 1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text",             "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild",      "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video",     "", -1);
+
+            $this->RegisterVariableBoolean("EmailNotify", "E-Mail Alarm", "~Switch", 2);
+            $this->EnableAction("EmailNotify");
+
+            $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 2);
+            $this->EnableAction("EmailInterval");
+
+            $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 2);
+            $this->EnableAction("EmailContent");
+        } else {
+            $this->UnregisterVariable("EmailNotify");
+            $this->UnregisterVariable("EmailInterval");
+            $this->UnregisterVariable("EmailContent");
+        }
+
+        // -------- PTZ (HTML Box) --------
+        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
+            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
+        } else {
+            $this->UnregisterVariable("PTZ_HTML");
+        }
+
+        // -------- FTP --------
+        if ($this->ReadPropertyBoolean("EnableApiFTP")) {
+            $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
+            $this->EnableAction("FTPEnabled");
+        } else {
+            $this->UnregisterVariable("FTPEnabled");
+        }
+
+        // -------- Bewegungssensitivität (1..50) --------
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
+            if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
+                IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // Integer
+            }
+            IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
+
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->EnableAction("MdSensitivity");
+        } else {
+            $this->UnregisterVariable("MdSensitivity");
+        }
+
+        // -------- Sirene--------
+        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
+            $this->EnableAction("SirenEnabled");
+
+            if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
+                IPS_CreateVariableProfile("REOCAM.SirenAction", 1); // Integer
+                IPS_SetVariableProfileValues("REOCAM.SirenAction", 0, 100, 1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 100, "Start (manuell)", "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 0,   "Stop",            "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 1,   "1× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 2,   "2× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 3,   "3× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 4,   "4× abspielen",    "", -1);
+                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 5,   "5× abspielen",    "", -1);
+            }
+            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 5);
+            $this->EnableAction("SirenAction");
+
+        } else {
+            $this->UnregisterVariable("SirenEnabled");
+            $this->UnregisterVariable("SirenAction");
+        }
+
+        // -------- Recording / Schedule --------
+        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
+            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 6);
+            $this->EnableAction("RecEnabled");
+        } else {
+            $this->UnregisterVariable("RecEnabled");
+        }
+    }
+
+    // ---------------------------
     // API / HTTP / Token
     // ---------------------------
+
+    public function ResetApiCache(): void
+    {
+        $this->WriteAttributeString('ApiVersionCache', '{}');
+        $this->WriteAttributeString('ApiCache', '{}');
+        $this->SendDebug('API', 'Cache manuell gelöscht', 0);
+    }
+
+    public function GetToken()
+    {
+        if (!$this->isActive()) {
+            $this->dbg('TOKEN', 'Abgebrochen: Instanz inaktiv');
+            $this->SetTimerInterval("TokenRenewalTimer", 0);
+            return;
+        }
+        $cameraIP = $this->ReadPropertyString("CameraIP");
+        $username = $this->ReadPropertyString("Username");
+        $password = $this->ReadPropertyString("Password");
+        if ($cameraIP === "" || $username === "" || $password === "") {
+            $this->dbg('TOKEN', 'Abgebrochen: Unvollständige Einstellungen');
+            return;
+        }
+
+        $semName = "REOCAM_{$this->InstanceID}_GetToken";
+        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($semName, 5000) : true;
+        if (!$entered) {
+            $this->dbg('TOKEN', 'Übersprungen: anderer Login aktiv');
+            return;
+        }
+
+        $this->WriteAttributeBoolean("TokenRefreshing", true);
+        try {
+            $url = "http://{$cameraIP}/api.cgi?cmd=Login";
+            $payload = [[
+                "cmd"   => "Login",
+                "param" => ["User" => [
+                    "Version"  => "0",
+                    "userName" => $username,
+                    "password" => $password
+                ]]
+            ]];
+
+            $this->dbg('TOKEN', 'Login', ['url' => $url]);
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => json_encode($payload),
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT        => 8
+            ]);
+            $response = curl_exec($ch);
+            if ($response === false) {
+                $err = curl_error($ch);
+                curl_close($ch);
+                $this->dbg('TOKEN', 'cURL-Fehler', $err);
+                $this->LogMessage("Reolink/TOKEN: cURL-Fehler beim Login: $err", KL_ERROR);
+                return;
+            }
+            curl_close($ch);
+
+            $this->dbg('TOKEN', 'RAW', $this->redactDeep($response));
+
+            $responseData = json_decode($response, true);
+            $token = $responseData[0]['value']['Token']['name'] ?? null;
+            if (!is_string($token) || $token === "") {
+                $this->dbg('TOKEN', 'Ungueltige Antwort (kein Token)', $responseData);
+                $this->LogMessage("Reolink/TOKEN: Fehler beim Abrufen des Tokens: ".$response, KL_ERROR);
+                return;
+            }
+
+            $this->WriteAttributeString("ApiToken", $token);
+            $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
+            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
+            $this->dbg('TOKEN', 'Token gespeichert; Erneuerungstimer gesetzt');
+        } finally {
+            $this->WriteAttributeBoolean("TokenRefreshing", false);
+            if (function_exists('IPS_SemaphoreLeave')) {
+                IPS_SemaphoreLeave($semName);
+            }
+        }
+    }
+
+    public function ExecuteApiRequests(bool $force = false)
+    {
+        if (!$this->isActive()) return;
+        if (!$this->apiEnsureToken()) return;
+      
+        $sem = "REOCAM_{$this->InstanceID}_Exec";
+        if (function_exists('IPS_SemaphoreEnter')) {
+            if (!IPS_SemaphoreEnter($sem, 2000)) {
+                return;
+            }
+        }
+        try {
+            $last = (int)($this->ReadAttributeInteger('ExecLastTs') ?? 0);
+            $now  = time();
+            if (!$force && ($now - $last) < 1) {
+                return;
+            }
+            $this->WriteAttributeInteger('ExecLastTs', $now);
+
+            if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
+                $this->UpdateWhiteLedStatus(); 
+            }
+            if ($this->ReadPropertyBoolean("EnableApiEmail")) {
+                $this->EmailApply(null, null, null);    
+            }
+            if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
+                $this->CreateOrUpdatePTZHtml(false);    
+            }
+            if ($this->ReadPropertyBoolean("EnableApiFTP")) {
+                $this->UpdateFtpStatus();               
+            }
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
+                $this->UpdateMdSensitivityStatus();    
+            }
+            if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+                $this->UpdateSirenStatus();             
+            }
+            if ($this->ReadPropertyBoolean("EnableApiRecord")) {
+                $this->UpdateRecStatus();
+            }
+
+        } finally {
+            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
+        }
+    }
 
     private function apiBase(): string
     {
@@ -890,256 +1151,6 @@ class Reolink extends IPSModule
         return null;
     }
 
-    public function GetToken()
-    {
-        if (!$this->isActive()) {
-            $this->dbg('TOKEN', 'Abgebrochen: Instanz inaktiv');
-            $this->SetTimerInterval("TokenRenewalTimer", 0);
-            return;
-        }
-        $cameraIP = $this->ReadPropertyString("CameraIP");
-        $username = $this->ReadPropertyString("Username");
-        $password = $this->ReadPropertyString("Password");
-        if ($cameraIP === "" || $username === "" || $password === "") {
-            $this->dbg('TOKEN', 'Abgebrochen: Unvollständige Einstellungen');
-            return;
-        }
-
-        $semName = "REOCAM_{$this->InstanceID}_GetToken";
-        $entered = function_exists('IPS_SemaphoreEnter') ? IPS_SemaphoreEnter($semName, 5000) : true;
-        if (!$entered) {
-            $this->dbg('TOKEN', 'Übersprungen: anderer Login aktiv');
-            return;
-        }
-
-        $this->WriteAttributeBoolean("TokenRefreshing", true);
-        try {
-            $url = "http://{$cameraIP}/api.cgi?cmd=Login";
-            $payload = [[
-                "cmd"   => "Login",
-                "param" => ["User" => [
-                    "Version"  => "0",
-                    "userName" => $username,
-                    "password" => $password
-                ]]
-            ]];
-
-            $this->dbg('TOKEN', 'Login', ['url' => $url]);
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => json_encode($payload),
-                CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_TIMEOUT        => 8
-            ]);
-            $response = curl_exec($ch);
-            if ($response === false) {
-                $err = curl_error($ch);
-                curl_close($ch);
-                $this->dbg('TOKEN', 'cURL-Fehler', $err);
-                $this->LogMessage("Reolink/TOKEN: cURL-Fehler beim Login: $err", KL_ERROR);
-                return;
-            }
-            curl_close($ch);
-
-            $this->dbg('TOKEN', 'RAW', $this->redactDeep($response));
-
-            $responseData = json_decode($response, true);
-            $token = $responseData[0]['value']['Token']['name'] ?? null;
-            if (!is_string($token) || $token === "") {
-                $this->dbg('TOKEN', 'Ungueltige Antwort (kein Token)', $responseData);
-                $this->LogMessage("Reolink/TOKEN: Fehler beim Abrufen des Tokens: ".$response, KL_ERROR);
-                return;
-            }
-
-            $this->WriteAttributeString("ApiToken", $token);
-            $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
-            $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
-            $this->dbg('TOKEN', 'Token gespeichert; Erneuerungstimer gesetzt');
-        } finally {
-            $this->WriteAttributeBoolean("TokenRefreshing", false);
-            if (function_exists('IPS_SemaphoreLeave')) {
-                IPS_SemaphoreLeave($semName);
-            }
-        }
-    }
-
-    // ---------------------------
-    // Variablen an/abbauen (API)
-    // ---------------------------
-
-    private function CreateOrUpdateApiVariablesUnified(): void
-    {
-        // -------- White LED --------
-        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-            if (!IPS_VariableProfileExists("REOCAM.WLED")) {
-                IPS_CreateVariableProfile("REOCAM.WLED", 1); 
-            }
-            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
-
-            $this->RegisterVariableBoolean("WhiteLed", "LED Status", "~Switch", 1);
-            $this->EnableAction("WhiteLed");
-
-            $this->RegisterVariableInteger("Mode", "LED Modus", "REOCAM.WLED", 1);
-            $this->EnableAction("Mode");
-
-            $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
-            $this->EnableAction("Bright");
-        } else {
-            $this->UnregisterVariable("WhiteLed");
-            $this->UnregisterVariable("Mode");
-            $this->UnregisterVariable("Bright");
-        }
-
-        // -------- Email --------
-        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
-                IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
-            }
-            IPS_SetVariableProfileValues("REOCAM.EmailInterval", 30, 1800, 1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 600,  "10 Minuten", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 1800, "30 Minuten", "", -1);
-
-            if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
-                IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
-            }
-            IPS_SetVariableProfileValues("REOCAM.EmailContent", 0, 3, 1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text",             "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild",      "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 3, "Text + Video",     "", -1);
-
-            $this->RegisterVariableBoolean("EmailNotify", "E-Mail Alarm", "~Switch", 2);
-            $this->EnableAction("EmailNotify");
-
-            $this->RegisterVariableInteger("EmailInterval", "E-Mail Intervall", "REOCAM.EmailInterval", 2);
-            $this->EnableAction("EmailInterval");
-
-            $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 2);
-            $this->EnableAction("EmailContent");
-        } else {
-            $this->UnregisterVariable("EmailNotify");
-            $this->UnregisterVariable("EmailInterval");
-            $this->UnregisterVariable("EmailContent");
-        }
-
-        // -------- PTZ (HTML Box) --------
-        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 6);
-        } else {
-            $this->UnregisterVariable("PTZ_HTML");
-        }
-
-        // -------- FTP --------
-        if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-            $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
-            $this->EnableAction("FTPEnabled");
-        } else {
-            $this->UnregisterVariable("FTPEnabled");
-        }
-
-        // -------- Bewegungssensitivität (1..50) --------
-        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-            if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
-                IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // Integer
-            }
-            IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
-
-            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
-            $this->EnableAction("MdSensitivity");
-        } else {
-            $this->UnregisterVariable("MdSensitivity");
-        }
-
-        // -------- Sirene--------
-        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
-            $this->EnableAction("SirenEnabled");
-
-            if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
-                IPS_CreateVariableProfile("REOCAM.SirenAction", 1); // Integer
-                IPS_SetVariableProfileValues("REOCAM.SirenAction", 0, 100, 1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 100, "Start (manuell)", "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 0,   "Stop",            "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 1,   "1× abspielen",    "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 2,   "2× abspielen",    "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 3,   "3× abspielen",    "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 4,   "4× abspielen",    "", -1);
-                IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 5,   "5× abspielen",    "", -1);
-            }
-            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 5);
-            $this->EnableAction("SirenAction");
-
-        } else {
-            $this->UnregisterVariable("SirenEnabled");
-            $this->UnregisterVariable("SirenAction");
-        }
-
-        // -------- Recording / Schedule --------
-        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 6);
-            $this->EnableAction("RecEnabled");
-        } else {
-            $this->UnregisterVariable("RecEnabled");
-        }
-    }
-
-    public function ExecuteApiRequests(bool $force = false)
-    {
-        if (!$this->isActive()) return;
-        if (!$this->apiEnsureToken()) return;
-      
-        $sem = "REOCAM_{$this->InstanceID}_Exec";
-        if (function_exists('IPS_SemaphoreEnter')) {
-            if (!IPS_SemaphoreEnter($sem, 2000)) {
-                return;
-            }
-        }
-        try {
-            $last = (int)($this->ReadAttributeInteger('ExecLastTs') ?? 0);
-            $now  = time();
-            if (!$force && ($now - $last) < 1) {
-                return;
-            }
-            $this->WriteAttributeInteger('ExecLastTs', $now);
-
-            if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-                $this->UpdateWhiteLedStatus(); 
-            }
-            if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-                $this->EmailApply(null, null, null);    
-            }
-            if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-                $this->CreateOrUpdatePTZHtml(false);    
-            }
-            if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-                $this->UpdateFtpStatus();               
-            }
-            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-                $this->UpdateMdSensitivityStatus();    
-            }
-            if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-                $this->UpdateSirenStatus();             
-            }
-            if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-                $this->UpdateRecStatus();
-            }
-
-        } finally {
-            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
-        }
-    }
-
     private function apiGetAbilityCached(): array
     {
         $attrName = 'AbilityCache';
@@ -1162,55 +1173,68 @@ class Reolink extends IPSModule
         return $ability;
     }
 
-    private function ApiVersion(string $domain): string
-    {
-        $ability = $this->apiGetAbilityCached();
+    private function apiVersionGet(string $domain): ?string {
+        $raw = $this->ReadAttributeString('ApiVersionCache');
+        $map = $raw ? @json_decode($raw, true) : [];
+        $now = time();
+        if (!isset($map[$domain])) return null;
+        $age = $now - (int)$map[$domain]['ts'];
+        if ($age > 86400) return null; // 24h
+        return ($map[$domain]['ver'] ?? null);
+    }
+    private function apiVersionSet(string $domain, string $ver): void {
+        $raw = $this->ReadAttributeString('ApiVersionCache');
+        $map = $raw ? @json_decode($raw, true) : [];
+        $map[$domain] = ['ver'=>$ver, 'ts'=>time()];
+        $this->WriteAttributeString('ApiVersionCache', json_encode($map));
+    }
 
-        if ($domain === 'schedule') {
-            $ver = (int)($ability['scheduleVersion']['ver'] ?? 0);
-            return ($ver === 1) ? 'V20' : 'LEGACY';
+    private function apiProbe(string $domain, string $cmdV20, string $cmdLegacy, int $action): string {
+        // 1) Cache?
+        $cached = $this->apiVersionGet($domain);
+        if ($cached === 'v20' || $cached === 'legacy') return $cached;
+
+        // 2) Probiere V20
+        $rV20 = $this->apiCall([[ 'cmd'=>$cmdV20, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
+        $okV20 = is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0);
+        if ($okV20) { $this->apiVersionSet($domain, 'v20'); return 'v20'; }
+
+        // 3) Probiere Legacy
+        $rLeg = $this->apiCall([[ 'cmd'=>$cmdLegacy, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
+        $okLeg = is_array($rLeg) && (($rLeg[0]['code'] ?? -1) === 0);
+        
+        if ($okLeg) {
+        $this->apiVersionSet($domain, 'legacy');
+        return 'legacy';
         }
 
-        switch ($domain) {
-            case 'email':
-                $t = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'V20' : 'LEGACY';
-
-            case 'ftp':
-                $t = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-
-            case 'audio':
-                $t = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "param"=>["channel"=>0], "action"=>1 ]], 'AUDIO', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-                
-            case 'record':
-                $t = $this->apiCall([[ "cmd"=>"GetRecV20", "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
-                if (is_array($t) && (($t[0]['code'] ?? -1) === 0)) return 'V20';
-                $t = $this->apiCall([[ "cmd"=>"GetRec", "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
-                return (is_array($t) && (($t[0]['code'] ?? -1) === 0)) ? 'LEGACY' : 'NONE';
-
-        }
-
-        return 'NONE';
+        $this->apiVersionSet($domain, 'unsupported');
+        return 'unsupported';
     }
 
     // ---------------------------
     // Spotlight (White LED)
     // ---------------------------
 
+    private function whiteLedGet(): ?array 
+    {
+    $ver = $this->apiProbe('spot', 'GetWhiteLed', 'GetWhiteLed', 0); // Cmd identisch
+    $res = $this->apiCall([[ 'cmd'=>'GetWhiteLed', 'action'=>0, 'param'=>['channel'=>0] ]], 'SPOT');
+    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+    
+    private function whiteLedSet(array $payload): bool 
+    {
+        $ver = $this->apiProbe('spot', 'SetWhiteLed', 'SetWhiteLed', 0); // Cmd identisch
+        $res = $this->apiCall([[ 'cmd'=>'SetWhiteLed', 'action'=>0, 'param'=>$payload ]], 'SPOT-SET');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+    }
+
     private function SendLedRequest(array $ledParams): bool
     {
-        $payload = [[
-            "cmd"   => "SetWhiteLed",
-            "param" => [ "WhiteLed" => array_merge($ledParams, ["channel" => 0]) ]
-        ]];
-        $res = $this->apiCall($payload, 'SPOTLIGHT');
-        return is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0;
+       $params = ["WhiteLed" => array_merge($ledParams, ["channel" => 0])];
+        $res = $this->whiteLedSet($params);
+        return (bool)$res;
     }
     private function SetWhiteLed(bool $state): bool   { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
     private function SetMode(int $mode): bool         { return $this->SendLedRequest(['mode'  => $mode]); }
@@ -1218,7 +1242,7 @@ class Reolink extends IPSModule
 
     private function UpdateWhiteLedStatus(): void
     {
-        $resp = $this->apiCall([[ "cmd"=>"GetWhiteLed", "action"=>0, "param"=>["channel"=>0] ]], 'SPOTLIGHT');
+        $resp = $this->whiteLedGet();
         if (!is_array($resp) || !isset($resp[0]['value']['WhiteLed'])) {
             $this->dbg('SPOTLIGHT', 'Ungültige Antwort', $resp ?? null);
             return;
@@ -1257,6 +1281,22 @@ class Reolink extends IPSModule
     // E-Mail (V20 / Legacy)
     // ---------------------------
 
+    private function emailGet(): ?array 
+    {
+    $ver = $this->apiProbe('email', 'GetEmailV20', 'GetEmail', 0);
+    $cmd = ($ver === 'v20') ? 'GetEmailV20' : 'GetEmail';
+    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'EMAIL');
+    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+    
+    private function emailSet(array $payload): bool 
+    {
+        $ver = $this->apiProbe('email', 'SetEmailV20', 'SetEmail', 0);
+        $cmd = ($ver === 'v20') ? 'SetEmailV20' : 'SetEmail';
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$payload ]], 'EMAIL-SET');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+    }
+
     private function IntervalSecondsToString(int $sec): ?string
     {
         switch ($sec) {
@@ -1275,159 +1315,129 @@ class Reolink extends IPSModule
         return $map[$s] ?? null;
     }
 
-    private function ApplyEmailStateToVars(array $st): void
-    {
-        $fields = [
-            ['ident' => 'EmailNotify',   'key' => 'enabled',     'cast' => 'bool'],
-            ['ident' => 'EmailInterval', 'key' => 'intervalSec', 'cast' => 'int'],
-            ['ident' => 'EmailContent',  'key' => 'contentMode', 'cast' => 'int'],
-        ];
-
-        foreach ($fields as $f) {
-            $key = $f['key'];
-            if (!array_key_exists($key, $st) || $st[$key] === null) continue;
-
-            $id = @$this->GetIDForIdent($f['ident']);
-            if ($id === false) continue;
-
-            $old = GetValue($id);
-            $new = ($f['cast'] === 'bool') ? (bool)$st[$key] : (int)$st[$key];
-
-            if ($old !== $new) {
-                $this->SetValue($f['ident'], $new);
-                $this->dbg('EMAIL', 'Var geändert', ['ident' => $f['ident'], 'old' => $old, 'new' => $new]);
-            }
-        }
-    }
-
-
     private function GetEmailState(): ?array
     {
-        $res = $this->apiCall([[ "cmd"=>"GetEmailV20", "param"=>["channel"=>0] ]], 'EMAIL', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0) && isset($res[0]['value']['Email'])) {
-            $e = $res[0]['value']['Email'];
-            $enabled = isset($e['enable']) ? ((int)$e['enable'] === 1) : null;
-            $intervalSec = isset($e['intervalSec']) ? (int)$e['intervalSec'] :
-                        (isset($e['interval']) ? $this->IntervalStringToSeconds((string)$e['interval']) : null);
-            $contentMode = null;
-            if (isset($e['textType']) || isset($e['attachmentType'])) {
-                $text = (int)($e['textType'] ?? 1);
-                $att  = (int)($e['attachmentType'] ?? 0);
-                $contentMode = ($text?($att===0?0:($att===1?2:3)):($att===1?1:0));
-            }
-            return ['enabled'=>$enabled,'intervalSec'=>$intervalSec,'contentMode'=>$contentMode];
+        $res = $this->emailGet();
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
+
+        $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
+        if (!is_array($e)) return null;
+
+        $enabled = null;
+        if (array_key_exists('enable', $e)) {
+            $enabled = ((int)$e['enable'] === 1);
+        } elseif (isset($e['schedule']['enable'])) {
+            $enabled = ((int)$e['schedule']['enable'] === 1);
         }
 
-        $res = $this->apiCall([[ "cmd"=>"GetEmail", "param"=>["channel"=>0] ]], 'EMAIL', true);
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0) && isset($res[0]['value']['Email'])) {
-            $e = $res[0]['value']['Email'];
-            $enabled = isset($e['schedule']['enable']) ? ((int)$e['schedule']['enable'] === 1) : null;
-            $intervalSec = isset($e['interval']) ? $this->IntervalStringToSeconds((string)$e['interval']) : null;
-            $contentMode = isset($e['attachment'])
-                ? (['0'=>0,'onlyPicture'=>1,'picture'=>2,'video'=>3][(string)$e['attachment']] ?? 0)
-                : null;
-            return ['enabled'=>$enabled,'intervalSec'=>$intervalSec,'contentMode'=>$contentMode];
+        $intervalSec = null;
+        if (isset($e['interval'])) {
+            $map = ['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800];
+            $intervalSec = $map[(string)$e['interval']] ?? null;
+        } elseif (isset($e['intervalSec'])) {
+            $intervalSec = (int)$e['intervalSec'];
         }
-        return null;
+
+        $contentMode = null;
+        if (isset($e['textType']) || isset($e['attachmentType'])) {
+            $text = (int)($e['textType'] ?? 1);
+            $att  = (int)($e['attachmentType'] ?? 0);
+            if ($text === 1 && $att === 0)      $contentMode = 0;
+            elseif ($text === 0 && $att === 1)  $contentMode = 1;
+            elseif ($text === 1 && $att === 1)  $contentMode = 2;
+            elseif ($text === 1 && $att === 2)  $contentMode = 3;
+            else                                $contentMode = 0;
+        } elseif (isset($e['attachment'])) {
+            $contentMode = [
+                '0'=>0, 'no'=>0, 'onlyPicture'=>1, 'picture'=>2, 'video'=>3
+            ][(string)$e['attachment']] ?? 0;
+        }
+
+        return [
+            'enabled'     => $enabled,
+            'intervalSec' => $intervalSec,
+            'contentMode' => $contentMode,
+            'raw'         => $e
+        ];
     }
 
-    private function EmailApply(?bool $enabled = null, ?int $intervalSec = null, ?int $contentMode = null): bool
+    private function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
-        $wantSet = ($enabled !== null || $intervalSec !== null || $contentMode !== null);
-
-        if (!$wantSet) {
-            $state = $this->GetEmailState();
-            if (is_array($state)) {
-                $this->ApplyEmailStateToVars($state);
-            } else {
-                $this->dbg('EMAIL', 'GetEmailState FAIL (no data)');
+        if ($enable === null && $intervalSec === null && $contentMode === null) {
+            if (method_exists($this, 'UpdateEmailStatus')) {
+                $this->UpdateEmailStatus();
             }
             return true;
         }
 
-        $ver   = $this->ApiVersion('email');
-        $okSet = true;
+        $okAll   = true;
+        $touched = false;
 
-        if ($ver === 'V20') {
-            $email = [];
-            if ($enabled !== null) {
-                $email['enable'] = $enabled ? 1 : 0;
+        if ($enable !== null) {
+            $touched = true;
+            $ok = $this->emailSet(['Email'=>['channel'=>0, 'enable'=>($enable?1:0)]]);
+            if (!$ok) {
+                $ok = $this->emailSet(['Email'=>['channel'=>0, 'schedule'=>['enable'=>($enable?1:0)]]]);
             }
-            if ($intervalSec !== null) {
-                $str = $this->IntervalSecondsToString($intervalSec);
-                if ($str !== null) {
-                    $email['interval'] = $str;
-                }
-            }
-            if ($contentMode !== null) {
-                switch ($contentMode) {
-                    case 0: $email += ["textType" => 1, "attachmentType" => 0]; break; // Text
-                    case 1: $email += ["textType" => 0, "attachmentType" => 1]; break; // Nur Bild
-                    case 2: $email += ["textType" => 1, "attachmentType" => 1]; break; // Text + Bild
-                    case 3: $email += ["textType" => 1, "attachmentType" => 2]; break; // Text + Video
-                }
-            }
-
-            if (!empty($email)) {
-                $res   = $this->apiCall([[ "cmd" => "SetEmailV20", "param" => ["Email" => $email] ]], 'EMAIL');
-                $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-                if (!$okSet) {
-                    $this->dbg('EMAIL', 'SetEmailV20 FAIL', $res);
-                }
-            }
-        } else {
-            $email = [];
-            if ($enabled !== null) {
-                $email['schedule']['enable'] = $enabled ? 1 : 0;
-            }
-            if ($intervalSec !== null) {
-                $str = $this->IntervalSecondsToString($intervalSec);
-                if ($str !== null) {
-                    $email['interval'] = $str;
-                }
-            }
-            if ($contentMode !== null) {
-                $att = ['0', 'onlyPicture', 'picture', 'video'][$contentMode] ?? '0';
-                $email['attachment'] = $att;
-            }
-
-            if (!empty($email)) {
-                $res   = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => $email] ]], 'EMAIL', true);
-                $okSet = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-
-                if (!$okSet) {
-                    $okSet = true;
-                    if ($enabled !== null) {
-                        $r = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => ["schedule" => ["enable" => ($enabled ? 1 : 0)]]] ]], 'EMAIL', true);
-                        $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
-                    }
-                    if ($intervalSec !== null) {
-                        $str = $this->IntervalSecondsToString($intervalSec);
-                        if ($str !== null) {
-                            $r = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => ["interval" => $str]] ]], 'EMAIL', true);
-                            $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
-                        }
-                    }
-                    if ($contentMode !== null) {
-                        $att = ['0', 'onlyPicture', 'picture', 'video'][$contentMode] ?? '0';
-                        $r = $this->apiCall([[ "cmd" => "SetEmail", "param" => ["Email" => ["attachment" => $att]] ]], 'EMAIL', true);
-                        $okSet = $okSet && is_array($r) && (($r[0]['code'] ?? -1) === 0);
-                    }
-                    if (!$okSet) {
-                        $this->dbg('EMAIL', 'SetEmail (fallback) FAIL');
-                    }
-                }
-            }
+            $okAll = $okAll && $ok;
         }
 
-        $state = $this->GetEmailState();
-        if (is_array($state)) {
-            $this->ApplyEmailStateToVars($state);
-        } else {
-            $this->dbg('EMAIL', 'GetEmailState FAIL (no data)');
+        if ($intervalSec !== null) {
+            $touched = true;
+            $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
+            $str = $map[(int)$intervalSec] ?? null;
+            $ok  = $str ? $this->emailSet(['Email'=>['channel'=>0, 'interval'=>$str]]) : false;
+            $okAll = $okAll && $ok;
         }
 
-        return $okSet;
+        if ($contentMode !== null) {
+            $touched = true;
+            $m = (int)$contentMode;
+
+            $payloadV20 = ['Email'=>[
+                'channel'        => 0,
+                'textType'       => in_array($m, [0,2,3], true) ? 1 : 0,
+                'attachmentType' => ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0))),
+            ]];
+            $ok = $this->emailSet($payloadV20);
+
+            if (!$ok) {
+                $payloadLegacy = ['Email'=>[
+                    'channel'    => 0,
+                    'attachment' => match ($m) { 1=>'onlyPicture', 2=>'picture', 3=>'video', default=>'0' },
+                ]];
+                $ok = $this->emailSet($payloadLegacy);
+            }
+            $okAll = $okAll && $ok;
+        }
+
+        if (!$touched) return true;
+
+        if (method_exists($this, 'UpdateEmailStatus')) {
+            $this->UpdateEmailStatus();
+        }
+        return $okAll;
+    }
+
+    public function UpdateEmailStatus(): void
+    {
+        $st = $this->GetEmailState();
+        if (!is_array($st)) return;
+
+        $id = @$this->GetIDForIdent('EmailNotify');
+        if ($id !== false && $st['enabled'] !== null && (bool)GetValue($id) !== (bool)$st['enabled']) {
+            SetValueBoolean($id, (bool)$st['enabled']);
+        }
+
+        $id = @$this->GetIDForIdent('EmailInterval');
+        if ($id !== false && $st['intervalSec'] !== null && (int)GetValue($id) !== (int)$st['intervalSec']) {
+            SetValueInteger($id, (int)$st['intervalSec']);
+        }
+
+        $id = @$this->GetIDForIdent('EmailContent');
+        if ($id !== false && $st['contentMode'] !== null && (int)GetValue($id) !== (int)$st['contentMode']) {
+            SetValueInteger($id, (int)$st['contentMode']);
+        }
     }
 
     // ---------------------------
@@ -1610,9 +1620,6 @@ class Reolink extends IPSModule
         if (!is_string($old) || $old !== $html) {
             $this->SetValue($ident, $html);
         }
-        else {
-        $this->dbg('PTZ', 'Unverändert', ['ident' => $ident], true);
-        }       
     }
 
     private function HandlePtzCommand(string $cmd): bool
@@ -1897,6 +1904,7 @@ class Reolink extends IPSModule
     // ---------------------------
     // PTZ Presets: Set/Rename/Clear
     // ---------------------------
+
     private function ptzSetPreset(int $id, ?string $nameForCreate=null): bool {
         $entry = ['id'=>$id, 'enable'=>1];
         if ($nameForCreate !== null && $nameForCreate !== '') {
@@ -1976,110 +1984,110 @@ class Reolink extends IPSModule
     // FTP EIN/AUS
     // ---------------------------
 
+    private function ftpGet(): ?array
+    {
+        $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
+        if ($ver === 'unsupported') return null;
+
+        $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
+
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'FTP');
+        }
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+
+    private function ftpSet(bool $on): bool
+    {
+        $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
+        if ($ver === 'unsupported') return false;
+
+        $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
+
+        $p1  = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
+        $r1  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
+        $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+        if ($ok1) return true;
+
+        $r1b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
+        $ok1b = is_array($r1b) && (($r1b[0]['code'] ?? -1) === 0);
+        if ($ok1b) return true;
+
+        $p2  = [ 'Ftp' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ];
+        $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ true);
+        $ok2 = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
+        if ($ok2) return true;
+
+        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET');
+        return is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
+    }
+
     private function UpdateFtpStatus(): void
     {
-        $ver = $this->ApiVersion('ftp');
+        $res = $this->ftpGet();
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
+
+        $ftp = $res[0]['value']['Ftp'] ?? $res[0]['initial']['Ftp'] ?? null;
+        if (!is_array($ftp)) return;
 
         $enabled = null;
-
-        if ($ver === 'V20') {
-            $res = $this->apiCall([[ "cmd"=>"GetFtpV20", "param"=>["channel"=>0] ]], 'FTP', /*suppress*/ true);
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                $v = $res[0]['value']['Ftp'] ?? null;
-                if (is_array($v) && array_key_exists('enable', $v)) {
-                    $enabled = ((int)$v['enable'] === 1);
-                }
-            }
-        } elseif ($ver === 'LEGACY') {
-            $res = $this->apiCall([[ "cmd"=>"GetFtp", "param"=>["channel"=>0] ]], 'FTP', /*suppress*/ true);
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                $v = $res[0]['value']['Ftp'] ?? null;
-                
-                if (is_array($v)) {
-                    if (array_key_exists('enable', $v)) {
-                        $enabled = ((int)$v['enable'] === 1);
-                    } elseif (isset($v['schedule']['enable'])) {
-                        $enabled = ((int)$v['schedule']['enable'] === 1);
-                    }
-                }
-            }
-        } else {
-            $this->dbg('FTP', 'Keine FTP-API verfügbar');
-            return;
+        if (array_key_exists('enable', $ftp)) {
+            $enabled = ((int)$ftp['enable'] === 1);
+        } elseif (isset($ftp['schedule']['enable'])) {
+            $enabled = ((int)$ftp['schedule']['enable'] === 1);
         }
-
-        if ($enabled === null) {
-            $this->dbg('FTP', 'Ungültige Antwort oder fehlendes enable-Flag', $ver);
-            return;
-        }
+        if ($enabled === null) return;
 
         $id = @$this->GetIDForIdent('FTPEnabled');
-        if ($id !== false) {
-            $old = GetValueBoolean($id);
-            if ($old !== $enabled) {
-                SetValueBoolean($id, $enabled);
-                $this->dbg('FTP', 'Var geändert', ['old' => $old, 'new' => $enabled]);
-            }
+        if ($id !== false && (bool)GetValue($id) !== $enabled) {
+            SetValueBoolean($id, $enabled);
+            $this->dbg('FTP', 'Var geändert', ['old' => (bool)GetValue($id), 'new' => $enabled]);
         }
     }
 
     private function FtpApply(bool $on): bool
     {
-        $ver = $this->ApiVersion('ftp');
-        $ok  = false;
-
-        if ($ver === "V20") {
-            $r = $this->apiCall([[
-                "cmd"   => "SetFtpV20",
-                "param" => [ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
-            ]], 'FTP', true);
-            $ok = is_array($r) && (($r[0]['code'] ?? -1) === 0);
-
-        } elseif ($ver === "LEGACY") {
-            $r1 = $this->apiCall([[
-                "cmd"   => "SetFtp",
-                "param" => [ "Ftp" => [ "enable" => ($on ? 1 : 0), "channel" => 0 ] ]
-            ]], 'FTP', true);
-            $ok = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-
-            if (!$ok) {
-                $r2 = $this->apiCall([[
-                    "cmd"   => "SetFtp",
-                    "param" => [ "Ftp" => [ "schedule" => [ "enable" => ($on ? 1 : 0) ], "channel" => 0 ] ]
-                ]], 'FTP', true);
-                $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-            }
-
-        } else {
-            // NONE
-            $this->dbg('FTP', 'Keine FTP-API verfügbar');
-            return false;
-        }
-
-        if ($ok) {
-            $this->UpdateFtpStatus();
-        } else {
-            $this->dbg('FTP', 'Setzen fehlgeschlagen');
-        }
+        $ok = $this->ftpSet($on);
+        if ($ok) $this->UpdateFtpStatus();
+        else     $this->dbg('FTP', 'Setzen fehlgeschlagen');
         return $ok;
     }
 
     // ---------------------------
-    // Sensitivity
+    // Sensitivity (aus V2.10-Logik portiert)
     // ---------------------------
 
-    private function GetMdSensitivity(): ?array
+    private function sensitivityGet(): ?array 
     {
-        $ver = $this->ApiVersion('schedule');
-        $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
+        // V2.10-Probierpfad: V20 bevorzugt, sonst Legacy
+        $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
+        $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'SENSITIVITY');
-        if (!is_array($res) || ($res[0]['code']??1) !== 0) return null;
+        // Erst action:1 (initial/value) mit type:"md"
+        $res = $this->apiCall([[
+            'cmd'    => $cmd,
+            'action' => 1,
+            'param'  => ['channel'=>0, 'type'=>'md']
+        ]], 'SENS');
 
-        $node = $this->apiGetNode($res, ($ver === 'V20') ? 'MdAlarm' : 'Alarm');
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            // Fallback: action:0
+            $res = $this->apiCall([[
+                'cmd'    => $cmd,
+                'action' => 0,
+                'param'  => ['channel'=>0, 'type'=>'md']
+            ]], 'SENS');
+        }
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
+
+        // Knoten extrahieren (wie V2.10)
+        $root = $res[0];
+        $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm']
+            ?? $root['value']['Alarm']   ?? $root['initial']['Alarm']   ?? null;
         if (!is_array($node)) return null;
 
-        $sensDef = null;
+        $sensDef  = null;
         $segments = [];
         if (!empty($node['newSens'])) {
             $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
@@ -2089,87 +2097,110 @@ class Reolink extends IPSModule
         }
 
         $active = $this->mdPickActiveNow($segments, $sensDef);
-
         return [
-            'apiVer'   => $ver,
+            'apiVer'   => ($ver === 'v20' ? 'V20' : 'LEGACY'),
             'sensDef'  => $sensDef,
             'segments' => $segments,
             'active'   => $active
         ];
     }
 
-    public function SetMdSensitivity(int $level): bool
+    private function sensitivitySet(int $levelUi): bool 
     {
-        $level = max(1, min(50, $level));
-        $levelCam = 51 - $level;
+        // UI 1..50 ↔ Kamera 50..1 (V2.10)
+        $levelUi  = max(1, min(50, $levelUi));
+        $levelCam = 51 - $levelUi;
 
-        $state = $this->GetMdSensitivity();
-        if ($state === null) return false;
+        $state = $this->sensitivityGet();
+        if (!$state) return false;
 
-        $ver      = $state['apiVer'];                    
-        $paramKey = ($ver === 'V20') ? 'MdAlarm' : 'Alarm';
-        $cmdSet   = ($ver === 'V20') ? 'SetMdAlarm' : 'SetAlarm';
-
-        $segments = $state['segments'];
-        if (empty($segments)) {
-            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
-        } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-            unset($s);
+        // V2.10 setzt immer 4 Slots (IDs 0..3). Zeiten aus GET übernehmen, sonst Standard.
+        $tpl = [
+            ['id'=>0,'beginHour'=>0, 'beginMin'=>0,  'endHour'=>6,  'endMin'=>0 ],
+            ['id'=>1,'beginHour'=>6, 'beginMin'=>0,  'endHour'=>12, 'endMin'=>0 ],
+            ['id'=>2,'beginHour'=>12,'beginMin'=>0,  'endHour'=>18, 'endMin'=>0 ],
+            ['id'=>3,'beginHour'=>18,'beginMin'=>0,  'endHour'=>23, 'endMin'=>59],
+        ];
+        $byId = [];
+        foreach ((array)($state['segments'] ?? []) as $seg) {
+            if (isset($seg['id'])) $byId[(int)$seg['id']] = $seg;
+        }
+        $segments = [];
+        for ($i=0; $i<4; $i++) {
+            $src = $byId[$i] ?? [];
+            $segments[] = [
+                'id'          => $i,
+                'beginHour'   => (int)($src['beginHour'] ?? $tpl[$i]['beginHour']),
+                'beginMin'    => (int)($src['beginMin']  ?? $tpl[$i]['beginMin']),
+                'endHour'     => (int)($src['endHour']   ?? $tpl[$i]['endHour']),
+                'endMin'      => (int)($src['endMin']    ?? $tpl[$i]['endMin']),
+                'sensitivity' => $levelCam
+            ];
         }
 
-        if ($ver === 'V20') {
+        $isV20 = ($state['apiVer'] === 'V20');
+
+        if ($isV20) {
+            // SetMdAlarm (V20) – type:"md", useNewSens:1, action:0 (wie V2.10)
             $payload = [[
-                "cmd"   => $cmdSet,
-                "param" => [
-                    $paramKey => [
-                        "type"       => "md",
-                        "useNewSens" => 1,
-                        "newSens"    => [
-                            "sensDef" => $levelCam,   
-                            "sens"    => $segments
+                'cmd'   => 'SetMdAlarm',
+                'action'=> 0,
+                'param' => [
+                    'MdAlarm' => [
+                        'type'       => 'md',
+                        'useNewSens' => 1,
+                        'newSens'    => [
+                            'sensDef' => (int)($state['sensDef'] ?? $levelCam),
+                            'sens'    => $segments
                         ],
-                        "channel"    => 0
+                        'channel'    => 0
                     ]
                 ]
             ]];
-            $res = $this->apiCall($payload, 'ALARM_SET');
-            return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+            $res = $this->apiCall($payload, 'SENS-SET');
+        } else {
+            // Legacy SetAlarm – type:"md", action:0
+            $payload = [[
+                'cmd'   => 'SetAlarm',
+                'action'=> 0,
+                'param' => [
+                    'Alarm' => [
+                        'type'    => 'md',
+                        'sens'    => $segments,
+                        'channel' => 0
+                    ]
+                ]
+            ]];
+            $res = $this->apiCall($payload, 'SENS-SET');
         }
 
-        $payload = [[
-            "cmd"   => $cmdSet,
-            "param" => [
-                $paramKey => [
-                    "type"    => "md",
-                    "sens"    => $segments,
-                    "channel" => 0
-                ]
-            ]
-        ]];
-        $res = $this->apiCall($payload, 'ALARM_SET');
-        return (is_array($res) && ($res[0]['code'] ?? 1) === 0);
+        $ok = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+        if ($ok) { $this->UpdateMdSensitivityStatus(); }
+        return $ok;
     }
+
+    private function GetMdSensitivity(): ?array { return $this->sensitivityGet(); }
+    public  function SetMdSensitivity(int $level): bool { return $this->sensitivitySet($level); }
 
     private function UpdateMdSensitivityStatus(): void
     {
-        $vid = @$this->GetIDForIdent("MdSensitivity");
+        $vid = @$this->GetIDForIdent('MdSensitivity');
         if ($vid === false) return;
 
         $st = $this->GetMdSensitivity();
         if (!$st) return;
 
         $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
-
-        $lvlUI = 51 - $lvlCam;
+        $lvlUI  = 51 - $lvlCam;
 
         if ((int)GetValue($vid) !== $lvlUI) {
-            $this->SetValue("MdSensitivity", $lvlUI);
+            $this->SetValue('MdSensitivity', $lvlUI);
         }
     }
 
     private function mdNormalizeSegments($raw): array
     {
+        // identisch zu V2.10: nur begin*/end* + sensitivity normalisieren
         $out = [];
         $push = function($a) use (&$out) {
             $out[] = [
@@ -2177,7 +2208,8 @@ class Reolink extends IPSModule
                 'beginMin'    => (int)($a['beginMin']  ?? 0),
                 'endHour'     => (int)($a['endHour']   ?? 23),
                 'endMin'      => (int)($a['endMin']    ?? 59),
-                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
+                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0)),
+                'id'          => isset($a['id']) ? (int)$a['id'] : null, // nur fürs Mergen genutzt
             ];
         };
         $walk = function($node) use (&$walk, $push) {
@@ -2195,7 +2227,7 @@ class Reolink extends IPSModule
         foreach ($out as $s) {
             $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
             if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
-            if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
+            if ($s['sensitivity'] < 0 || $s['sensitivity'] > 50) continue; // 0 kann vorkommen
             $filtered[] = $s;
         }
         return array_values($filtered);
@@ -2222,48 +2254,6 @@ class Reolink extends IPSModule
         $v = $root['value'][$key] ?? null;
         if ($v === null) $v = $root['initial'][$key] ?? null;
         return is_array($v) ? $v : null;
-    }
-
-    // ---------------------------
-    // Sirene ein-aus
-    // ---------------------------
-
-    public function SetSirenEnabled(bool $on): bool
-    {
-        $isV20 = ($this->ApiVersion('audio') === 'V20');
-
-        $getCmd = $isV20 ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
-        $res = $this->apiCall([[ "cmd"=>$getCmd, "action"=>1, "param"=>["channel"=>0] ]], 'AUDIO_GET');
-        if (!is_array($res) || ($res[0]['code']??1) !== 0) return false;
-        $audio = $res[0]['value']['Audio'] ?? null;
-        if (!is_array($audio)) return false;
-
-        $audio['enable'] = $on ? 1 : 0; 
-
-        $setCmd = $isV20 ? 'SetAudioAlarmV20' : 'SetAudioAlarm';
-        $payload = [ [ "cmd"=>$setCmd, "param"=>["Audio"=>$audio] ] ];
-        $r2 = $this->apiCall($payload, 'AUDIO_SET');
-        return (is_array($r2) && ($r2[0]['code']??1) === 0);
-    }
-
-    private function UpdateSirenStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("SirenEnabled");
-        if ($vid === false) return;
-
-        $res = $this->apiCall([[ "cmd"=>"GetAudioAlarmV20", "action"=>1, "param"=>["channel"=>0] ]], 'SIRENE', true);
-        if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) {
-            
-            $res = $this->apiCall([[ "cmd"=>"GetAudioAlarm", "action"=>1, "param"=>["channel"=>0] ]], 'SIRENE', true);
-            if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
-        }
-        $audio = $res[0]['value']['Audio'] ?? null;
-        if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
-
-        $enabled = ((int)$audio['enable'] === 1);
-        if ((bool)GetValue($vid) !== $enabled) {
-            $this->SetValue("SirenEnabled", $enabled);
-        }
     }
 
     // ---------------------------
@@ -2305,32 +2295,47 @@ class Reolink extends IPSModule
 
 
     // ---------------------------
-    // SRecord Status
+    // Record Status
     // ---------------------------
+
+    private function recordGet(): ?array 
+    {
+    $ver = $this->apiProbe('record', 'GetRecV20', 'GetRec', 1);
+    $cmd = ($ver === 'v20') ? 'GetRecV20' : 'GetRec';
+    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'RECORD');
+    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+
+    private function recordSet(array $payload): bool
+    {
+        $ver = $this->apiProbe('record', 'SetRecV20', 'SetRec', 0);
+        $cmd = ($ver === 'v20') ? 'SetRecV20' : 'SetRec';
+
+        $r0  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ true);
+        $ok0 = is_array($r0) && (($r0[0]['code'] ?? -1) === 0);
+        if ($ok0) return true;
+
+        $r1  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 1, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ false);
+        return is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+    }
 
     private function UpdateRecStatus(): void
     {
         $vid = @$this->GetIDForIdent("RecEnabled");
         if ($vid === false) return;
 
-        $ver = $this->ApiVersion('record');
-        if ($ver === 'NONE') { $this->dbg('REC', 'Keine Recording-API'); return; }
-
-        $cmd = ($ver === 'V20') ? 'GetRecV20' : 'GetRec';
-        $res = $this->apiCall([[ "cmd"=>$cmd, "action"=>1, "param"=>["channel"=>0] ]], 'REC', true);
-        if (!(is_array($res) && (($res[0]['code'] ?? -1) === 0))) return;
+        $res = $this->recordGet();
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
 
         $rec = $res[0]['value']['Rec'] ?? $res[0]['initial']['Rec'] ?? null;
         if (!is_array($rec)) return;
 
-        // V20 hat "enable" direkt am Rec-Objekt; Legacy meist im schedule.enable
         $enabled = null;
         if (array_key_exists('enable', $rec)) {
             $enabled = ((int)$rec['enable'] === 1);
         } elseif (isset($rec['schedule']['enable'])) {
             $enabled = ((int)$rec['schedule']['enable'] === 1);
         }
-
         if ($enabled !== null && ((bool)GetValue($vid) !== $enabled)) {
             $this->SetValue('RecEnabled', $enabled);
         }
@@ -2338,45 +2343,28 @@ class Reolink extends IPSModule
 
     public function SetRecEnabled(bool $on): bool
     {
-        $ver = $this->ApiVersion('record');
-        if ($ver === 'NONE') { $this->dbg('REC', 'Nicht unterstützt'); return false; }
+        // Aktuellen Record-Status holen (du hast recordGet() ja schon)
+        $get = $this->recordGet();
+        if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) return false;
 
-        // Erst aktuellen Stand holen (wir übernehmen vorhandene Felder wie preRec/postRec/schedule)
-        $get  = ($ver === 'V20') ? 'GetRecV20' : 'GetRec';
-        $set  = ($ver === 'V20') ? 'SetRecV20' : 'SetRec';
-        $resp = $this->apiCall([[ "cmd"=>$get, "action"=>1, "param"=>["channel"=>0] ]], 'REC_GET');
-        if (!is_array($resp) || ($resp[0]['code']??1) !== 0) return false;
-
-        $rec = $resp[0]['value']['Rec'] ?? $resp[0]['initial']['Rec'] ?? null;
+        $rec = $get[0]['value']['Rec'] ?? $get[0]['initial']['Rec'] ?? [];
         if (!is_array($rec)) $rec = [];
 
-        if ($ver === 'V20') {
-            // V20: einfach Rec.enable setzen
-            $rec['enable'] = $on ? 1 : 0;
-            // channel nicht vergessen, falls nicht vorhanden
-            if (!isset($rec['channel'])) $rec['channel'] = 0;
+        $rec['enable']  = $on ? 1 : 0;
+        $rec['channel'] = 0;
 
-            $payload = [[ "cmd"=>$set, "param"=> [ "Rec" => $rec ] ]];
-            $r2 = $this->apiCall($payload, 'REC_SET');
-            $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-            if ($ok) $this->UpdateRecStatus();
-            return $ok;
+        // Direkt setzen ohne Api()-Helper
+        $ok = $this->recordSet(['Rec' => $rec]);
 
-        } else {
-            // Legacy: schedule.enable toggeln (Tabelle unangetastet)
-            if (!isset($rec['schedule']) || !is_array($rec['schedule'])) {
-                $rec['schedule'] = ["channel"=>0, "enable"=> ($on ? 1 : 0)];
-            } else {
-                $rec['schedule']['enable'] = ($on ? 1 : 0);
-                if (!isset($rec['schedule']['channel'])) $rec['schedule']['channel'] = 0;
-            }
-            if (!isset($rec['channel'])) $rec['channel'] = 0;
-
-            $payload = [[ "cmd"=>$set, "param"=> [ "Rec" => $rec ] ]];
-            $r2 = $this->apiCall($payload, 'REC_SET');
-            $ok = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-            if ($ok) $this->UpdateRecStatus();
-            return $ok;
+        // Fallback für ältere Legacy-Firmwares: schedule.enable
+        if (!$ok) {
+            $param2 = ['Rec' => ['schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0]];
+            $ok = $this->recordSet($param2);
         }
+
+        if ($ok) {
+            $this->UpdateRecStatus();
+        }
+        return $ok;
     }
 }
