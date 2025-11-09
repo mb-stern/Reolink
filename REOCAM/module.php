@@ -2583,14 +2583,6 @@ class Reolink extends IPSModule
             if (function_exists('Sys_Ping')) {
                 $isOnline = @Sys_Ping($ip, 1000); // 1s
             }
-
-            if (!$isOnline) {
-                $url  = "http://{$ip}/api.cgi?cmd=GetDevInfo&user={$user}&password={$pass}";
-                $resp = $this->apiHttpPostJson($url, [
-                    ['cmd'=>'GetDevInfo','action'=>0]
-                ], 'ONLINE', /*suppressError*/ true);
-                $isOnline = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
-            }
         }
 
         $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $isOnline]);
