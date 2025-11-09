@@ -1988,6 +1988,78 @@ class Reolink extends IPSModule
     }
 
     // ---------------------------
+    // PTZ Presets: Set/Rename/Clear
+    // ---------------------------
+
+    // --- Öffentliche Helfer für Automationen ---
+
+    /**
+     * Liste aller Presets (für Skripte/Flows)
+     * Rückgabe: Array wie [['id'=>1,'name'=>'Eingang'], ...]
+     */
+    public function PTZ_ListPresets(): array
+    {
+        return $this->getPresetList();
+    }
+
+    /**
+     * Preset per Name anfahren.
+     * $partial: true = erlaubt Teiltreffer (z. B. "Eing" matcht "Eingang")
+     */
+    public function PTZ_GotoPresetByName(string $name, bool $partial = true): bool
+    {
+        if (!$this->apiEnsureToken()) {
+            $this->SendDebug(__FUNCTION__, 'Kein Token', 0);
+            return false;
+        }
+
+        $needle = mb_strtolower(trim($name));
+        if ($needle === '') {
+            $this->SendDebug(__FUNCTION__, 'Leerer Name', 0);
+            return false;
+        }
+
+        $presets = $this->getPresetList();
+        if (!is_array($presets) || !$presets) {
+            $this->SendDebug(__FUNCTION__, 'Keine Presets gefunden', 0);
+            return false;
+        }
+
+        // 1) Exakter (case-insensitiver) Treffer
+        foreach ($presets as $p) {
+            $pname = mb_strtolower((string)$p['name']);
+            if ($pname === $needle) {
+                $this->SendDebug(__FUNCTION__, 'Exakter Treffer: '.$p['name'].' (#'.$p['id'].')', 0);
+                return $this->ptzGotoPreset((int)$p['id']);
+            }
+        }
+
+        // 2) Optional: Teiltreffer
+        if ($partial) {
+            foreach ($presets as $p) {
+                $pname = mb_strtolower((string)$p['name']);
+                if (mb_stripos($pname, $needle) !== false) {
+                    $this->SendDebug(__FUNCTION__, 'Teiltreffer: '.$p['name'].' (#'.$p['id'].')', 0);
+                    return $this->ptzGotoPreset((int)$p['id']);
+                }
+            }
+        }
+
+        $this->SendDebug(__FUNCTION__, 'Kein Preset mit Name "'.$name.'" gefunden', 0);
+        return false;
+    }
+
+    /**
+     * Preset per ID anfahren (für Vollständigkeit)
+     */
+    public function PTZ_GotoPreset(int $id): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        return $this->ptzGotoPreset($id);
+    }
+
+
+    // ---------------------------
     // FTP EIN/AUS
     // ---------------------------
 
