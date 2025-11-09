@@ -1991,21 +1991,11 @@ class Reolink extends IPSModule
     // PTZ Presets: Set/Rename/Clear
     // ---------------------------
 
-    // --- Öffentliche Helfer für Automationen ---
-
-    /**
-     * Liste aller Presets (für Skripte/Flows)
-     * Rückgabe: Array wie [['id'=>1,'name'=>'Eingang'], ...]
-     */
     public function PTZ_ListPresets(): array
     {
         return $this->getPresetList();
     }
 
-    /**
-     * Preset per Name anfahren.
-     * $partial: true = erlaubt Teiltreffer (z. B. "Eing" matcht "Eingang")
-     */
     public function PTZ_GotoPresetByName(string $name, bool $partial = true): bool
     {
         if (!$this->apiEnsureToken()) {
@@ -2049,9 +2039,6 @@ class Reolink extends IPSModule
         return false;
     }
 
-    /**
-     * Preset per ID anfahren (für Vollständigkeit)
-     */
     public function PTZ_GotoPreset(int $id): bool
     {
         if (!$this->apiEnsureToken()) return false;
