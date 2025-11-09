@@ -40,6 +40,8 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 | Reolink RLC-520A | ✅ | Voll unterstützt |
 | Reolink E1 Zoom | ✅ | Unterstützt PTZ |
 | Reolink E540 | ✅ | Voll unterstützt |
+| Reolink Duo 2V PoE | ✅ | Voll unterstützt |
+
 
 > ⚠️ **Akkubetriebene Modelle** (z. B. *Argus-Reihe*) unterstützen keine Webhooks.  
 > Diese können nur über Polling angebunden werden (eingeschränkt getestet).
@@ -100,9 +102,14 @@ Je nach Konfiguration werden automatisch angelegt:
 | Fahrzeug | Boolean | Bewegung durch Fahrzeug erkannt |
 | Bewegung | Boolean | Allgemeine Bewegung erkannt |
 | Besucher | Boolean | Besucher erkannt (Doorbell) |
-| WhiteLed / Mode / Bright | Integer / Boolean | LED-Licht-Parameter |
-| EmailNotify / Interval / Content | Integer / Boolean | E-Mail-Steuerung |
-| PTZ_HTML | String | HTML-Element für PTZ-Steuerung |
+| LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
+| E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
+| PTZ | String | HTML-Element für PTZ-Steuerung |
+| FTP | Boolean | FTP-Upload-Steuerung |
+| Bewegung Sensitivität  | Integer | Bewegungsempfindlichkeit |
+| Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
+| Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
+
 
 ### Profile
 
@@ -111,6 +118,8 @@ Je nach Konfiguration werden automatisch angelegt:
 | `REOCAM.WLED` | Integer | LED-Modus (Aus / Auto / Zeit) |
 | `REOCAM.EmailInterval` | Integer | Versandintervall |
 | `REOCAM.EmailContent` | Integer | E-Mail-Inhalt (Text / Bild / Video) |
+| `REOCAM.Sensitivity50` | Integer | Sensitivität 1-50 |
+| `REOCAM.SirenAction` | Integer | Sirenensteuerung |
 
 ---
 
@@ -138,8 +147,8 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
-- Zurücksetzen des Versions-Cache in die API-Funktionen eingefügt, falls Kammera nach Update die neue API unterstützt.
-- Konfiguratisonsformular überarbeitet.
+- Zurücksetzen des Versions-Cache in die API-Funktionen eingefügt, falls Kamera nach Update die neue API unterstützt.
+- Konfigurationsformular überarbeitet.
 
 ### Version 2.10 (26.10.2025)
 - Einige Variablen konnten nicht über das Konfigurationsformular gelöscht werden.
