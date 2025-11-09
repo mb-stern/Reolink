@@ -2593,7 +2593,7 @@ class Reolink extends IPSModule
             }
         }
 
-        $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $online]);
+        $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $isOnline]);
 
         if ((bool)GetValue($id) !== $isOnline) {
             $this->SetValue('KameraOnline', $isOnline);
