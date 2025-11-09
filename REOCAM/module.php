@@ -147,12 +147,6 @@ class Reolink extends IPSModule
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
-            case "IRLight":
-                $ok = $this->SetIrLight((bool)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
-                else     { $this->UpdateIrStatus(); }
-                break;
-
             case "Mode":
                 $ok = $this->SetMode((int)$Value);
                 if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
@@ -163,6 +157,23 @@ class Reolink extends IPSModule
                 $ok = $this->SetBrightness((int)$Value);
                 if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
                 else     { $this->UpdateWhiteLedStatus(); }
+                break;
+
+            case 'IR_Light':
+                $this->IR_Set((bool)$Value);
+                $this->SetValue('IR_Mode', $this->mapIrModeToInt((bool)$Value ? 'on' : 'off'));
+                $this->SetValue('IR_Light', (bool)$Value);
+                break;
+
+            case 'IR_Mode':
+                $mode = $this->mapIntToIrMode((int)$Value);
+                if ($mode !== null) {
+                    $ok = $this->irSetMode($mode);
+                    if ($ok) {
+                        $this->SetValue('IR_Mode', (int)$Value);
+                        $this->SetValue('IR_Light', $mode === 'on');
+                    }
+                }
                 break;
 
             case "EmailNotify":
@@ -2475,11 +2486,11 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    // ---------------------------
-    // IR-Beleuchtung (Infrared)
-    // ---------------------------
+// ---------------------------
+// IR-Beleuchtung (Infrared)
+// ---------------------------
 
- // --- IR-Beleuchtung: Öffentliche Instanzfunktionen ---
+// --- Öffentliche Instanzfunktionen ---
 
 /** IR dauerhaft einschalten */
 public function IR_On(): bool {
@@ -2501,33 +2512,77 @@ public function IR_Set(bool $on): bool {
     return $this->irSetMode($on ? 'on' : 'off');
 }
 
+/** Modus abfragen: 'on' | 'off' | 'auto' oder null bei Fehler */
+public function IR_GetMode(): ?string {
+    return $this->irGetMode();
+}
+
 private function irSetMode(string $mode): bool
 {
+    if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
     if (!$this->apiEnsureToken()) return false;
 
-    // Optional: Eingabe absichern
     $mode = strtolower($mode);
     if (!in_array($mode, ['on','off','auto'], true)) return false;
 
-    // Beispiel-Payload – strukturiert wie deine anderen apiPost()-Calls:
-    $payload = [
-        [
-            'cmd'   => 'SetIrLights',
-            'param' => [
-                'IrLights' => [
-                    'channel' => $this->getChannel(), // falls du channel-basiert arbeitest
-                    'state'   => $mode                 // 'on' | 'off' | 'auto'
-                ]
+    $payload = [[
+        'cmd'   => 'SetIrLights',
+        'param' => [
+            'IrLights' => [
+                'channel' => $this->getChannel(),
+                'state'   => $mode   // 'on' | 'off' | 'auto'
             ]
         ]
-    ];
+    ]];
 
-    $ok = $this->apiPost($payload);   // benutze hier deine vorhandene API-Post-Methode
+    $ok = $this->apiPost($payload);
     if ($ok) {
-        // falls du dir einen lokalen Status merken willst:
-        @$this->SetValue('IR_Light', $mode === 'on'); // nur wenn Variable existiert
+        // Lokalen Status (falls Variable existiert) aktualisieren:
+        @ $this->SetValue('IR_Mode', $this->mapIrModeToInt($mode));
+        @ $this->SetValue('IR_Light', $mode === 'on');
     }
     return (bool)$ok;
+}
+
+private function irGetMode(): ?string
+{
+    if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
+    if (!$this->apiEnsureToken()) return null;
+
+    $payload = [[
+        'cmd'   => 'GetIrLights',
+        'param' => [ 'IrLights' => [ 'channel' => $this->getChannel() ] ]
+    ]];
+
+    $res = $this->apiPost($payload);
+    // Erwartete Antwortform wie bei deinen anderen Get-Calls:
+    // ['value'=>['IrLights'=>['state'=>'on|off|auto', ...]]]
+    $state = $res['0']['value']['IrLights']['state'] ?? null;
+    if (is_string($state)) {
+        $state = strtolower($state);
+        if (in_array($state, ['on','off','auto'], true)) return $state;
+    }
+    return null;
+}
+
+private function mapIrModeToInt(string $m): int
+{
+    return match (strtolower($m)) {
+        'on'   => 1,
+        'off'  => 0,
+        'auto' => 2,
+        default => -1
+    };
+}
+
+private function mapIntToIrMode(int $v): ?string
+{
+    return match ($v) {
+        1 => 'on',
+        0 => 'off',
+        2 => 'auto',
+        default => null
+    };
 }
 
 }
