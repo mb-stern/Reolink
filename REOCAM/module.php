@@ -1086,6 +1086,7 @@ class Reolink extends IPSModule
                 return;
             }
             $this->WriteAttributeInteger('ExecLastTs', $now);
+            $this->UpdateOnlineStatus();
 
             if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
                 $this->UpdateWhiteLedStatus(); 
@@ -1111,7 +1112,6 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiIR")) {
                 $this->UpdateIrStatus();
             }
-            $this->UpdateOnlineStatus();
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
