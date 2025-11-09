@@ -973,7 +973,7 @@ class Reolink extends IPSModule
 
         // -------- Kamera online --------
         if (@$this->GetIDForIdent('KameraOnline') === false) {
-            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert', 11);
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
         }
     }
