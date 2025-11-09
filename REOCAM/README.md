@@ -79,7 +79,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Benutzername** | Benutzername für den Zugriff. |
 | **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
 | **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
-| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
+| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, IR-Beleuchtung, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
 | **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
 | **Intelligente Bewegungserkennung** | Erstellt Variablen für Personen, Tiere, Fahrzeuge, Bewegung und Besucher. |
 | **Schnappschüsse anzeigen** | Zeigt den letzten Schnappschuss jeder Erkennungsart. |
@@ -145,6 +145,8 @@ Je nach Konfiguration werden automatisch angelegt:
 ## 8. Erweiterte Instanzenfunkionen
 
 - REOCAM_SetInstanceStatus (Beispiel: 'REOCAM_SetInstanceStatus (INSTANZ-ID, false);' deaktiviert die Instanz)
+- REOCAM_PTZ_GotoPreset (Beispiel: 'REOCAM_PTZ_GotoPreset (INSTANZ-ID, 0);' fährt auf Preset mit ID 0, in der Regel der erste Preset)
+- REOCAM_PTZ_GotoPresetByName (Beispiel: 'REOCAM_PTZ_GotoPresetByName (INSTANZ-ID, "Türe", true);' fährt auf Preset mit dem Namen 'Türe')
 
 ---
 
@@ -152,7 +154,10 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 2.12 (09.11.2025)
 - Fehler beim setzen der Sensitivität behoben.
-- Erweiterte Instanzenfunkion 'REOCAM_SetInstanceStatus' zum deaktiveren der Instanz über eine Automation hinzugefügt.
+- Aktivieren/Deaktivieren der Instanz über 'REOCAM_SetInstanceStatus'  hinzugefügt.
+- Anfahren der PTZ Presets über 'REOCAM_PTZ_GotoPreset' oder 'REOCAM_PTZ_GotoPresetByName' möglich.
+- API-Punkt 'IR-Beleuchtung' hinzugefügt.
+- Online-Check der Kamera hinzugefügt.
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.

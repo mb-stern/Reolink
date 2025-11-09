@@ -33,6 +33,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
+        $this->RegisterPropertyBoolean("EnableApiIR", true);
 
 
         // Archiv
@@ -105,26 +106,33 @@ class Reolink extends IPSModule
         }
 
         // API-Schalter
-        $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity    = $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord  = $this->ReadPropertyBoolean("EnableApiRecord");
-        $anyFeatureOn  = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren || $enableRecord);  
+        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
+        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
+        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
+
+        $anyFeatureOn = (
+            $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
+            $enableFTP || $enableSensitivity || $enableSiren || $enableRecord
+        );
 
 
         $this->CreateOrUpdateApiVariablesUnified();
 
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
         if ($anyFeatureOn) {
             $this->GetToken();
-            $this->ExecuteApiRequests(true); 
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
+            $this->ExecuteApiRequests(true);
         } else {
-            $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
         }
+
+        $this->UpdateOnlineStatus();
+
     }
 
     public function RequestAction($Ident, $Value)
@@ -152,6 +160,17 @@ class Reolink extends IPSModule
                 if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
+
+            case 'IRLights':
+            {
+                $ok = $this->IR_SetModeInt((int)$Value);
+                if ($ok) {
+                    $this->SetValue('IRLights', (int)$Value);
+                } else {
+                    $this->UpdateIrStatus(); 
+                }
+                break;
+            }
 
             case "EmailNotify":
                 $ok = $this->EmailApply((bool)$Value, null, null);
@@ -817,6 +836,22 @@ class Reolink extends IPSModule
 
     private function CreateOrUpdateApiVariablesUnified(): void
     {
+        // -------- IR (Infrared) --------
+        if ($this->ReadPropertyBoolean("EnableApiIR")) {
+            if (!IPS_VariableProfileExists("REOCAM.IR")) {
+                IPS_CreateVariableProfile("REOCAM.IR", 1); 
+            }
+            IPS_SetVariableProfileValues("REOCAM.IR", 0, 2, 1);
+            IPS_SetVariableProfileAssociation("REOCAM.IR", 0, "Aus",  "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.IR", 1, "An",   "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.IR", 2, "Auto", "", -1);
+
+            $this->RegisterVariableInteger("IRLights", "IR Beleuchtung", "REOCAM.IR", 0);
+            $this->EnableAction("IRLights");
+        } else {
+            $this->UnregisterVariable("IRLights");
+        }
+
         // -------- White LED --------
         if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
@@ -935,6 +970,12 @@ class Reolink extends IPSModule
         } else {
             $this->UnregisterVariable("RecEnabled");
         }
+
+        // -------- Kamera online --------
+        if (@$this->GetIDForIdent('KameraOnline') === false) {
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert', 11);
+            $this->SetValue('KameraOnline', false);
+        }
     }
 
     // ---------------------------
@@ -1029,6 +1070,9 @@ class Reolink extends IPSModule
     public function ExecuteApiRequests(bool $force = false)
     {
         if (!$this->isActive()) return;
+
+         $this->UpdateOnlineStatus();
+         
         if (!$this->apiEnsureToken()) return;
       
         $sem = "REOCAM_{$this->InstanceID}_Exec";
@@ -1065,6 +1109,9 @@ class Reolink extends IPSModule
             }
             if ($this->ReadPropertyBoolean("EnableApiRecord")) {
                 $this->UpdateRecStatus();
+            }
+            if ($this->ReadPropertyBoolean("EnableApiIR")) {
+                $this->UpdateIrStatus();
             }
 
         } finally {
@@ -1988,6 +2035,65 @@ class Reolink extends IPSModule
     }
 
     // ---------------------------
+    // PTZ GotoPresets
+    // ---------------------------
+
+    public function PTZ_ListPresets(): array
+    {
+        return $this->getPresetList();
+    }
+
+    public function PTZ_GotoPresetByName(string $name, bool $partial = true): bool
+    {
+        if (!$this->apiEnsureToken()) {
+            $this->SendDebug(__FUNCTION__, 'Kein Token', 0);
+            return false;
+        }
+
+        $needle = mb_strtolower(trim($name));
+        if ($needle === '') {
+            $this->SendDebug(__FUNCTION__, 'Leerer Name', 0);
+            return false;
+        }
+
+        $presets = $this->getPresetList();
+        if (!is_array($presets) || !$presets) {
+            $this->SendDebug(__FUNCTION__, 'Keine Presets gefunden', 0);
+            return false;
+        }
+
+        // 1) Exakter (case-insensitiver) Treffer
+        foreach ($presets as $p) {
+            $pname = mb_strtolower((string)$p['name']);
+            if ($pname === $needle) {
+                $this->SendDebug(__FUNCTION__, 'Exakter Treffer: '.$p['name'].' (#'.$p['id'].')', 0);
+                return $this->ptzGotoPreset((int)$p['id']);
+            }
+        }
+
+        // 2) Optional: Teiltreffer
+        if ($partial) {
+            foreach ($presets as $p) {
+                $pname = mb_strtolower((string)$p['name']);
+                if (mb_stripos($pname, $needle) !== false) {
+                    $this->SendDebug(__FUNCTION__, 'Teiltreffer: '.$p['name'].' (#'.$p['id'].')', 0);
+                    return $this->ptzGotoPreset((int)$p['id']);
+                }
+            }
+        }
+
+        $this->SendDebug(__FUNCTION__, 'Kein Preset mit Name "'.$name.'" gefunden', 0);
+        return false;
+    }
+
+    public function PTZ_GotoPreset(int $id): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        return $this->ptzGotoPreset($id);
+    }
+
+
+    // ---------------------------
     // FTP EIN/AUS
     // ---------------------------
 
@@ -2367,7 +2473,6 @@ class Reolink extends IPSModule
 
     public function SetRecEnabled(bool $on): bool
     {
-        // Aktuellen Record-Status holen (du hast recordGet() ja schon)
         $get = $this->recordGet();
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) return false;
 
@@ -2377,10 +2482,8 @@ class Reolink extends IPSModule
         $rec['enable']  = $on ? 1 : 0;
         $rec['channel'] = 0;
 
-        // Direkt setzen ohne Api()-Helper
         $ok = $this->recordSet(['Rec' => $rec]);
 
-        // Fallback für ältere Legacy-Firmwares: schedule.enable
         if (!$ok) {
             $param2 = ['Rec' => ['schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0]];
             $ok = $this->recordSet($param2);
@@ -2390,5 +2493,102 @@ class Reolink extends IPSModule
             $this->UpdateRecStatus();
         }
         return $ok;
+    }
+
+    // ---------------------------
+    // Infrared (IR)
+    // ---------------------------
+
+    public function IR_SetModeInt(int $mode): bool
+    {
+        if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
+        if (!$this->apiEnsureToken()) return false;
+
+        $mode = max(0, min(2, $mode));
+        $map  = [0 => 'Off', 1 => 'On', 2 => 'Auto'];
+
+        $payload = [[
+            'cmd'   => 'SetIrLights',
+            'action'=> 0,
+            'param' => ['IrLights' => [
+                'channel' => 0,
+                'state'   => $map[$mode] 
+            ]]
+        ]];
+
+        $res = $this->apiCall($payload, 'IR-SET');
+        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if ($ok) { $this->UpdateIrStatus(); }
+        return $ok;
+    }
+
+    private function irGetMode(): ?string
+    {
+        if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
+        if (!$this->apiEnsureToken()) return null;
+
+        $p0  = [[ 'cmd'=>'GetIrLights', 'action'=>0, 'param'=>['channel'=>0] ]];
+        $res = $this->apiCall($p0, 'IR', /*suppress*/ true);
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $p1  = [[ 'cmd'=>'GetIrLights', 'action'=>1, 'param'=>['channel'=>0] ]];
+            $res = $this->apiCall($p1, 'IR');
+            if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
+        }
+
+        $root = $res[0] ?? [];
+        $node = $root['value']['IrLights'] ?? $root['initial']['IrLights'] ?? null;
+        if (!is_array($node)) return null;
+
+        $raw = $node['state'] ?? null;
+        if (is_string($raw)) {
+            $s = strtolower($raw);
+            if (in_array($s, ['off','on','auto'], true)) return $s;
+        }
+        if (is_int($raw)) {
+            return [0=>'off',1=>'on',2=>'auto'][$raw] ?? null;
+        }
+        return null;
+    }
+
+    private function UpdateIrStatus(): void
+    {
+        $mode = $this->irGetMode();
+        if ($mode === null) return;
+
+        $vid = @$this->GetIDForIdent('IRLights');
+        if ($vid !== false) {
+            $val = ($mode === 'off' ? 0 : ($mode === 'on' ? 1 : 2));
+            if ((int)GetValue($vid) !== $val) {
+                $this->SetValue('IRLights', $val);
+            }
+        }
+    }
+
+    // ---------------------------
+    // Online-Status
+    // ---------------------------
+
+    private function UpdateOnlineStatus(): void
+    {
+        $id = @$this->GetIDForIdent('KameraOnline');
+        if ($id === false) return;
+
+        $ip   = trim($this->ReadPropertyString('CameraIP'));
+        $user = urlencode($this->ReadPropertyString('Username'));
+        $pass = urlencode($this->ReadPropertyString('Password'));
+
+        $isOnline = false;
+
+        if ($ip !== '') {
+            if (function_exists('Sys_Ping')) {
+                $isOnline = @Sys_Ping($ip, 1000); // 1s
+            }
+        }
+
+        $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $isOnline]);
+
+        if ((bool)GetValue($id) !== $isOnline) {
+            $this->SetValue('KameraOnline', $isOnline);
+        }
     }
 }
