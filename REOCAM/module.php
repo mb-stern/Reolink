@@ -160,11 +160,12 @@ class Reolink extends IPSModule
                 break;
 
             case 'IRLights':
-                $ok = $this->IR_SetModeInt((int)$Value);
+                $val = (int)$Value;                  // 0=Off, 1=On, 2=Auto
+                $ok  = $this->IR_SetModeInt($val);   // mappt intern auf 'off'/'on'/'auto' + SetIrLights
                 if ($ok) {
-                    $this->SetValue('IRLights', (int)$Value);
+                    $this->SetValue('IRLights', $val);
                 } else {
-                    $this->UpdateIrStatus(); // zurücklesen, damit UI stimmt
+                    $this->UpdateIrStatus();         // zurücklesen, wenn Gerät abgelehnt hat
                 }
                 break;
 
@@ -2486,51 +2487,97 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    // ---------------------------
-    // Infrared (IR)
-    // ---------------------------
+// ---------------------------
+// Infrared (IR)
+// ---------------------------
 
- // Öffentliche Instanzfunktionen (für Automation/Skript)
-public function IR_On(): bool   { return $this->IR_SetModeInt(1); } // On
-public function IR_Off(): bool  { return $this->IR_SetModeInt(0); } // Off
-public function IR_Auto(): bool { return $this->IR_SetModeInt(2); } // Auto
-public function IR_GetMode(): ?string { return $this->irGetMode(); }
+// Öffentliche Instanzfunktionen (für Automationen/RequestAction)
+public function IR_On(): bool            { return $this->irSetMode('on'); }
+public function IR_Off(): bool           { return $this->irSetMode('off'); }
+public function IR_Auto(): bool          { return $this->irSetMode('auto'); }
+/** Komfort: per Integer 0=Off, 1=On, 2=Auto (für deine Integer-Variable IRLights) */
+public function IR_SetModeInt(int $v): bool {
+    $map = [0=>'off', 1=>'on', 2=>'auto'];
+    return array_key_exists($v, $map) ? $this->irSetMode($map[$v]) : false;
+}
+/** Lesen als String: 'off'|'on'|'auto' */
+public function IR_GetMode(): ?string    { return $this->irGetMode(); }
 
-
-public function IR_SetModeInt(int $mode): bool
+/** --- Intern: Set --- */
+private function irSetMode(string $mode): bool
 {
     if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
     if (!$this->apiEnsureToken()) return false;
 
-    $m = max(0, min(2, (int)$mode));
-    $map = [0 => 'Off', 1 => 'On', 2 => 'Auto']; // Case-sensitive!
+    // API erwartet "Auto" | "Off" | "On"
+    $m = strtolower(trim($mode));
+    if (!in_array($m, ['on','off','auto'], true)) return false;
+    $state = ucfirst($m); // 'On'/'Off'/'Auto'
 
+    // Reolink-API: SetIrLights braucht action:0 + channel + state (String)
     $payload = [[
         'cmd'    => 'SetIrLights',
         'action' => 0,
         'param'  => ['IrLights' => [
-            'channel' => 0,               // keine getChannel(): immer 0 wie bei WhiteLED/Email/… 
-            'state'   => $map[$m]
+            // Wenn du keinen Channel-Property hast, 0 verwenden:
+            'channel' => 0,
+            'state'   => $state
         ]]
     ]];
 
-    $res = $this->apiCall($payload, 'IR-SET');     // <-- konsistent zu deinem Layer
-    $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+    // *** WICHTIG: benutze hier GENAU den gleichen Transport wie bei White LED ***
+    // Beispiel: $res = $this->ApiRequest($payload);
+    // oder:     $res = $this->ExecuteApiRequests($payload);
+    // Ersetze die nächste Zeile durch deinen vorhandenen Sender (wie bei WhiteLED):
+    $res = $this->ApiRequest($payload);
 
-    if ($ok) { $this->UpdateIrStatus(); }          // wie bei WhiteLed
+    $ok = is_array($res) && isset($res[0]['code']) && (int)$res[0]['code'] === 0;
+    if ($ok) { $this->UpdateIrStatus(); }
     return $ok;
 }
 
-public function UpdateIrStatus(): void
+/** --- Intern: Get --- */
+private function irGetMode(): ?string
+{
+    if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
+    if (!$this->apiEnsureToken()) return null;
+
+    $payload = [[ 'cmd' => 'GetIrLights' ]];
+
+    // Gleiches Transport-Backend wie oben:
+    $res = $this->ApiRequest($payload);
+
+    if (!is_array($res) || !isset($res[0])) return null;
+
+    // Reolink liefert häufig: value.IrLights.state (0/1/2) – Fallback initial.*
+    $node = $res[0]['value']['IrLights'] ?? $res[0]['initial']['IrLights'] ?? null;
+    if (!is_array($node)) return null;
+
+    $raw = $node['state'] ?? null;
+
+    if (is_int($raw)) {
+        // 0=off, 1=on, 2=auto (laut Doku)
+        return match($raw){ 0=>'off', 1=>'on', 2=>'auto', default=>null };
+    }
+    if (is_string($raw)) {
+        $s = strtolower($raw);
+        if (in_array($s, ['off','on','auto'], true)) return $s;
+    }
+    return null;
+}
+
+/** Status der Variablen aktualisieren (nur Werte setzen – kein Anlegen/Profilbau hier) */
+private function UpdateIrStatus(): void
 {
     $mode = $this->irGetMode();
     if ($mode === null) return;
 
-    $int = match ($mode) { 'off' => 0, 'on' => 1, 'auto' => 2 };
-    $vid = @$this->GetIDForIdent('IRLights');
-    if ($vid !== false && (int)GetValue($vid) !== $int) {
-        $this->SetValue('IRLights', $int);
+    // Integer-Variable 'IRLights' (0/1/2) → du hast die schon zentral registriert
+    if (@$this->GetIDForIdent('IRLights') !== false) {
+        $v = match($mode){ 'off'=>0, 'on'=>1, 'auto'=>2, default=>0 };
+        $this->SetValue('IRLights', $v);
     }
 }
+
 
 }
