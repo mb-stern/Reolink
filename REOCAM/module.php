@@ -223,7 +223,7 @@ class Reolink extends IPSModule
         }
     }
 
-    private function SetInstanceStatus(bool $value): bool
+    public function SetInstanceStatus(bool $value): bool
     {
         IPS_SetProperty($this->InstanceID, 'InstanceStatus', $value);
 
@@ -380,7 +380,7 @@ class Reolink extends IPSModule
         return "http://{$host}:{$port}{$hookPath}";
     }
 
-    private function ProcessHookData()
+    public function ProcessHookData()
     {
         if (!$this->ReadPropertyBoolean("InstanceStatus") || $this->GetStatus() !== 102) {
             while (ob_get_level() > 0) { @ob_end_clean(); }
@@ -475,7 +475,7 @@ class Reolink extends IPSModule
         $this->SetTimerInterval($timerName, 5000);
     }
 
-    private function ResetMoveTimer(string $ident)
+    public function ResetMoveTimer(string $ident)
     {
         $timerName = $ident . "_Reset";
         $this->dbg('POLLING', "Reset '$ident' → false");
@@ -752,7 +752,7 @@ class Reolink extends IPSModule
     // Polling (AI State)
     // ---------------------------
 
-    private function Polling()
+    public function Polling()
     {
         if (!$this->isActive() || !$this->ReadPropertyBoolean("EnablePolling")) {
             $this->SetTimerInterval("PollingTimer", 0);
@@ -941,14 +941,14 @@ class Reolink extends IPSModule
     // API / HTTP / Token
     // ---------------------------
 
-    private function ResetApiCache(): void
+    public function ResetApiCache(): void
     {
         $this->WriteAttributeString('ApiVersionCache', '{}');
         $this->WriteAttributeString('ApiCache', '{}');
         $this->SendDebug('API', 'Cache manuell gelöscht', 0);
     }
 
-    private function GetToken()
+    public function GetToken()
     {
         if (!$this->isActive()) {
             $this->dbg('TOKEN', 'Abgebrochen: Instanz inaktiv');
@@ -1026,7 +1026,7 @@ class Reolink extends IPSModule
         }
     }
 
-    private function ExecuteApiRequests(bool $force = false)
+    public function ExecuteApiRequests(bool $force = false)
     {
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
@@ -1426,7 +1426,7 @@ class Reolink extends IPSModule
         return $okAll;
     }
 
-    private function UpdateEmailStatus(): void
+    public function UpdateEmailStatus(): void
     {
         $st = $this->GetEmailState();
         if (!is_array($st)) return;
@@ -1874,7 +1874,7 @@ class Reolink extends IPSModule
         return $okAny;
     }
 
-    private function PTZ_SavePreset(int $id, ?string $name=null): bool
+    public function PTZ_SavePreset(int $id, ?string $name=null): bool
     {
         if (!$this->apiEnsureToken()) return false;
         $ok = $this->ptzSetPreset($id);
@@ -1886,7 +1886,7 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function PTZ_RenamePreset(int $id, string $name): bool
+    public function PTZ_RenamePreset(int $id, string $name): bool
     {
         if (!$this->apiEnsureToken()) return false;
         $ok = $this->ptzRenamePreset($id, $name);
@@ -1897,7 +1897,7 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function PTZ_DeletePreset(int $id): bool
+    public function PTZ_DeletePreset(int $id): bool
     {
         if (!$this->apiEnsureToken()) return false;
         $ok = $this->ptzClearPreset($id);
@@ -2152,7 +2152,7 @@ class Reolink extends IPSModule
         return $this->sensitivityGet();
     }
 
-    private function SetMdSensitivity(int $level): bool {
+    public function SetMdSensitivity(int $level): bool {
         return $this->sensitivitySet($level);
     }
 
@@ -2248,7 +2248,7 @@ class Reolink extends IPSModule
         return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
     }
 
-    private function SetSirenEnabled(bool $on): bool
+    public function SetSirenEnabled(bool $on): bool
     {
         $res = $this->alarmGet();
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return false;
@@ -2365,7 +2365,7 @@ class Reolink extends IPSModule
         }
     }
 
-    private function SetRecEnabled(bool $on): bool
+    public function SetRecEnabled(bool $on): bool
     {
         // Aktuellen Record-Status holen (du hast recordGet() ja schon)
         $get = $this->recordGet();
