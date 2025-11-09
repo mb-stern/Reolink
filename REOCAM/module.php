@@ -2054,25 +2054,25 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-// ---------------------------
-// Sensitivity (V2.10-Logik, ohne ApiVersion())
-// ---------------------------
+    // ---------------------------
+    // Sensitivity
+    // ---------------------------
 
-private function sensitivityGet(): ?array 
-{
-    // Welche API-Variante? (v20 bevorzugt)
+    private function sensitivityGet(): ?array 
+    {
+    // Probe nutzt GetMdAlarm vs GetAlarm mit action 1
     $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
     $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
 
-    // 1) Erst action:1 (wie V2.10) – OHNE "type"
+    // Erst action:1 versuchen
     $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'SENS');
     if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-        // 2) Fallback action:0 – OHNE "type"
+        // Fallback auf action:0 (einige Modelle)
         $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'SENS');
     }
     if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
 
-    // Node extrahieren (value bevorzugt, sonst initial)
+    // Node extrahieren und normalisieren
     $root = $res[0];
     $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] ?? $root['value']['Alarm'] ?? $root['initial']['Alarm'] ?? null;
     if (!is_array($node)) return null;
@@ -2088,147 +2088,184 @@ private function sensitivityGet(): ?array
 
     $active = $this->mdPickActiveNow($segments, $sensDef);
     return [ 'apiVer' => ($ver === 'v20' ? 'V20' : 'LEGACY'), 'sensDef'=>$sensDef, 'segments'=>$segments, 'active'=>$active ];
-}
-
-private function sensitivitySet(int $levelUi): bool 
-{
-    // UI 1..50 → Cam 50..1 (wie 2.10)
-    $levelUi  = max(1, min(50, $levelUi));
-    $levelCam = 51 - $levelUi;
-
-    $state = $this->sensitivityGet();
-    if (!$state) return false;
-
-    $segments = $state['segments'];
-    if (empty($segments)) {
-        // Ganzer Tag als ein Segment – wie in deiner Version
-        $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
-    } else {
-        foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-        unset($s);
     }
 
-    $isV20 = ($state['apiVer'] === 'V20');
+    private function sensitivitySet(int $levelUi): bool 
+    {
+        // UI 1..50 → Cam 50..1
+        $levelUi  = max(1, min(50, $levelUi));
+        $levelCam = 51 - $levelUi;
 
-    if ($isV20) {
-        // V20: KEIN "action", channel auf gleicher Ebene, sensDef = levelCam
-        $payload = [[
-            'cmd'   => 'SetMdAlarm',
-            'param' => [
+        $state = $this->sensitivityGet();
+        if (!$state) return false;
+
+        $segments = $state['segments'];
+        if (empty($segments)) {
+            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
+        } else {
+            // alle Segmente auf denselben Wert setzen (wie bisher)
+            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
+            unset($s);
+        }
+
+        $ver = ($state['apiVer'] === 'V20') ? 'v20' : 'legacy';
+        if ($ver === 'v20') {
+            $payload = [
                 'MdAlarm' => [
-                    'type'       => 'md',
+                    'channel' => 0,
                     'useNewSens' => 1,
-                    'newSens'    => [
-                        'sensDef' => $levelCam,
+                    'newSens' => [
+                        'sensDef' => $state['sensDef'] ?? $levelCam,
                         'sens'    => $segments
-                    ],
-                    'channel'    => 0
+                    ]
                 ]
-            ]
-        ]];
-    } else {
-        // Legacy: KEIN "action"
-        $payload = [[
-            'cmd'   => 'SetAlarm',
-            'param' => [
+            ];
+            $res = $this->apiCall([[ 'cmd'=>'SetMdAlarm', 'action'=>1, 'param'=>$payload ]], 'SENS-SET');
+        } else {
+            $payload = [
                 'Alarm' => [
-                    'type'    => 'md',
-                    'sens'    => $segments,
-                    'channel' => 0
+                    'channel' => 0,
+                    'sens'    => $segments
                 ]
-            ]
-        ]];
+            ];
+            $res = $this->apiCall([[ 'cmd'=>'SetAlarm', 'action'=>1, 'param'=>$payload ]], 'SENS-SET');
+        }
+        $ok = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+        if ($ok) { $this->UpdateMdSensitivityStatus(); } // UI write-through
+        return $ok;
     }
 
-    $res = $this->apiCall($payload, 'SENS-SET');
-    $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
-
-    if ($ok) {
-        $this->UpdateMdSensitivityStatus(); // UI write-through
+    private function GetMdSensitivity(): ?array {
+        return $this->sensitivityGet();
     }
-    return $ok;
-}
 
-private function GetMdSensitivity(): ?array {
-    return $this->sensitivityGet();
-}
-
-public function SetMdSensitivity(int $level): bool {
-    return $this->sensitivitySet($level);
-}
-
-private function UpdateMdSensitivityStatus(): void
-{
-    $vid = @$this->GetIDForIdent("MdSensitivity");
-    if ($vid === false) return;
-
-    $st = $this->GetMdSensitivity();
-    if (!$st) return;
-
-    // Kamera → UI invertieren
-    $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
-    $lvlUI  = 51 - $lvlCam;
-
-    if ((int)GetValue($vid) !== $lvlUI) {
-        $this->SetValue("MdSensitivity", $lvlUI);
+    public function SetMdSensitivity(int $level): bool {
+        return $this->sensitivitySet($level);
     }
-}
 
-private function mdNormalizeSegments($raw): array
-{
-    $out = [];
-    $push = function($a) use (&$out) {
-        $out[] = [
-            'beginHour'   => (int)($a['beginHour'] ?? 0),
-            'beginMin'    => (int)($a['beginMin']  ?? 0),
-            'endHour'     => (int)($a['endHour']   ?? 23),
-            'endMin'      => (int)($a['endMin']    ?? 59),
-            'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
-        ];
-    };
-    $walk = function($node) use (&$walk, $push) {
-        if (is_array($node)) {
-            if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
-                $push($node);
+    private function UpdateMdSensitivityStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("MdSensitivity");
+        if ($vid === false) return;
+
+        $st = $this->GetMdSensitivity();
+        if (!$st) return;
+
+        // Kamera → UI invertieren
+        $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
+        $lvlUI  = 51 - $lvlCam;
+
+        if ((int)GetValue($vid) !== $lvlUI) {
+            $this->SetValue("MdSensitivity", $lvlUI);
+        }
+    }
+
+    private function mdNormalizeSegments($raw): array
+    {
+        $out = [];
+        $push = function($a) use (&$out) {
+            $out[] = [
+                'beginHour'   => (int)($a['beginHour'] ?? 0),
+                'beginMin'    => (int)($a['beginMin']  ?? 0),
+                'endHour'     => (int)($a['endHour']   ?? 23),
+                'endMin'      => (int)($a['endMin']    ?? 59),
+                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
+            ];
+        };
+        $walk = function($node) use (&$walk, $push) {
+            if (is_array($node)) {
+                if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
+                    $push($node);
+                } else {
+                    foreach ($node as $v) $walk($v);
+                }
+            }
+        };
+        $walk($raw);
+
+        $filtered = [];
+        foreach ($out as $s) {
+            $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
+            if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
+            if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
+            $filtered[] = $s;
+        }
+        return array_values($filtered);
+    }
+
+    private function mdPickActiveNow(array $segments, ?int $sensDef): int
+    {
+        $now = (int)date('G')*60 + (int)date('i');
+        foreach ($segments as $s) {
+            $start = $s['beginHour']*60 + $s['beginMin'];
+            $end   = $s['endHour']*60   + $s['endMin'];
+            if ($start <= $end) {
+                if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
             } else {
-                foreach ($node as $v) $walk($v);
+                if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
             }
         }
-    };
-    $walk($raw);
-
-    $filtered = [];
-    foreach ($out as $s) {
-        $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
-        if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
-        if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
-        $filtered[] = $s;
+        return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
     }
-    return array_values($filtered);
-}
 
-private function mdPickActiveNow(array $segments, ?int $sensDef): int
-{
-    $now = (int)date('G')*60 + (int)date('i');
-    foreach ($segments as $s) {
-        $start = $s['beginHour']*60 + $s['beginMin'];
-        $end   = $s['endHour']*60   + $s['endMin'];
-        if ($start <= $end) {
-            if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
-        } else {
-            if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
+    private function apiGetNode(array $resp, string $key)
+    {
+        $root = $resp[0] ?? [];
+        $v = $root['value'][$key] ?? null;
+        if ($v === null) $v = $root['initial'][$key] ?? null;
+        return is_array($v) ? $v : null;
+    }
+
+    // ---------------------------
+    // Sirene ein-aus
+    // ---------------------------
+
+    private function alarmGet(): ?array 
+    {
+    $ver = $this->apiProbe('alarm', 'GetAudioAlarmV20', 'GetAudioAlarm', 1);
+    $cmd = ($ver === 'v20') ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
+    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'ALARM');
+    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+    
+    private function alarmSet(array $audioNode): bool 
+    {
+        $ver = $this->apiProbe('alarm', 'SetAudioAlarmV20', 'SetAudioAlarm', 1);
+        $cmd = ($ver === 'v20') ? 'SetAudioAlarmV20' : 'SetAudioAlarm';
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['Audio'=>$audioNode] ]], 'ALARM-SET');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+    }
+
+    public function SetSirenEnabled(bool $on): bool
+    {
+        $res = $this->alarmGet();
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return false;
+        $audio = $res[0]['value']['Audio'] ?? $res[0]['initial']['Audio'] ?? null;
+        if (!is_array($audio)) return false;
+
+        $audio['enable'] = $on ? 1 : 0;
+        $ok = $this->alarmSet($audio);
+
+        if ($ok) $this->UpdateSirenStatus();
+        return $ok;
+    }
+
+    private function UpdateSirenStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("SirenEnabled");
+        if ($vid === false) return;
+
+        $res = $this->alarmGet();
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
+
+        $audio = $res[0]['value']['Audio'] ?? $res[0]['initial']['Audio'] ?? null;
+        if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
+
+        $enabled = ((int)$audio['enable'] === 1);
+        if ((bool)GetValue($vid) !== $enabled) {
+            $this->SetValue("SirenEnabled", $enabled);
         }
     }
-    return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
-}
-
-private function apiGetNode(array $resp, string $key)
-{
-    $root = $resp[0] ?? [];
-    $v = $root['value'][$key] ?? null;
-    if ($v === null) $v = $root['initial'][$key] ?? null;
-    return is_array($v) ? $v : null;
-}
 
 
     // ---------------------------
