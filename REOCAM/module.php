@@ -2582,6 +2582,8 @@ class Reolink extends IPSModule
         if ($ip !== '') {
             if (function_exists('Sys_Ping')) {
                 $online = @Sys_Ping($ip, 1000); 
+            } else {
+                $online = false;
             }
         }
 
