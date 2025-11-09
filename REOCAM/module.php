@@ -1072,7 +1072,7 @@ class Reolink extends IPSModule
         if (!$this->isActive()) return;
 
          $this->UpdateOnlineStatus();
-
+         
         if (!$this->apiEnsureToken()) return;
       
         $sem = "REOCAM_{$this->InstanceID}_Exec";
@@ -2571,21 +2571,32 @@ class Reolink extends IPSModule
     private function UpdateOnlineStatus(): void
     {
         $id = @$this->GetIDForIdent('KameraOnline');
-        if ($id === false) return; 
+        if ($id === false) return;
 
-        $ip = trim($this->ReadPropertyString('CameraIP'));
-        $online = false;
+        $ip   = trim($this->ReadPropertyString('CameraIP'));
+        $user = urlencode($this->ReadPropertyString('Username'));
+        $pass = urlencode($this->ReadPropertyString('Password'));
+
+        $isOnline = false;
 
         if ($ip !== '') {
             if (function_exists('Sys_Ping')) {
-                $online = @Sys_Ping($ip, 1000); 
+                $isOnline = @Sys_Ping($ip, 1000); // 1s
             }
+
+            if (!$isOnline) {
+                $url  = "http://{$ip}/api.cgi?cmd=GetDevInfo&user={$user}&password={$pass}";
+                $resp = $this->apiHttpPostJson($url, [
+                    ['cmd'=>'GetDevInfo','action'=>0]
+                ], 'ONLINE', /*suppressError*/ true);
+                $isOnline = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
+            }
+        }
 
         $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $online]);
 
-        if ((bool)GetValue($id) !== $online) {
-            $this->SetValue('KameraOnline', $online);
-            $this->dbg('ONLINE', 'Wert aktualisiert', ['neu' => $online]);
+        if ((bool)GetValue($id) !== $isOnline) {
+            $this->SetValue('KameraOnline', $isOnline);
         }
     }
 }
