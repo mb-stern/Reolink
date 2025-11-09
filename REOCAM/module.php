@@ -33,6 +33,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
+        $this->RegisterPropertyBoolean("EnableApiIR", true);
 
 
         // Archiv
@@ -139,6 +140,12 @@ class Reolink extends IPSModule
                 $ok = $this->SetWhiteLed((bool)$Value);
                 if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
                 else     { $this->UpdateWhiteLedStatus(); }
+                break;
+
+            case "IRLight":
+                $ok = $this->SetIrLight((bool)$Value);
+                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                else     { $this->UpdateIrStatus(); }
                 break;
 
             case "Mode":
@@ -934,6 +941,14 @@ class Reolink extends IPSModule
             $this->EnableAction("RecEnabled");
         } else {
             $this->UnregisterVariable("RecEnabled");
+        }
+
+        // -------- IR --------
+        if ($this->ReadPropertyBoolean("EnableApiIR")) {
+            $this->RegisterVariableBoolean("IRLight", "IR-Beleuchtung", "~Switch", 1);
+            $this->EnableAction("IRLight");
+        } else {
+            $this->UnregisterVariable("IRLight");
         }
     }
 
@@ -2449,5 +2464,70 @@ class Reolink extends IPSModule
             $this->UpdateRecStatus();
         }
         return $ok;
+    }
+
+    // ---------------------------
+    // IR-Beleuchtung (Infrared)
+    // ---------------------------
+
+    private function irGet(): ?array
+    {
+        // V20/Legacy sind bei IR oft identisch benannt – wie bei WhiteLed auch
+        $ver = $this->apiProbe('ir', 'GetIrLights', 'GetIrLights', 0);
+        $res = $this->apiCall([[ 'cmd'=>'GetIrLights', 'action'=>0, 'param'=>['channel'=>0] ]], 'IR');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+
+    private function irSet(array $payload): bool
+    {
+        $ver = $this->apiProbe('ir', 'SetIrLights', 'SetIrLights', 0);
+        $res = $this->apiCall([[ 'cmd'=>'SetIrLights', 'action'=>0, 'param'=>$payload ]], 'IR-SET');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+    }
+
+    private function SendIrRequest(array $irParams): bool
+    {
+        $params = ["IrLights" => array_merge($irParams, ["channel" => 0])];
+        return (bool)$this->irSet($params);
+    }
+
+    private function SetIrLight(bool $on): bool
+    {
+        // nur Ein/Aus – “Auto” können wir bei Bedarf ergänzen
+        return $this->SendIrRequest(['state' => $on ? 1 : 0]);
+    }
+
+    private function UpdateIrStatus(): void
+    {
+        $vid = @$this->GetIDForIdent("IRLight");
+        if ($vid === false) return;
+
+        $resp = $this->irGet();
+        if (!is_array($resp) || !isset($resp[0]['value']['IrLights'])) {
+            $this->dbg('IR', 'Ungueltige Antwort', $resp ?? null);
+            return;
+        }
+        $node   = $resp[0]['value']['IrLights'];
+        $state  = isset($node['state']) ? ((int)$node['state'] === 1) : null;
+        if ($state !== null && (bool)GetValue($vid) !== $state) {
+            $this->SetValue('IRLight', $state);
+            $this->dbg('IR', 'Var geändert', ['old' => (bool)GetValue($vid), 'new' => $state]);
+        }
+    }
+
+    public function IR_Set(bool $on): bool
+    {
+        if (!$this->apiEnsureToken()) return false;
+        $ok = $this->SetIrLight($on);
+        if ($ok) $this->UpdateIrStatus();
+        return $ok;
+    }
+
+    public function IR_Get(): ?bool
+    {
+        if (!$this->apiEnsureToken()) return null;
+        $resp = $this->irGet();
+        if (!is_array($resp) || !isset($resp[0]['value']['IrLights']['state'])) return null;
+        return ((int)$resp[0]['value']['IrLights']['state'] === 1);
     }
 }
