@@ -3,9 +3,6 @@ declare(strict_types=1);
 
 class Reolink extends IPSModule
 {
-    // ---------------------------
-    // Lifecycle
-    // ---------------------------
     public function Create()
     {
         parent::Create();
@@ -225,6 +222,16 @@ class Reolink extends IPSModule
                 throw new Exception("Invalid Ident");
         }
     }
+
+    public function SetInstanceStatus(bool $value): bool
+    {
+        IPS_SetProperty($this->InstanceID, 'InstanceStatus', $value);
+
+        $result = IPS_ApplyChanges($this->InstanceID);
+
+        return $result;
+    }
+
 
     private function isActive(): bool
     {
@@ -2055,24 +2062,20 @@ class Reolink extends IPSModule
     }
 
     // ---------------------------
-    // Sensitivity (V2.10-Logik, ohne ApiVersion())
+    // Sensitivity
     // ---------------------------
 
     private function sensitivityGet(): ?array 
     {
-        // Welche API-Variante? (v20 bevorzugt)
         $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
         $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        // 1) Erst action:1 (wie V2.10) – OHNE "type"
         $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'SENS');
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            // 2) Fallback action:0 – OHNE "type"
             $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'SENS');
         }
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
 
-        // Node extrahieren (value bevorzugt, sonst initial)
         $root = $res[0];
         $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] ?? $root['value']['Alarm'] ?? $root['initial']['Alarm'] ?? null;
         if (!is_array($node)) return null;
@@ -2092,7 +2095,6 @@ class Reolink extends IPSModule
 
     private function sensitivitySet(int $levelUi): bool 
     {
-        // UI 1..50 → Cam 50..1 (wie 2.10)
         $levelUi  = max(1, min(50, $levelUi));
         $levelCam = 51 - $levelUi;
 
@@ -2101,7 +2103,6 @@ class Reolink extends IPSModule
 
         $segments = $state['segments'];
         if (empty($segments)) {
-            // Ganzer Tag als ein Segment – wie in deiner Version
             $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
         } else {
             foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
@@ -2111,7 +2112,6 @@ class Reolink extends IPSModule
         $isV20 = ($state['apiVer'] === 'V20');
 
         if ($isV20) {
-            // V20: KEIN "action", channel auf gleicher Ebene, sensDef = levelCam
             $payload = [[
                 'cmd'   => 'SetMdAlarm',
                 'param' => [
@@ -2127,7 +2127,6 @@ class Reolink extends IPSModule
                 ]
             ]];
         } else {
-            // Legacy: KEIN "action"
             $payload = [[
                 'cmd'   => 'SetAlarm',
                 'param' => [
@@ -2144,7 +2143,7 @@ class Reolink extends IPSModule
         $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
 
         if ($ok) {
-            $this->UpdateMdSensitivityStatus(); // UI write-through
+            $this->UpdateMdSensitivityStatus(); 
         }
         return $ok;
     }
@@ -2165,7 +2164,6 @@ class Reolink extends IPSModule
         $st = $this->GetMdSensitivity();
         if (!$st) return;
 
-        // Kamera → UI invertieren
         $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
         $lvlUI  = 51 - $lvlCam;
 

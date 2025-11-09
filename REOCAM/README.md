@@ -139,11 +139,20 @@ Je nach Konfiguration werden automatisch angelegt:
 - Dieser muss in der Kamera unter *Push → Webhook* eingetragen werden.  
 - Unterstützt POST-Payloads der Reolink-API sowie zusätzliche Status-Updates.  
 - Funktioniert über **Symcon Connect** (extern) und **lokal**.  
-- Unter Linux wird automatisch die **korrekte lokale IP** ermittelt (nicht 127.0.1.1).
+- Unter Linux wird automatisch die **korrekte lokale IP** ermittelt.
+
+---
+## 8. Erweiterte Instanzenfunkionen
+
+- REOCAM_SetInstanceStatus (Beispiel: 'REOCAM_SetInstanceStatus (INSTANZ-ID, false);' deaktiviert die Instanz)
 
 ---
 
-## 8. Versionen
+## 9. Versionen
+
+### Version 2.12 (09.11.2025)
+- Fehler beim setzen der Sensitivität behoben.
+- Erweiterte Instanzenfunkion 'REOCAM_SetInstanceStatus' zum deaktiveren der Instanz über eine Automation hinzugefügt.
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
