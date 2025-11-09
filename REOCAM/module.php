@@ -122,6 +122,7 @@ class Reolink extends IPSModule
 
 
         $this->CreateOrUpdateApiVariablesUnified();
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
 
         if ($anyFeatureOn) {
             $this->GetToken();
@@ -974,7 +975,7 @@ class Reolink extends IPSModule
 
         // -------- Kamera online --------
         if (@$this->GetIDForIdent('KameraOnline') === false) {
-            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Switch', 11);
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert', 11);
             $this->SetValue('KameraOnline', false);
         }
     }
@@ -1071,9 +1072,6 @@ class Reolink extends IPSModule
     public function ExecuteApiRequests(bool $force = false)
     {
         if (!$this->isActive()) return;
-
-        $this->UpdateOnlineStatus();
-
         if (!$this->apiEnsureToken()) return;
       
         $sem = "REOCAM_{$this->InstanceID}_Exec";
@@ -2577,19 +2575,17 @@ class Reolink extends IPSModule
         }
 
         $ip = trim($this->ReadPropertyString('CameraIP'));
-        $online = false;
+        $offline = true; 
 
         if ($ip !== '') {
             if (function_exists('Sys_Ping')) {
-                $online = @Sys_Ping($ip, 1000); 
-            } else {
-                $online = false;
+                $offline = !@Sys_Ping($ip, 1000);  
             }
         }
 
-        if ((bool)GetValue($id) !== $online) {
-            $this->SetValue('KameraOnline', $online);
-            $this->dbg('ONLINE', 'Kamera-Online-Status aktualisiert', ['online' => $online]);
+        if ((bool)GetValue($id) !== $offline) {
+            $this->SetValue('KameraOnline', $offline);
+            $this->dbg('ONLINE', 'Online-Status aktualisiert', ['offline' => $offline]);
         }
     }
 }
