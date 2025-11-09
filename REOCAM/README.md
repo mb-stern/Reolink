@@ -144,7 +144,7 @@ Je nach Konfiguration werden automatisch angelegt:
 ---
 ## 8. Erweiterte Instanzenfunkionen
 
-- REOCAM_SetInstanceStatus (deaktiveren der Instanz über eine Automation)
+- REOCAM_SetInstanceStatus (Beispiel: 'REOCAM_SetInstanceStatus (INSTANZ-ID, false);' deaktiviert die Instanz)
 
 ---
 
