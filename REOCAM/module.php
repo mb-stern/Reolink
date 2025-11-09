@@ -123,16 +123,6 @@ class Reolink extends IPSModule
 
         $this->CreateOrUpdateApiVariablesUnified();
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
-
-        if ($anyFeatureOn) {
-            $this->GetToken();
-            $this->ExecuteApiRequests(true); 
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
-        } else {
-            $this->SetTimerInterval("ApiRequestTimer", 0);
-            $this->SetTimerInterval("TokenRenewalTimer", 0);
-        }
-
         $this->UpdateOnlineStatus();
 
     }
