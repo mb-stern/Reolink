@@ -145,6 +145,8 @@ Je nach Konfiguration werden automatisch angelegt:
 ## 8. Erweiterte Instanzenfunkionen
 
 - REOCAM_SetInstanceStatus (Beispiel: 'REOCAM_SetInstanceStatus (INSTANZ-ID, false);' deaktiviert die Instanz)
+- REOCAM_PTZ_GotoPreset (Beispiel: 'REOCAM_PTZ_GotoPreset (INSTANZ-ID, 0);' fährt auf Preset mit ID 0, in der Regel der erste Preset)
+- REOCAM_PTZ_GotoPresetByName (Beispiel: 'REOCAM_PTZ_GotoPresetByName (INSTANZ-ID, "Türe", true);' fährt auf Preset mit dem Namen 'Türe')
 
 ---
 
@@ -152,7 +154,8 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 2.12 (09.11.2025)
 - Fehler beim setzen der Sensitivität behoben.
-- Erweiterte Instanzenfunktion 'REOCAM_SetInstanceStatus' zum deaktiveren der Instanz über eine Automation hinzugefügt.
+- Aktivieren/Deaktivieren der Instanz über 'REOCAM_SetInstanceStatus'  hinzugefügt.
+- Anfahren der PTZ Presets über 'REOCAM_PTZ_GotoPreset' oder 'REOCAM_PTZ_GotoPresetByName' möglich.
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
