@@ -968,6 +968,10 @@ class Reolink extends IPSModule
         } else {
             $this->UnregisterVariable("RecEnabled");
         }
+
+            // --- Online-Status (Alert) ---
+        if (!@$this->GetIDForIdent('KameraOffline')) {
+            $this->RegisterVariableBoolean('KameraOffline', 'Kamera offline', '~Alert', 11);
     }
 
     // ---------------------------
@@ -1102,7 +1106,7 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiIR")) {
                 $this->UpdateIrStatus();
             }
-
+            $this->UpdateOnlineStatus();
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
@@ -2551,6 +2555,43 @@ class Reolink extends IPSModule
             if ((int)GetValue($vid) !== $val) {
                 $this->SetValue('IRLights', $val);
             }
+        }
+    }
+
+    // ---------------------------
+    // Online-Status
+    // ---------------------------
+
+    private function UpdateOnlineStatus(): void
+    {
+        $id = @$this->GetIDForIdent('KameraOffline');
+        if ($id === false) {
+            $this->RegisterVariableBoolean('KameraOffline', 'Kamera offline', '~Alert', 5);
+            $id = $this->GetIDForIdent('KameraOffline');
+        }
+
+        $ip = trim($this->ReadPropertyString('CameraIP'));
+        $offline = true; 
+
+        if ($ip !== '') {
+            $resp = $this->apiCall([
+                ["cmd" => "GetDevInfo", "action" => 0]
+            ], 'ONLINE', /*suppress*/ true);
+
+            if (is_array($resp) && isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) {
+                $offline = false;
+            } else {
+                if (function_exists('Sys_Ping')) {
+                    $offline = !@Sys_Ping($ip, 1000); 
+                } else {
+                    $offline = true;
+                }
+            }
+        }
+
+        if ((bool)GetValue($id) !== $offline) {
+            $this->SetValue('KameraOffline', $offline);
+            $this->dbg('ONLINE', 'Kamera-Online-Status aktualisiert', ['offline' => $offline]);
         }
     }
 }
