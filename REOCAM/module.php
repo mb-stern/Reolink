@@ -2060,39 +2060,43 @@ class Reolink extends IPSModule
 
     private function sensitivityGet(): ?array 
     {
-    // Probe nutzt GetMdAlarm vs GetAlarm mit action 1
-    $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
-    $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
+        $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
+        $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
 
-    // Erst action:1 versuchen
-    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'SENS');
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-        // Fallback auf action:0 (einige Modelle)
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'SENS');
-    }
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
+        $res = $this->apiCall([[ 
+            'cmd'    => $cmd, 
+            'action' => 1, 
+            'param'  => ['channel' => 0, 'type' => 'md']  
+        ]], 'SENS');
 
-    // Node extrahieren und normalisieren
-    $root = $res[0];
-    $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] ?? $root['value']['Alarm'] ?? $root['initial']['Alarm'] ?? null;
-    if (!is_array($node)) return null;
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $res = $this->apiCall([[ 
+                'cmd'    => $cmd, 
+                'action' => 0, 
+                'param'  => ['channel' => 0, 'type' => 'md']  
+            ]], 'SENS');
+        }
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
 
-    $sensDef  = null;
-    $segments = [];
-    if (!empty($node['newSens'])) {
-        $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
-        $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
-    } elseif (!empty($node['sens'])) {
-        $segments = $this->mdNormalizeSegments($node['sens']);
-    }
+        $root = $res[0];
+        $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] ?? $root['value']['Alarm'] ?? $root['initial']['Alarm'] ?? null;
+        if (!is_array($node)) return null;
 
-    $active = $this->mdPickActiveNow($segments, $sensDef);
-    return [ 'apiVer' => ($ver === 'v20' ? 'V20' : 'LEGACY'), 'sensDef'=>$sensDef, 'segments'=>$segments, 'active'=>$active ];
+        $sensDef  = null;
+        $segments = [];
+        if (!empty($node['newSens'])) {
+            $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
+            $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
+        } elseif (!empty($node['sens'])) {
+            $segments = $this->mdNormalizeSegments($node['sens']);
+        }
+
+        $active = $this->mdPickActiveNow($segments, $sensDef);
+        return [ 'apiVer' => ($ver === 'v20' ? 'V20' : 'LEGACY'), 'sensDef'=>$sensDef, 'segments'=>$segments, 'active'=>$active ];
     }
 
     private function sensitivitySet(int $levelUi): bool 
     {
-        // UI 1..50 → Cam 50..1
         $levelUi  = max(1, min(50, $levelUi));
         $levelCam = 51 - $levelUi;
 
@@ -2103,7 +2107,6 @@ class Reolink extends IPSModule
         if (empty($segments)) {
             $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
         } else {
-            // alle Segmente auf denselben Wert setzen (wie bisher)
             foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
             unset($s);
         }
@@ -2112,26 +2115,36 @@ class Reolink extends IPSModule
         if ($ver === 'v20') {
             $payload = [
                 'MdAlarm' => [
-                    'channel' => 0,
+                    'channel'    => 0,
+                    'type'       => 'md',           
                     'useNewSens' => 1,
-                    'newSens' => [
+                    'newSens'    => [
                         'sensDef' => $state['sensDef'] ?? $levelCam,
                         'sens'    => $segments
                     ]
                 ]
             ];
-            $res = $this->apiCall([[ 'cmd'=>'SetMdAlarm', 'action'=>1, 'param'=>$payload ]], 'SENS-SET');
+            $res = $this->apiCall([[ 
+                'cmd'    => 'SetMdAlarm', 
+                'action' => 0,                           
+                'param'  => $payload 
+            ]], 'SENS-SET');
         } else {
             $payload = [
                 'Alarm' => [
                     'channel' => 0,
+                    'type'    => 'md',                   
                     'sens'    => $segments
                 ]
             ];
-            $res = $this->apiCall([[ 'cmd'=>'SetAlarm', 'action'=>1, 'param'=>$payload ]], 'SENS-SET');
+            $res = $this->apiCall([[ 
+                'cmd'    => 'SetAlarm', 
+                'action' => 0,                        
+                'param'  => $payload 
+            ]], 'SENS-SET');
         }
         $ok = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
-        if ($ok) { $this->UpdateMdSensitivityStatus(); } // UI write-through
+        if ($ok) { $this->UpdateMdSensitivityStatus(); } 
         return $ok;
     }
 
