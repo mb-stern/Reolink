@@ -2492,12 +2492,10 @@ class Reolink extends IPSModule
 // Infrared (IR)
 // ---------------------------
 
-// Öffentliche Instanzfunktionen
 public function IR_On(): bool   { return $this->IR_SetModeInt(1); }   // On
 public function IR_Off(): bool  { return $this->IR_SetModeInt(0); }   // Off
 public function IR_Auto(): bool { return $this->IR_SetModeInt(2); }   // Auto
 
-/** Setzt IR: 0=Off, 1=On, 2=Auto */
 public function IR_SetModeInt(int $mode): bool
 {
     if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
@@ -2511,7 +2509,7 @@ public function IR_SetModeInt(int $mode): bool
         'action'=> 0,
         'param' => ['IrLights' => [
             'channel' => 0,
-            'state'   => $map[$mode]   // WICHTIG: "Off" | "On" | "Auto"
+            'state'   => $map[$mode] 
         ]]
     ]];
 
@@ -2521,13 +2519,11 @@ public function IR_SetModeInt(int $mode): bool
     return $ok;
 }
 
-/** Liest IR-Modus, normalisiert auf off|on|auto */
 private function irGetMode(): ?string
 {
     if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
     if (!$this->apiEnsureToken()) return null;
 
-    // Erst action=0 probieren, sonst action=1 (wie bei anderen Domains)
     $p0  = [[ 'cmd'=>'GetIrLights', 'action'=>0, 'param'=>['channel'=>0] ]];
     $res = $this->apiCall($p0, 'IR', /*suppress*/ true);
     if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
@@ -2540,7 +2536,6 @@ private function irGetMode(): ?string
     $node = $root['value']['IrLights'] ?? $root['initial']['IrLights'] ?? null;
     if (!is_array($node)) return null;
 
-    // API liefert entweder "On|Off|Auto" oder 0/1/2 – beides abfangen
     $raw = $node['state'] ?? null;
     if (is_string($raw)) {
         $s = strtolower($raw);
@@ -2552,7 +2547,6 @@ private function irGetMode(): ?string
     return null;
 }
 
-/** schreibt die gelesenen Werte in die Variablen */
 private function UpdateIrStatus(): void
 {
     $mode = $this->irGetMode();
