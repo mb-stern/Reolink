@@ -156,7 +156,8 @@ Je nach Konfiguration werden automatisch angelegt:
 - Fehler beim setzen der Sensitivität behoben.
 - Aktivieren/Deaktivieren der Instanz über 'REOCAM_SetInstanceStatus'  hinzugefügt.
 - Anfahren der PTZ Presets über 'REOCAM_PTZ_GotoPreset' oder 'REOCAM_PTZ_GotoPresetByName' möglich.
-- API-Punkt 'IR-Beleuchtung' hinzugefügt
+- API-Punkt 'IR-Beleuchtung' hinzugefügt.
+- Online-Check der Kamera hinzugefügt.
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
