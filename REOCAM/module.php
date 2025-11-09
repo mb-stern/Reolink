@@ -105,6 +105,8 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("PollingTimer", 0);
         }
 
+        
+        /*
         // API-Schalter
         $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
         $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
@@ -122,6 +124,18 @@ class Reolink extends IPSModule
 
 
         $this->CreateOrUpdateApiVariablesUnified();
+
+        if ($anyFeatureOn) {
+            $this->GetToken();
+            $this->ExecuteApiRequests(true); 
+            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
+        } else {
+            $this->SetTimerInterval("ApiRequestTimer", 0);
+            $this->SetTimerInterval("TokenRenewalTimer", 0);
+        }
+
+        */
+
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         $this->UpdateOnlineStatus();
 
