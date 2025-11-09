@@ -1988,7 +1988,7 @@ class Reolink extends IPSModule
     }
 
     // ---------------------------
-    // PTZ Presets: Set/Rename/Clear
+    // PTZ GotoPresets
     // ---------------------------
 
     public function PTZ_ListPresets(): array
