@@ -164,7 +164,7 @@ class Reolink extends IPSModule
                 if ($ok) {
                     $this->SetValue('IRLights', (int)$Value);
                 } else {
-                    $this->UpdateIrStatus();
+                    $this->UpdateIrStatus(); // zurücklesen, damit UI stimmt
                 }
                 break;
 
@@ -2490,88 +2490,47 @@ class Reolink extends IPSModule
     // Infrared (IR)
     // ---------------------------
 
-    // Öffentliche Instanzfunktionen (für Automation/Skript)
-    public function IR_On(): bool   { return $this->IR_SetModeInt(1); }   // On
-    public function IR_Off(): bool  { return $this->IR_SetModeInt(0); }   // Off
-    public function IR_Auto(): bool { return $this->IR_SetModeInt(2); }   // Auto
+ // Öffentliche Instanzfunktionen (für Automation/Skript)
+public function IR_On(): bool   { return $this->IR_SetModeInt(1); } // On
+public function IR_Off(): bool  { return $this->IR_SetModeInt(0); } // Off
+public function IR_Auto(): bool { return $this->IR_SetModeInt(2); } // Auto
+public function IR_GetMode(): ?string { return $this->irGetMode(); }
 
-    /** Hauptsetter: nimmt 0/1/2 und setzt "Off/On/Auto" */
-    public function IR_SetModeInt(int $mode): bool
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
-        if (!$this->apiEnsureToken()) return false;
 
-        $mode = max(0, min(2, $mode));
-        $map = [0 => 'Off', 1 => 'On', 2 => 'Auto'];
+public function IR_SetModeInt(int $mode): bool
+{
+    if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
+    if (!$this->apiEnsureToken()) return false;
 
-        $payload = [[
-            'cmd'   => 'SetIrLights',
-            'param' => ['IrLights' => [
-                'channel' => $this->getChannel(),
-                'state'   => $map[$mode]         // WICHTIG: "Off"/"On"/"Auto"
-            ]]
-        ]];
+    $m = max(0, min(2, (int)$mode));
+    $map = [0 => 'Off', 1 => 'On', 2 => 'Auto']; // Case-sensitive!
 
-        // >>> hier DEINE bestehende API-Sendefunktion verwenden (wie bei WhiteLED)
-        $ok = $this->api(/* exakt wie in SetWhiteLed */ $payload);
+    $payload = [[
+        'cmd'    => 'SetIrLights',
+        'action' => 0,
+        'param'  => ['IrLights' => [
+            'channel' => 0,               // keine getChannel(): immer 0 wie bei WhiteLED/Email/… 
+            'state'   => $map[$m]
+        ]]
+    ]];
 
-        if ($ok) { $this->UpdateIrStatus(); }
-        return (bool)$ok;
+    $res = $this->apiCall($payload, 'IR-SET');     // <-- konsistent zu deinem Layer
+    $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+
+    if ($ok) { $this->UpdateIrStatus(); }          // wie bei WhiteLed
+    return $ok;
+}
+
+public function UpdateIrStatus(): void
+{
+    $mode = $this->irGetMode();
+    if ($mode === null) return;
+
+    $int = match ($mode) { 'off' => 0, 'on' => 1, 'auto' => 2 };
+    $vid = @$this->GetIDForIdent('IRLights');
+    if ($vid !== false && (int)GetValue($vid) !== $int) {
+        $this->SetValue('IRLights', $int);
     }
+}
 
-    /** interner Reader – normalisiert auf "off|on|auto" */
-    private function irGetMode(): ?string
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
-        if (!$this->apiEnsureToken()) return null;
-
-        $payload = [[
-            'cmd'   => 'GetIrLights',
-            'param' => ['IrLights' => ['channel' => $this->getChannel()]]
-        ]];
-
-        // >>> hier wieder deine zentrale Sendefunktion
-        $res = $this->api(/* wie oben */ $payload);
-        if (!is_array($res) || !isset($res[0])) return null;
-
-        // Je nach FW: 'value' oder 'initial'
-        $node = $res[0]['value']['IrLights'] ?? $res[0]['initial']['IrLights'] ?? null;
-        if (!is_array($node)) return null;
-
-        $raw = $node['state'] ?? null;
-
-        // 0/1/2 → map
-        if (is_int($raw)) {
-            $imap = [0=>'off', 1=>'on', 2=>'auto'];
-            return $imap[$raw] ?? null;
-        }
-        // "Off/On/Auto" → normiert
-        if (is_string($raw)) {
-            $s = strtolower($raw);
-            if (in_array($s, ['off','on','auto'], true)) return $s;
-        }
-        return null;
-    }
-
-    /** Status ins Variablenbild übernehmen (nur schreiben, keine Anlage/Profiles) */
-    private function UpdateIrStatus(): void
-    {
-        $mode = $this->irGetMode();
-        if ($mode === null) return;
-
-        // Integer-Variable 'IRLights' existiert zentral bereits
-        if (@$this->GetIDForIdent('IRLights') !== false) {
-            $this->SetValue('IRLights', $this->mapIrModeToInt($mode));
-        }
-    }
-
-    private function mapIrModeToInt(string $m): int
-    {
-        return match (strtolower($m)) {
-            'off'  => 0,
-            'on'   => 1,
-            'auto' => 2,
-            default => 0
-        };
-    }
 }
