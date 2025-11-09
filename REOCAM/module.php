@@ -2068,15 +2068,15 @@ class Reolink extends IPSModule
         $res = $this->apiCall([[ 
             'cmd'    => $cmd, 
             'action' => 1, 
-            'param'  => ['channel' => 0, 'type' => 'md'] // wichtig
+            'param'  => ['channel' => 0, 'type' => 'md'] // type laut API
         ]], 'SENS');
 
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            // Fallback auf action:0 (einige Modelle)
+            // Fallback auf action:0
             $res = $this->apiCall([[ 
                 'cmd'    => $cmd, 
                 'action' => 0, 
-                'param'  => ['channel' => 0, 'type' => 'md'] // wichtig
+                'param'  => ['channel' => 0, 'type' => 'md']
             ]], 'SENS');
         }
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
@@ -2108,44 +2108,32 @@ class Reolink extends IPSModule
         $state = $this->sensitivityGet();
         if (!$state) return false;
 
-        // Segmente vom Get übernehmen (inkl. id/enable/priority) – nicht weg-normalisieren
-        $segments = $state['segments'];
+        // API verlangt 4 Intervalle mit IDs 0..3 (0–6, 6–12, 12–18, 18–23:59)
+        $segments = [
+            ['id'=>0,'beginHour'=>0, 'beginMin'=>0,  'endHour'=>6,  'endMin'=>0,  'sensitivity'=>$levelCam],
+            ['id'=>1,'beginHour'=>6, 'beginMin'=>0,  'endHour'=>12, 'endMin'=>0,  'sensitivity'=>$levelCam],
+            ['id'=>2,'beginHour'=>12,'beginMin'=>0,  'endHour'=>18, 'endMin'=>0,  'sensitivity'=>$levelCam],
+            ['id'=>3,'beginHour'=>18,'beginMin'=>0,  'endHour'=>23, 'endMin'=>59, 'sensitivity'=>$levelCam],
+        ];
 
-        // Falls leer: 4 Standard-Segmente anlegen (IDs 0..3)
-        if (empty($segments)) {
-            $segments = [
-                ['id'=>0,'enable'=>0,'priority'=>0,'beginHour'=>0,'beginMin'=>0,'endHour'=>6,'endMin'=>0,'sensitivity'=>$levelCam],
-                ['id'=>1,'enable'=>0,'priority'=>0,'beginHour'=>6,'beginMin'=>0,'endHour'=>12,'endMin'=>0,'sensitivity'=>$levelCam],
-                ['id'=>2,'enable'=>0,'priority'=>0,'beginHour'=>12,'beginMin'=>0,'endHour'=>18,'endMin'=>0,'sensitivity'=>$levelCam],
-                ['id'=>3,'enable'=>0,'priority'=>0,'beginHour'=>18,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam],
-            ];
-        } else {
-            // Immer 4 Einträge mit IDs 0..3 an die Cam schicken
-            // fehlende Keys sauber auffüllen; bestehende Zeiten/enable/priority beibehalten
+        // Wenn GET-Intervalle vorhanden sind, übernehmen wir deren Zeiten/IDs (aber keine enable/priority),
+        // setzen nur die gewünschte Sensitivität.
+        if (!empty($state['segments'])) {
             $byId = [];
-            foreach ($segments as $seg) {
-                $id = isset($seg['id']) ? (int)$seg['id'] : null;
-                if ($id !== null && $id >= 0 && $id <= 3) $byId[$id] = $seg;
+            foreach ($state['segments'] as $seg) {
+                if (isset($seg['id'])) $byId[(int)$seg['id']] = $seg;
             }
-            for ($i = 0; $i < 4; $i++) {
-                $seg = $byId[$i] ?? [
-                    'id'=>$i,'enable'=>0,'priority'=>0,
-                    'beginHour'=>0,'beginMin'=>0,'endHour'=>0,'endMin'=>0,'sensitivity'=>0
-                ];
-                // gewünschte Sensitivität setzen (Zeiten/enable/priority lassen wir, wie die Cam sie hat)
-                $seg['sensitivity'] = $levelCam;
-                // Typisierung absichern
-                $seg['id']        = (int)($seg['id'] ?? $i);
-                $seg['enable']    = (int)($seg['enable'] ?? 0);
-                $seg['priority']  = (int)($seg['priority'] ?? 0);
-                $seg['beginHour'] = (int)($seg['beginHour'] ?? 0);
-                $seg['beginMin']  = (int)($seg['beginMin']  ?? 0);
-                $seg['endHour']   = (int)($seg['endHour']   ?? 0);
-                $seg['endMin']    = (int)($seg['endMin']    ?? 0);
-                $segments[$i]     = $seg;
+            foreach ($segments as $i => $tpl) {
+                if (isset($byId[$i])) {
+                    $src = $byId[$i];
+                    $segments[$i]['beginHour']   = (int)($src['beginHour'] ?? $tpl['beginHour']);
+                    $segments[$i]['beginMin']    = (int)($src['beginMin']  ?? $tpl['beginMin']);
+                    $segments[$i]['endHour']     = (int)($src['endHour']   ?? $tpl['endHour']);
+                    $segments[$i]['endMin']      = (int)($src['endMin']    ?? $tpl['endMin']);
+                    // sensitivity überschreiben
+                    $segments[$i]['sensitivity'] = $levelCam;
+                }
             }
-            // auf 4 Elemente trimmen und nach ID sortieren
-            $segments = array_values(array_replace([0=>null,1=>null,2=>null,3=>null], $segments));
         }
 
         $ver = ($state['apiVer'] === 'V20') ? 'v20' : 'legacy';
@@ -2153,30 +2141,30 @@ class Reolink extends IPSModule
             $payload = [
                 'MdAlarm' => [
                     'channel'    => 0,
-                    'type'       => 'md',        // Pflicht
+                    'type'       => 'md', // MANDATORY lt. Spec
                     'useNewSens' => 1,
                     'newSens'    => [
                         'sensDef' => $state['sensDef'] ?? $levelCam,
-                        'sens'    => $segments       // jetzt mit id/enable/priority und 4 IDs (0..3)
+                        'sens'    => $segments       // genau 4 mit ids 0..3
                     ]
                 ]
             ];
             $res = $this->apiCall([[ 
-                'cmd'    => 'SetMdAlarm', 
-                'action' => 0,              // Set => 0
+                'cmd'    => 'SetMdAlarm',
+                'action' => 0,  // Set == 0
                 'param'  => $payload 
             ]], 'SENS-SET');
         } else {
             $payload = [
                 'Alarm' => [
                     'channel' => 0,
-                    'type'    => 'md',       // Pflicht
-                    'sens'    => $segments   // 4 IDs (0..3)
+                    'type'    => 'md',  // MANDATORY lt. Spec
+                    'sens'    => $segments
                 ]
             ];
             $res = $this->apiCall([[ 
-                'cmd'    => 'SetAlarm', 
-                'action' => 0, 
+                'cmd'    => 'SetAlarm',
+                'action' => 0,
                 'param'  => $payload 
             ]], 'SENS-SET');
         }
@@ -2186,13 +2174,8 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    private function GetMdSensitivity(): ?array {
-        return $this->sensitivityGet();
-    }
-
-    public function SetMdSensitivity(int $level): bool {
-        return $this->sensitivitySet($level);
-    }
+    private function GetMdSensitivity(): ?array { return $this->sensitivityGet(); }
+    public function SetMdSensitivity(int $level): bool { return $this->sensitivitySet($level); }
 
     private function UpdateMdSensitivityStatus(): void
     {
@@ -2221,10 +2204,8 @@ class Reolink extends IPSModule
                 'endHour'     => (int)($a['endHour']   ?? 23),
                 'endMin'      => (int)($a['endMin']    ?? 59),
                 'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0)),
-                // WICHTIG: diese drei beibehalten!
                 'id'          => isset($a['id']) ? (int)$a['id'] : null,
-                'enable'      => isset($a['enable']) ? (int)$a['enable'] : null,
-                'priority'    => isset($a['priority']) ? (int)$a['priority'] : null,
+                // enable/priority nicht übernehmen: nicht Teil der Set-Spec
             ];
         };
         $walk = function($node) use (&$walk, $push) {
@@ -2242,7 +2223,7 @@ class Reolink extends IPSModule
         foreach ($out as $s) {
             $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
             if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
-            if ($s['sensitivity'] < 0 || $s['sensitivity'] > 50) continue; // 0 kann bei leeren Slots vorkommen
+            if ($s['sensitivity'] < 0 || $s['sensitivity'] > 50) continue; // 0 kann vorkommen
             $filtered[] = $s;
         }
         return array_values($filtered);
