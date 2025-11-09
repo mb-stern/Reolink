@@ -3,9 +3,6 @@ declare(strict_types=1);
 
 class Reolink extends IPSModule
 {
-    // ---------------------------
-    // Lifecycle
-    // ---------------------------
     public function Create()
     {
         parent::Create();
@@ -225,6 +222,16 @@ class Reolink extends IPSModule
                 throw new Exception("Invalid Ident");
         }
     }
+
+    public function SetInstanceStatus(bool $value): bool
+    {
+        IPS_SetProperty($this->InstanceID, 'InstanceStatus', $value);
+
+        $result = IPS_ApplyChanges($this->InstanceID);
+
+        return $result;
+    }
+
 
     private function isActive(): bool
     {
