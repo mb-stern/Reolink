@@ -106,14 +106,19 @@ class Reolink extends IPSModule
         }
 
         // API-Schalter
-        $enableWhiteLed = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableEmail    = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ      = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP      = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity    = $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren    = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord  = $this->ReadPropertyBoolean("EnableApiRecord");
-        $anyFeatureOn  = ($enableWhiteLed || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren || $enableRecord);  
+        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");           // <— NEU
+        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
+        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
+
+        $anyFeatureOn = (
+            $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
+            $enableFTP || $enableSensitivity || $enableSiren || $enableRecord
+        );
 
 
         $this->CreateOrUpdateApiVariablesUnified();
@@ -2474,64 +2479,55 @@ class Reolink extends IPSModule
     // IR-Beleuchtung (Infrared)
     // ---------------------------
 
-    private function irGet(): ?array
-    {
-        // V20/Legacy sind bei IR oft identisch benannt – wie bei WhiteLed auch
-        $ver = $this->apiProbe('ir', 'GetIrLights', 'GetIrLights', 0);
-        $res = $this->apiCall([[ 'cmd'=>'GetIrLights', 'action'=>0, 'param'=>['channel'=>0] ]], 'IR');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
+ // --- IR-Beleuchtung: Öffentliche Instanzfunktionen ---
 
-    private function irSet(array $payload): bool
-    {
-        $ver = $this->apiProbe('ir', 'SetIrLights', 'SetIrLights', 0);
-        $res = $this->apiCall([[ 'cmd'=>'SetIrLights', 'action'=>0, 'param'=>$payload ]], 'IR-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
-    }
+/** IR dauerhaft einschalten */
+public function IR_On(): bool {
+    return $this->irSetMode('on');
+}
 
-    private function SendIrRequest(array $irParams): bool
-    {
-        $params = ["IrLights" => array_merge($irParams, ["channel" => 0])];
-        return (bool)$this->irSet($params);
-    }
+/** IR dauerhaft ausschalten */
+public function IR_Off(): bool {
+    return $this->irSetMode('off');
+}
 
-    private function SetIrLight(bool $on): bool
-    {
-        // nur Ein/Aus – “Auto” können wir bei Bedarf ergänzen
-        return $this->SendIrRequest(['state' => $on ? 1 : 0]);
-    }
+/** IR auf Automatik */
+public function IR_Auto(): bool {
+    return $this->irSetMode('auto');
+}
 
-    private function UpdateIrStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("IRLight");
-        if ($vid === false) return;
+/** Komfort: per Bool schalten (true=On, false=Off) */
+public function IR_Set(bool $on): bool {
+    return $this->irSetMode($on ? 'on' : 'off');
+}
 
-        $resp = $this->irGet();
-        if (!is_array($resp) || !isset($resp[0]['value']['IrLights'])) {
-            $this->dbg('IR', 'Ungueltige Antwort', $resp ?? null);
-            return;
-        }
-        $node   = $resp[0]['value']['IrLights'];
-        $state  = isset($node['state']) ? ((int)$node['state'] === 1) : null;
-        if ($state !== null && (bool)GetValue($vid) !== $state) {
-            $this->SetValue('IRLight', $state);
-            $this->dbg('IR', 'Var geändert', ['old' => (bool)GetValue($vid), 'new' => $state]);
-        }
-    }
+private function irSetMode(string $mode): bool
+{
+    if (!$this->apiEnsureToken()) return false;
 
-    public function IR_Set(bool $on): bool
-    {
-        if (!$this->apiEnsureToken()) return false;
-        $ok = $this->SetIrLight($on);
-        if ($ok) $this->UpdateIrStatus();
-        return $ok;
-    }
+    // Optional: Eingabe absichern
+    $mode = strtolower($mode);
+    if (!in_array($mode, ['on','off','auto'], true)) return false;
 
-    public function IR_Get(): ?bool
-    {
-        if (!$this->apiEnsureToken()) return null;
-        $resp = $this->irGet();
-        if (!is_array($resp) || !isset($resp[0]['value']['IrLights']['state'])) return null;
-        return ((int)$resp[0]['value']['IrLights']['state'] === 1);
+    // Beispiel-Payload – strukturiert wie deine anderen apiPost()-Calls:
+    $payload = [
+        [
+            'cmd'   => 'SetIrLights',
+            'param' => [
+                'IrLights' => [
+                    'channel' => $this->getChannel(), // falls du channel-basiert arbeitest
+                    'state'   => $mode                 // 'on' | 'off' | 'auto'
+                ]
+            ]
+        ]
+    ];
+
+    $ok = $this->apiPost($payload);   // benutze hier deine vorhandene API-Post-Methode
+    if ($ok) {
+        // falls du dir einen lokalen Status merken willst:
+        @$this->SetValue('IR_Light', $mode === 'on'); // nur wenn Variable existiert
     }
+    return (bool)$ok;
+}
+
 }
