@@ -969,10 +969,8 @@ class Reolink extends IPSModule
             $this->UnregisterVariable("RecEnabled");
         }
 
-            // --- Online-Status (Alert) ---
-        if (!@$this->GetIDForIdent('KameraOffline')) {
-            $this->RegisterVariableBoolean('KameraOffline', 'Kamera online', '~Alert', 11);
-        }
+        // Kamera Offline (Alert)
+        $this->RegisterVariableBoolean('KameraOffline', 'Kamera offline', '~Alert', 11);
     }
 
     // ---------------------------
@@ -2567,23 +2565,24 @@ class Reolink extends IPSModule
     {
         $id = @$this->GetIDForIdent('KameraOffline');
         if ($id === false) {
-            $this->RegisterVariableBoolean('KameraOffline', 'Kamera offline', '~Alert', 5);
-            $id = $this->GetIDForIdent('KameraOffline');
+            return;
         }
 
         $ip = trim($this->ReadPropertyString('CameraIP'));
-        $offline = true; 
+        $offline = true;
 
         if ($ip !== '') {
+            // API-Ping über GetDevInfo
             $resp = $this->apiCall([
                 ["cmd" => "GetDevInfo", "action" => 0]
-            ], 'ONLINE', /*suppress*/ true);
+            ], 'ONLINE', true);
 
             if (is_array($resp) && isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) {
                 $offline = false;
             } else {
+                // Fallback: Ping
                 if (function_exists('Sys_Ping')) {
-                    $offline = !@Sys_Ping($ip, 1000); 
+                    $offline = !@Sys_Ping($ip, 1000);
                 } else {
                     $offline = true;
                 }
