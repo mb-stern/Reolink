@@ -1081,6 +1081,10 @@ class Reolink extends IPSModule
             if ($this->ReadPropertyBoolean("EnableApiRecord")) {
                 $this->UpdateRecStatus();
             }
+            if ($this->ReadPropertyBoolean("EnableApiIR")) {
+                $this->UpdateIrStatus();
+            }
+
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
