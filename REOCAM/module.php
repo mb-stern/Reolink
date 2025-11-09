@@ -970,7 +970,7 @@ class Reolink extends IPSModule
         }
 
         // Kamera Offline (Alert)
-        $this->RegisterVariableBoolean('KameraOffline', 'Kamera offline', '~Alert', 11);
+        $this->RegisterVariableBoolean('KameraOffline', 'Kamera online', '~Alert', 11);
     }
 
     // ---------------------------
