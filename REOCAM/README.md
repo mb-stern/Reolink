@@ -152,7 +152,7 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 2.12 (09.11.2025)
 - Fehler beim setzen der Sensitivität behoben.
-- Erweiterte Instanzenfunkion 'REOCAM_SetInstanceStatus' zum deaktiveren der Instanz über eine Automation hinzugefügt.
+- Erweiterte Instanzenfunktion 'REOCAM_SetInstanceStatus' zum deaktiveren der Instanz über eine Automation hinzugefügt.
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.
