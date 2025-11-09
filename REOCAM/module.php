@@ -1112,6 +1112,8 @@ class Reolink extends IPSModule
                 $this->UpdateIrStatus();
             }
 
+             $this->UpdateOnlineStatus();
+
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
