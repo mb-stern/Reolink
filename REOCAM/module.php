@@ -2463,7 +2463,6 @@ class Reolink extends IPSModule
 
     public function SetRecEnabled(bool $on): bool
     {
-        // Aktuellen Record-Status holen (du hast recordGet() ja schon)
         $get = $this->recordGet();
         if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) return false;
 
@@ -2473,10 +2472,8 @@ class Reolink extends IPSModule
         $rec['enable']  = $on ? 1 : 0;
         $rec['channel'] = 0;
 
-        // Direkt setzen ohne Api()-Helper
         $ok = $this->recordSet(['Rec' => $rec]);
 
-        // Fallback für ältere Legacy-Firmwares: schedule.enable
         if (!$ok) {
             $param2 = ['Rec' => ['schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0]];
             $ok = $this->recordSet($param2);
