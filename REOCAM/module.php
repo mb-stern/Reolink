@@ -972,6 +972,7 @@ class Reolink extends IPSModule
             // --- Online-Status (Alert) ---
         if (!@$this->GetIDForIdent('KameraOffline')) {
             $this->RegisterVariableBoolean('KameraOffline', 'Kamera offline', '~Alert', 11);
+        }
     }
 
     // ---------------------------
