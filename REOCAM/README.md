@@ -79,7 +79,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Benutzername** | Benutzername für den Zugriff. |
 | **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
 | **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
-| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, IR-Scheinwerfer, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
+| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, IR-Beleuchtung, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
 | **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
 | **Intelligente Bewegungserkennung** | Erstellt Variablen für Personen, Tiere, Fahrzeuge, Bewegung und Besucher. |
 | **Schnappschüsse anzeigen** | Zeigt den letzten Schnappschuss jeder Erkennungsart. |
@@ -156,6 +156,7 @@ Je nach Konfiguration werden automatisch angelegt:
 - Fehler beim setzen der Sensitivität behoben.
 - Aktivieren/Deaktivieren der Instanz über 'REOCAM_SetInstanceStatus'  hinzugefügt.
 - Anfahren der PTZ Presets über 'REOCAM_PTZ_GotoPreset' oder 'REOCAM_PTZ_GotoPresetByName' möglich.
+- API-Punkt 'IR-Beleuchtung' hinzugefügt
 
 ### Version 2.11 (28.10.2025)
 - API-Abfrage und Debug-Log weiter umgebaut und vereinheitlicht.

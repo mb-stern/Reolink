@@ -2492,10 +2492,6 @@ class Reolink extends IPSModule
     // Infrared (IR)
     // ---------------------------
 
-    public function IR_On(): bool   { return $this->IR_SetModeInt(1); }   // On
-    public function IR_Off(): bool  { return $this->IR_SetModeInt(0); }   // Off
-    public function IR_Auto(): bool { return $this->IR_SetModeInt(2); }   // Auto
-
     public function IR_SetModeInt(int $mode): bool
     {
         if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
@@ -2552,7 +2548,7 @@ class Reolink extends IPSModule
         $mode = $this->irGetMode();
         if ($mode === null) return;
 
-        $vid = @$this->GetIDForIdent('IRLights'); // Integer 0/1/2
+        $vid = @$this->GetIDForIdent('IRLights');
         if ($vid !== false) {
             $val = ($mode === 'off' ? 0 : ($mode === 'on' ? 1 : 2));
             if ((int)GetValue($vid) !== $val) {
