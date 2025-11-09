@@ -1072,6 +1072,8 @@ class Reolink extends IPSModule
     {
         if (!$this->isActive()) return;
         if (!$this->apiEnsureToken()) return;
+
+        $this->UpdateOnlineStatus();
       
         $sem = "REOCAM_{$this->InstanceID}_Exec";
         if (function_exists('IPS_SemaphoreEnter')) {
@@ -1115,7 +1117,6 @@ class Reolink extends IPSModule
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
         }
-        $this->UpdateOnlineStatus();
     }
 
     private function apiBase(): string
