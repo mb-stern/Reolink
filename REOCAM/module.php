@@ -2105,76 +2105,180 @@ class Reolink extends IPSModule
         ];
     }
 
-    private function sensitivitySet(int $levelUi): bool 
+    private function sensitivitySet(int $levelUi): bool
     {
-        // UI 1..50 ↔ Kamera 50..1 (V2.10)
+        // UI 1..50 → Cam 50..1
         $levelUi  = max(1, min(50, $levelUi));
         $levelCam = 51 - $levelUi;
 
-        $state = $this->sensitivityGet();
-        if (!$state) return false;
+        // 1) Erst herausfinden, ob V20 oder Legacy (wie in deinem Get)
+        $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
+        $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        // V2.10 setzt immer 4 Slots (IDs 0..3). Zeiten aus GET übernehmen, sonst Standard.
-        $tpl = [
-            ['id'=>0,'beginHour'=>0, 'beginMin'=>0,  'endHour'=>6,  'endMin'=>0 ],
-            ['id'=>1,'beginHour'=>6, 'beginMin'=>0,  'endHour'=>12, 'endMin'=>0 ],
-            ['id'=>2,'beginHour'=>12,'beginMin'=>0,  'endHour'=>18, 'endMin'=>0 ],
-            ['id'=>3,'beginHour'=>18,'beginMin'=>0,  'endHour'=>23, 'endMin'=>59],
-        ];
-        $byId = [];
-        foreach ((array)($state['segments'] ?? []) as $seg) {
-            if (isset($seg['id'])) $byId[(int)$seg['id']] = $seg;
+        // 2) RAW-GET holen (nicht normalisiert!), damit wir dieselbe Struktur zurücksenden können
+        $res = $this->apiCall([[
+            'cmd'    => $cmd,
+            'action' => 1,
+            'param'  => ['channel' => 0, 'type' => 'md']
+        ]], 'SENS');
+
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $res = $this->apiCall([[
+                'cmd'    => $cmd,
+                'action' => 0,
+                'param'  => ['channel' => 0, 'type' => 'md']
+            ]], 'SENS');
         }
-        $segments = [];
-        for ($i=0; $i<4; $i++) {
-            $src = $byId[$i] ?? [];
-            $segments[] = [
-                'id'          => $i,
-                'beginHour'   => (int)($src['beginHour'] ?? $tpl[$i]['beginHour']),
-                'beginMin'    => (int)($src['beginMin']  ?? $tpl[$i]['beginMin']),
-                'endHour'     => (int)($src['endHour']   ?? $tpl[$i]['endHour']),
-                'endMin'      => (int)($src['endMin']    ?? $tpl[$i]['endMin']),
-                'sensitivity' => $levelCam
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            return false;
+        }
+
+        // 3) RAW-Knoten greifen (ohne Felder zu verlieren)
+        $root = $res[0];
+        $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm']
+            ?? $root['value']['Alarm']   ?? $root['initial']['Alarm']   ?? null;
+        if (!is_array($node)) {
+            return false;
+        }
+
+        // 4) Segmente aus RAW übernehmen und NUR sensitivity setzen (alle anderen Keys bleiben unangetastet)
+        if ($ver === 'v20') {
+            // V20: newSens vorhanden?
+            if (empty($node['newSens']) || !is_array($node['newSens'])) {
+                return false; // ohne newSens können wir nicht sauber setzen
+            }
+            $newSens = $node['newSens'];
+
+            // sensDef: entweder übernehmen oder fallback auf levelCam
+            if (!isset($newSens['sensDef']) || !is_int($newSens['sensDef'])) {
+                $newSens['sensDef'] = (int)$levelCam;
+            }
+
+            // sens-Array muss existieren
+            if (empty($newSens['sens']) || !is_array($newSens['sens'])) {
+                // Falls leer, vier Slots anlegen (IDs 0..3), damit die Kamera zufrieden ist
+                $newSens['sens'] = [
+                    ['id'=>0,'enable'=>0,'priority'=>0,'beginHour'=>0,'beginMin'=>0,'endHour'=>6,'endMin'=>0,'sensitivity'=>$levelCam],
+                    ['id'=>1,'enable'=>0,'priority'=>0,'beginHour'=>6,'beginMin'=>0,'endHour'=>12,'endMin'=>0,'sensitivity'=>$levelCam],
+                    ['id'=>2,'enable'=>0,'priority'=>0,'beginHour'=>12,'beginMin'=>0,'endHour'=>18,'endMin'=>0,'sensitivity'=>$levelCam],
+                    ['id'=>3,'enable'=>0,'priority'=>0,'beginHour'=>18,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam],
+                ];
+            } else {
+                // vorhandene Segmente beibehalten, nur sensitivity setzen
+                foreach ($newSens['sens'] as $i => $seg) {
+                    if (!is_array($seg)) continue;
+                    $seg['sensitivity'] = (int)$levelCam;
+                    // harte Typisierung der Zeitfelder (manche FWs sind pingelig)
+                    $seg['beginHour'] = (int)($seg['beginHour'] ?? 0);
+                    $seg['beginMin']  = (int)($seg['beginMin']  ?? 0);
+                    $seg['endHour']   = (int)($seg['endHour']   ?? 23);
+                    $seg['endMin']    = (int)($seg['endMin']    ?? 59);
+                    $newSens['sens'][$i] = $seg;
+                }
+
+                // Kameras mögen oft genau 4 IDs (0..3): wenn mehr/weniger → auf 4 normalisieren
+                // (wir nehmen die ersten vier IDs 0..3, fehlende füllen wir mit Standardzeiten)
+                $byId = [];
+                foreach ($newSens['sens'] as $seg) {
+                    if (isset($seg['id'])) $byId[(int)$seg['id']] = $seg;
+                }
+                $tpl = [
+                    ['id'=>0,'beginHour'=>0, 'beginMin'=>0,  'endHour'=>6,  'endMin'=>0 ],
+                    ['id'=>1,'beginHour'=>6, 'beginMin'=>0,  'endHour'=>12, 'endMin'=>0 ],
+                    ['id'=>2,'beginHour'=>12,'beginMin'=>0,  'endHour'=>18, 'endMin'=>0 ],
+                    ['id'=>3,'beginHour'=>18,'beginMin'=>0,  'endHour'=>23, 'endMin'=>59],
+                ];
+                $norm = [];
+                for ($i=0; $i<4; $i++) {
+                    $src = $byId[$i] ?? $tpl[$i];
+                    $src['id']          = $i;
+                    $src['sensitivity'] = (int)$levelCam;
+                    $src['beginHour']   = (int)($src['beginHour'] ?? $tpl[$i]['beginHour']);
+                    $src['beginMin']    = (int)($src['beginMin']  ?? $tpl[$i]['beginMin']);
+                    $src['endHour']     = (int)($src['endHour']   ?? $tpl[$i]['endHour']);
+                    $src['endMin']      = (int)($src['endMin']    ?? $tpl[$i]['endMin']);
+                    $norm[] = $src;
+                }
+                $newSens['sens'] = $norm;
+            }
+
+            // vollständiges Payload exakt nach Kamera-Struktur
+            $payload = [
+                'MdAlarm' => [
+                    'channel'    => 0,
+                    'type'       => 'md',
+                    'useNewSens' => 1,
+                    'newSens'    => $newSens
+                ]
             ];
-        }
 
-        $isV20 = ($state['apiVer'] === 'V20');
+            $set = $this->apiCall([[
+                'cmd'    => 'SetMdAlarm',
+                'action' => 0,
+                'param'  => $payload
+            ]], 'SENS-SET');
 
-        if ($isV20) {
-            // SetMdAlarm (V20) – type:"md", useNewSens:1, action:0 (wie V2.10)
-            $payload = [[
-                'cmd'   => 'SetMdAlarm',
-                'action'=> 0,
-                'param' => [
-                    'MdAlarm' => [
-                        'type'       => 'md',
-                        'useNewSens' => 1,
-                        'newSens'    => [
-                            'sensDef' => (int)($state['sensDef'] ?? $levelCam),
-                            'sens'    => $segments
-                        ],
-                        'channel'    => 0
-                    ]
-                ]
-            ]];
-            $res = $this->apiCall($payload, 'SENS-SET');
         } else {
-            // Legacy SetAlarm – type:"md", action:0
-            $payload = [[
-                'cmd'   => 'SetAlarm',
-                'action'=> 0,
-                'param' => [
-                    'Alarm' => [
-                        'type'    => 'md',
-                        'sens'    => $segments,
-                        'channel' => 0
-                    ]
+            // Legacy: sens direkt unter Alarm
+            if (empty($node['sens']) || !is_array($node['sens'])) {
+                // 4 Standard-Slots herstellen
+                $node['sens'] = [
+                    ['id'=>0,'beginHour'=>0, 'beginMin'=>0,  'endHour'=>6,  'endMin'=>0,  'sensitivity'=>$levelCam],
+                    ['id'=>1,'beginHour'=>6, 'beginMin'=>0,  'endHour'=>12, 'endMin'=>0,  'sensitivity'=>$levelCam],
+                    ['id'=>2,'beginHour'=>12,'beginMin'=>0,  'endHour'=>18, 'endMin'=>0,  'sensitivity'=>$levelCam],
+                    ['id'=>3,'beginHour'=>18,'beginMin'=>0,  'endHour'=>23, 'endMin'=>59, 'sensitivity'=>$levelCam],
+                ];
+            } else {
+                foreach ($node['sens'] as $i => $seg) {
+                    if (!is_array($seg)) continue;
+                    $seg['sensitivity'] = (int)$levelCam;
+                    $seg['beginHour'] = (int)($seg['beginHour'] ?? 0);
+                    $seg['beginMin']  = (int)($seg['beginMin']  ?? 0);
+                    $seg['endHour']   = (int)($seg['endHour']   ?? 23);
+                    $seg['endMin']    = (int)($seg['endMin']    ?? 59);
+                    $node['sens'][$i] = $seg;
+                }
+                // auf 4 IDs normalisieren (0..3)
+                $byId = [];
+                foreach ($node['sens'] as $seg) {
+                    if (isset($seg['id'])) $byId[(int)$seg['id']] = $seg;
+                }
+                $tpl = [
+                    ['id'=>0,'beginHour'=>0, 'beginMin'=>0,  'endHour'=>6,  'endMin'=>0 ],
+                    ['id'=>1,'beginHour'=>6, 'beginMin'=>0,  'endHour'=>12, 'endMin'=>0 ],
+                    ['id'=>2,'beginHour'=>12,'beginMin'=>0,  'endHour'=>18, 'endMin'=>0 ],
+                    ['id'=>3,'beginHour'=>18,'beginMin'=>0,  'endHour'=>23, 'endMin'=>59],
+                ];
+                $norm = [];
+                for ($i=0; $i<4; $i++) {
+                    $src = $byId[$i] ?? $tpl[$i];
+                    $src['id']          = $i;
+                    $src['sensitivity'] = (int)$levelCam;
+                    $src['beginHour']   = (int)($src['beginHour'] ?? $tpl[$i]['beginHour']);
+                    $src['beginMin']    = (int)($src['beginMin']  ?? $tpl[$i]['beginMin']);
+                    $src['endHour']     = (int)($src['endHour']   ?? $tpl[$i]['endHour']);
+                    $src['endMin']      = (int)($src['endMin']    ?? $tpl[$i]['endMin']);
+                    $norm[] = $src;
+                }
+                $node['sens'] = $norm;
+            }
+
+            $payload = [
+                'Alarm' => [
+                    'channel' => 0,
+                    'type'    => 'md',
+                    'sens'    => $node['sens']
                 ]
-            ]];
-            $res = $this->apiCall($payload, 'SENS-SET');
+            ];
+
+            $set = $this->apiCall([[
+                'cmd'    => 'SetAlarm',
+                'action' => 0,
+                'param'  => $payload
+            ]], 'SENS-SET');
         }
 
-        $ok = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+        $ok = (is_array($set) && (($set[0]['code'] ?? -1) === 0));
         if ($ok) { $this->UpdateMdSensitivityStatus(); }
         return $ok;
     }
