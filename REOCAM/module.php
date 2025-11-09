@@ -834,6 +834,22 @@ class Reolink extends IPSModule
 
     private function CreateOrUpdateApiVariablesUnified(): void
     {
+        // -------- IR (Infrared) --------
+        if ($this->ReadPropertyBoolean("EnableApiIR")) {
+            if (!IPS_VariableProfileExists("REOCAM.IR")) {
+                IPS_CreateVariableProfile("REOCAM.IR", 1); 
+            }
+            IPS_SetVariableProfileValues("REOCAM.IR", 0, 2, 1);
+            IPS_SetVariableProfileAssociation("REOCAM.IR", 0, "Aus",  "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.IR", 1, "An",   "", -1);
+            IPS_SetVariableProfileAssociation("REOCAM.IR", 2, "Auto", "", -1);
+
+            $this->RegisterVariableInteger("IRLights", "IR Beleuchtung", "REOCAM.IR", 0);
+            $this->EnableAction("IRLights");
+        } else {
+            $this->UnregisterVariable("IRLights");
+        }
+
         // -------- White LED --------
         if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
@@ -951,22 +967,6 @@ class Reolink extends IPSModule
             $this->EnableAction("RecEnabled");
         } else {
             $this->UnregisterVariable("RecEnabled");
-        }
-
-        // -------- IR (Infrared) --------
-        if ($this->ReadPropertyBoolean("EnableApiIR")) {
-            if (!IPS_VariableProfileExists("REOCAM.IR")) {
-                IPS_CreateVariableProfile("REOCAM.IR", 1); 
-            }
-            IPS_SetVariableProfileValues("REOCAM.IR", 0, 2, 1);
-            IPS_SetVariableProfileAssociation("REOCAM.IR", 0, "Aus",  "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.IR", 1, "An",   "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.IR", 2, "Auto", "", -1);
-
-            $this->RegisterVariableInteger("IRLights", "IR Beleuchtung", "REOCAM.IR", 1);
-            $this->EnableAction("IRLights");
-        } else {
-            $this->UnregisterVariable("IRLights");
         }
     }
 
