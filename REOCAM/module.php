@@ -2054,189 +2054,182 @@ class Reolink extends IPSModule
         return $ok;
     }
 
-    // ---------------------------
-    // Sensitivity (V2.10 Logik)
-    // ---------------------------
+// ---------------------------
+// Sensitivity (V2.10-Logik, ohne ApiVersion())
+// ---------------------------
 
-    private function sensitivityGet(): ?array 
-    {
-        // V2.10: API-Version holen und Befehl wählen
-        $ver = $this->ApiVersion('schedule');                 // <<< wie in V2.10
-        $cmd = ($ver === 'V20') ? 'GetMdAlarm' : 'GetAlarm';
+private function sensitivityGet(): ?array 
+{
+    // Welche API-Variante? (v20 bevorzugt)
+    $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
+    $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
 
-        // V2.10: nur action=>1 und OHNE "type" in param
-        $res = $this->apiCall([[ 
-            'cmd'    => $cmd, 
-            'action' => 1, 
-            'param'  => ['channel' => 0] 
-        ]], 'SENS');
+    // 1) Erst action:1 (wie V2.10) – OHNE "type"
+    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'SENS');
+    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+        // 2) Fallback action:0 – OHNE "type"
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'SENS');
+    }
+    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
 
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            return null;
-        }
+    // Node extrahieren (value bevorzugt, sonst initial)
+    $root = $res[0];
+    $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] ?? $root['value']['Alarm'] ?? $root['initial']['Alarm'] ?? null;
+    if (!is_array($node)) return null;
 
-        // Knoten extrahieren (V2.10-Stil)
-        $root = $res[0];
-        $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] 
-            ?? $root['value']['Alarm']   ?? $root['initial']['Alarm']   ?? null;
-        if (!is_array($node)) return null;
+    $sensDef  = null;
+    $segments = [];
+    if (!empty($node['newSens'])) {
+        $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
+        $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
+    } elseif (!empty($node['sens'])) {
+        $segments = $this->mdNormalizeSegments($node['sens']);
+    }
 
-        $sensDef  = null;
-        $segments = [];
-        if (!empty($node['newSens'])) {
-            $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
-            $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
-        } elseif (!empty($node['sens'])) {
-            $segments = $this->mdNormalizeSegments($node['sens']);
-        }
+    $active = $this->mdPickActiveNow($segments, $sensDef);
+    return [ 'apiVer' => ($ver === 'v20' ? 'V20' : 'LEGACY'), 'sensDef'=>$sensDef, 'segments'=>$segments, 'active'=>$active ];
+}
 
-        $active = $this->mdPickActiveNow($segments, $sensDef);
-        return [ 
-            'apiVer'   => $ver, 
-            'sensDef'  => $sensDef, 
-            'segments' => $segments, 
-            'active'   => $active 
+private function sensitivitySet(int $levelUi): bool 
+{
+    // UI 1..50 → Cam 50..1 (wie 2.10)
+    $levelUi  = max(1, min(50, $levelUi));
+    $levelCam = 51 - $levelUi;
+
+    $state = $this->sensitivityGet();
+    if (!$state) return false;
+
+    $segments = $state['segments'];
+    if (empty($segments)) {
+        // Ganzer Tag als ein Segment – wie in deiner Version
+        $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
+    } else {
+        foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
+        unset($s);
+    }
+
+    $isV20 = ($state['apiVer'] === 'V20');
+
+    if ($isV20) {
+        // V20: KEIN "action", channel auf gleicher Ebene, sensDef = levelCam
+        $payload = [[
+            'cmd'   => 'SetMdAlarm',
+            'param' => [
+                'MdAlarm' => [
+                    'type'       => 'md',
+                    'useNewSens' => 1,
+                    'newSens'    => [
+                        'sensDef' => $levelCam,
+                        'sens'    => $segments
+                    ],
+                    'channel'    => 0
+                ]
+            ]
+        ]];
+    } else {
+        // Legacy: KEIN "action"
+        $payload = [[
+            'cmd'   => 'SetAlarm',
+            'param' => [
+                'Alarm' => [
+                    'type'    => 'md',
+                    'sens'    => $segments,
+                    'channel' => 0
+                ]
+            ]
+        ]];
+    }
+
+    $res = $this->apiCall($payload, 'SENS-SET');
+    $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+
+    if ($ok) {
+        $this->UpdateMdSensitivityStatus(); // UI write-through
+    }
+    return $ok;
+}
+
+private function GetMdSensitivity(): ?array {
+    return $this->sensitivityGet();
+}
+
+public function SetMdSensitivity(int $level): bool {
+    return $this->sensitivitySet($level);
+}
+
+private function UpdateMdSensitivityStatus(): void
+{
+    $vid = @$this->GetIDForIdent("MdSensitivity");
+    if ($vid === false) return;
+
+    $st = $this->GetMdSensitivity();
+    if (!$st) return;
+
+    // Kamera → UI invertieren
+    $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
+    $lvlUI  = 51 - $lvlCam;
+
+    if ((int)GetValue($vid) !== $lvlUI) {
+        $this->SetValue("MdSensitivity", $lvlUI);
+    }
+}
+
+private function mdNormalizeSegments($raw): array
+{
+    $out = [];
+    $push = function($a) use (&$out) {
+        $out[] = [
+            'beginHour'   => (int)($a['beginHour'] ?? 0),
+            'beginMin'    => (int)($a['beginMin']  ?? 0),
+            'endHour'     => (int)($a['endHour']   ?? 23),
+            'endMin'      => (int)($a['endMin']    ?? 59),
+            'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
         ];
-    }
-
-    private function sensitivitySet(int $levelUi): bool 
-    {
-        // UI 1..50 → Cam 50..1 (V2.10)
-        $levelUi  = max(1, min(50, $levelUi));
-        $levelCam = 51 - $levelUi;
-
-        $state = $this->sensitivityGet();
-        if (!$state) return false;
-
-        $ver      = $state['apiVer'];
-        $isV20    = ($ver === 'V20');
-        $paramKey = $isV20 ? 'MdAlarm' : 'Alarm';
-        $cmdSet   = $isV20 ? 'SetMdAlarm' : 'SetAlarm';
-
-        // Segmente aus GET übernehmen (nur sensitivity überschreiben); falls leer: ganzer Tag
-        $segments = $state['segments'];
-        if (empty($segments)) {
-            $segments = [[ 
-                'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam 
-            ]];
-        } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-            unset($s);
-        }
-
-        // V2.10: SET OHNE "action" – exakte Struktur
-        if ($isV20) {
-            $payload = [[
-                'cmd'   => $cmdSet,
-                'param' => [
-                    $paramKey => [
-                        'type'       => 'md',
-                        'useNewSens' => 1,
-                        'newSens'    => [
-                            'sensDef' => $levelCam,        // V2.10: sensDef = levelCam (nicht aus GET)
-                            'sens'    => $segments
-                        ],
-                        'channel'    => 0                 // gleiche Ebene wie type
-                    ]
-                ]
-            ]];
-        } else {
-            $payload = [[
-                'cmd'   => $cmdSet,
-                'param' => [
-                    $paramKey => [
-                        'type'    => 'md',
-                        'sens'    => $segments,
-                        'channel' => 0
-                    ]
-                ]
-            ]];
-        }
-
-        $res = $this->apiCall($payload, 'SENS-SET');
-        $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
-
-        if ($ok) {
-            // V2.10: UI nachziehen (deine bestehende Methode)
-            $this->UpdateMdSensitivityStatus();
-        }
-        return $ok;
-    }
-
-    private function GetMdSensitivity(): ?array {
-        return $this->sensitivityGet();
-    }
-
-    public function SetMdSensitivity(int $level): bool {
-        return $this->sensitivitySet($level);
-    }
-
-    private function UpdateMdSensitivityStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("MdSensitivity");
-        if ($vid === false) return;
-
-        $st = $this->GetMdSensitivity();
-        if (!$st) return;
-
-        // Kamera → UI invertieren
-        $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
-        $lvlUI  = 51 - $lvlCam;
-
-        if ((int)GetValue($vid) !== $lvlUI) {
-            $this->SetValue("MdSensitivity", $lvlUI);
-        }
-    }
-
-    private function mdNormalizeSegments($raw): array
-    {
-        // V2.10: nur begin*/end* + sensitivity normalisieren
-        $out = [];
-        $push = function($a) use (&$out) {
-            $out[] = [
-                'beginHour'   => (int)($a['beginHour'] ?? 0),
-                'beginMin'    => (int)($a['beginMin']  ?? 0),
-                'endHour'     => (int)($a['endHour']   ?? 23),
-                'endMin'      => (int)($a['endMin']    ?? 59),
-                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0)),
-                // evtl. vorhandene 'id' lassen wir unkritisch weg – V2.10 hat sich nicht darauf verlassen
-            ];
-        };
-        $walk = function($node) use (&$walk, $push) {
-            if (is_array($node)) {
-                if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
-                    $push($node);
-                } else {
-                    foreach ($node as $v) $walk($v);
-                }
-            }
-        };
-        $walk($raw);
-
-        $filtered = [];
-        foreach ($out as $s) {
-            $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
-            if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
-            if ($s['sensitivity'] < 0 || $s['sensitivity'] > 50) continue; // 0 kann vorkommen
-            $filtered[] = $s;
-        }
-        return array_values($filtered);
-    }
-
-    private function mdPickActiveNow(array $segments, ?int $sensDef): int
-    {
-        $now = (int)date('G')*60 + (int)date('i');
-        foreach ($segments as $s) {
-            $start = $s['beginHour']*60 + $s['beginMin'];
-            $end   = $s['endHour']*60   + $s['endMin'];
-            if ($start <= $end) {
-                if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
+    };
+    $walk = function($node) use (&$walk, $push) {
+        if (is_array($node)) {
+            if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
+                $push($node);
             } else {
-                if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
+                foreach ($node as $v) $walk($v);
             }
         }
-        return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
+    };
+    $walk($raw);
+
+    $filtered = [];
+    foreach ($out as $s) {
+        $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
+        if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
+        if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
+        $filtered[] = $s;
     }
+    return array_values($filtered);
+}
+
+private function mdPickActiveNow(array $segments, ?int $sensDef): int
+{
+    $now = (int)date('G')*60 + (int)date('i');
+    foreach ($segments as $s) {
+        $start = $s['beginHour']*60 + $s['beginMin'];
+        $end   = $s['endHour']*60   + $s['endMin'];
+        if ($start <= $end) {
+            if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
+        } else {
+            if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
+        }
+    }
+    return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
+}
+
+private function apiGetNode(array $resp, string $key)
+{
+    $root = $resp[0] ?? [];
+    $v = $root['value'][$key] ?? null;
+    if ($v === null) $v = $root['initial'][$key] ?? null;
+    return is_array($v) ? $v : null;
+}
+
 
     // ---------------------------
     // Sirene ansteuern
