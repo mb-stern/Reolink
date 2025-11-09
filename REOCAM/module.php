@@ -160,9 +160,12 @@ class Reolink extends IPSModule
                 break;
 
             case 'IRLights':
-                $ok = $this->IR_SetModeInt((int)$Value);         
+                $ok = $this->IR_SetModeInt((int)$Value);
                 if ($ok) {
-                $this->SetValue('IRLights', (int)$Value);
+                    $this->SetValue('IRLights', (int)$Value);
+                } else {
+                    $this->UpdateIrStatus();
+                }
                 break;
 
             case "EmailNotify":
@@ -2487,82 +2490,88 @@ class Reolink extends IPSModule
     // Infrared (IR)
     // ---------------------------
 
- // ---------------------------
-// Infrared (IR) – Public API
-// ---------------------------
+    // Öffentliche Instanzfunktionen (für Automation/Skript)
+    public function IR_On(): bool   { return $this->IR_SetModeInt(1); }   // On
+    public function IR_Off(): bool  { return $this->IR_SetModeInt(0); }   // Off
+    public function IR_Auto(): bool { return $this->IR_SetModeInt(2); }   // Auto
 
-// Komfort: per Namen
-public function IR_On(): bool  { return $this->irSetByInt(1); }   // On
-public function IR_Off(): bool { return $this->irSetByInt(0); }   // Off
-public function IR_Auto(): bool{ return $this->irSetByInt(2); }   // Auto
+    /** Hauptsetter: nimmt 0/1/2 und setzt "Off/On/Auto" */
+    public function IR_SetModeInt(int $mode): bool
+    {
+        if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
+        if (!$this->apiEnsureToken()) return false;
 
-// Ein zentraler Setter nach Integer (0=Off, 1=On, 2=Auto)
-public function IR_SetModeInt(int $mode): bool {
-    return $this->irSetByInt($mode);
-}
+        $mode = max(0, min(2, $mode));
+        $map = [0 => 'Off', 1 => 'On', 2 => 'Auto'];
 
-// Getter als Integer (spielt sauber zur einzigen IR-Integer-Variable)
-public function IR_GetModeInt(): ?int {
-    $m = $this->irGetMode();
-    if ($m === null) return null;
-    return match ($m) { 'off' => 0, 'on' => 1, 'auto' => 2, default => null };
-}
+        $payload = [[
+            'cmd'   => 'SetIrLights',
+            'param' => ['IrLights' => [
+                'channel' => $this->getChannel(),
+                'state'   => $map[$mode]         // WICHTIG: "Off"/"On"/"Auto"
+            ]]
+        ]];
 
-private function irSetByInt(int $val): bool
-{
-    if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
-    if (!$this->apiEnsureToken()) return false;
+        // >>> hier DEINE bestehende API-Sendefunktion verwenden (wie bei WhiteLED)
+        $ok = $this->api(/* exakt wie in SetWhiteLed */ $payload);
 
-    // clamp & map
-    $v = in_array($val, [0,1,2], true) ? $val : 0;  // 0=Off,1=On,2=Auto
-
-    // Reolink erwartet je nach FW int states. Wir senden bewusst INT.
-    $payload = [[
-        'cmd'   => 'SetIrLights',
-        'param' => ['IrLights' => [
-            'channel' => $this->getChannel(),
-            'state'   => $v               // 0=Off, 1=On, 2=Auto
-        ]]
-    ]];
-
-    // WICHTIG: Nutze hier deine bestehende API-Sammelfunktion (wie bei WhiteLED/PTZ)!
-    $res = $this->CALL_YOUR_API($payload);
-    $ok  = $this->isOk($res); // falls du so einen Checker schon hast – sonst ($res !== false)
-
-    if ($ok) {
-        // Status sofort nachziehen (zentral werden Variablen ja ohnehin aktualisiert)
-        $this->UpdateIrStatus();
+        if ($ok) { $this->UpdateIrStatus(); }
+        return (bool)$ok;
     }
-    return (bool)$ok;
-}
 
-private function irGetMode(): ?string
-{
-    if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
-    if (!$this->apiEnsureToken()) return null;
+    /** interner Reader – normalisiert auf "off|on|auto" */
+    private function irGetMode(): ?string
+    {
+        if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
+        if (!$this->apiEnsureToken()) return null;
 
-    $payload = [[ 'cmd' => 'GetIrLights', 'param' => ['IrLights' => ['channel' => $this->getChannel()]] ]];
+        $payload = [[
+            'cmd'   => 'GetIrLights',
+            'param' => ['IrLights' => ['channel' => $this->getChannel()]]
+        ]];
 
-    // Wieder: dieselbe bestehende API-Funktion verwenden
-    $res = $this->CALL_YOUR_API($payload);
-    if ($res === false || !isset($res[0])) return null;
+        // >>> hier wieder deine zentrale Sendefunktion
+        $res = $this->api(/* wie oben */ $payload);
+        if (!is_array($res) || !isset($res[0])) return null;
 
-    // je nach FW unter value/initial
-    $node = $res[0]['value']['IrLights'] ?? $res[0]['initial']['IrLights'] ?? null;
-    if (!is_array($node)) return null;
+        // Je nach FW: 'value' oder 'initial'
+        $node = $res[0]['value']['IrLights'] ?? $res[0]['initial']['IrLights'] ?? null;
+        if (!is_array($node)) return null;
 
-    $raw = $node['state'] ?? null;
+        $raw = $node['state'] ?? null;
 
-    // Robust: beide Varianten akzeptieren
-    if (is_int($raw)) {
-        return match ($raw) { 0 => 'off', 1 => 'on', 2 => 'auto', default => null };
+        // 0/1/2 → map
+        if (is_int($raw)) {
+            $imap = [0=>'off', 1=>'on', 2=>'auto'];
+            return $imap[$raw] ?? null;
+        }
+        // "Off/On/Auto" → normiert
+        if (is_string($raw)) {
+            $s = strtolower($raw);
+            if (in_array($s, ['off','on','auto'], true)) return $s;
+        }
+        return null;
     }
-    if (is_string($raw)) {
-        $s = strtolower($raw);
-        return in_array($s, ['off','on','auto'], true) ? $s : null;
+
+    /** Status ins Variablenbild übernehmen (nur schreiben, keine Anlage/Profiles) */
+    private function UpdateIrStatus(): void
+    {
+        $mode = $this->irGetMode();
+        if ($mode === null) return;
+
+        // Integer-Variable 'IRLights' existiert zentral bereits
+        if (@$this->GetIDForIdent('IRLights') !== false) {
+            $this->SetValue('IRLights', $this->mapIrModeToInt($mode));
+        }
     }
-    return null;
-}
 
-
+    private function mapIrModeToInt(string $m): int
+    {
+        return match (strtolower($m)) {
+            'off'  => 0,
+            'on'   => 1,
+            'auto' => 2,
+            default => 0
+        };
+    }
 }
