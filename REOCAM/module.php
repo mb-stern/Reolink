@@ -123,12 +123,11 @@ class Reolink extends IPSModule
 
         $this->CreateOrUpdateApiVariablesUnified();
 
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
         if ($anyFeatureOn) {
             $this->GetToken();
-            $this->ExecuteApiRequests(true); 
-            $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
+            $this->ExecuteApiRequests(true);
         } else {
-            $this->SetTimerInterval("ApiRequestTimer", 0);
             $this->SetTimerInterval("TokenRenewalTimer", 0);
         }
 
@@ -1072,8 +1071,8 @@ class Reolink extends IPSModule
     {
         if (!$this->isActive()) return;
 
-        $this->UpdateOnlineStatus();
-        
+         $this->UpdateOnlineStatus();
+         
         if (!$this->apiEnsureToken()) return;
       
         $sem = "REOCAM_{$this->InstanceID}_Exec";
@@ -2572,22 +2571,31 @@ class Reolink extends IPSModule
     private function UpdateOnlineStatus(): void
     {
         $id = @$this->GetIDForIdent('KameraOnline');
-        if ($id === false) {
-            return;
-        }
+        if ($id === false) return;
 
-        $ip = trim($this->ReadPropertyString('CameraIP'));
-        $offline = true; 
+        $ip   = trim($this->ReadPropertyString('CameraIP'));
+        $user = urlencode($this->ReadPropertyString('Username'));
+        $pass = urlencode($this->ReadPropertyString('Password'));
+
+        $isOnline = false;
 
         if ($ip !== '') {
             if (function_exists('Sys_Ping')) {
-                $offline = !@Sys_Ping($ip, 1000);  
+                $isOnline = @Sys_Ping($ip, 1000); // 1s
+            }
+
+            if (!$isOnline) {
+                $url  = "http://{$ip}/api.cgi?cmd=GetDevInfo&user={$user}&password={$pass}";
+                $resp = $this->apiHttpPostJson($url, [
+                    ['cmd'=>'GetDevInfo','action'=>0]
+                ], 'ONLINE', /*suppressError*/ true);
+                $isOnline = is_array($resp) && (($resp[0]['code'] ?? -1) === 0);
             }
         }
 
-        if ((bool)GetValue($id) !== $offline) {
-            $this->SetValue('KameraOnline', $offline);
-            $this->dbg('ONLINE', 'Online-Status aktualisiert', ['offline' => $offline]);
+        if ((bool)GetValue($id) !== $isOnline) {
+            $this->SetValue('KameraOnline', $isOnline);
+            $this->dbg('ONLINE', 'Kamera-Online-Status aktualisiert', ['online' => $isOnline]);
         }
     }
 }
