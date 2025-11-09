@@ -159,14 +159,11 @@ class Reolink extends IPSModule
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
-            case "IR_Light":
-                $this->IR_Set((bool)$Value);
-                break;
-
-            case "IR_Mode":
-                $m = $this->mapIntToIrMode((int)$Value);
-                if ($m !== null) $this->irSetMode($m);
-                break;
+            case 'IRLights':
+                $v = (int)$Value; // 0=Aus,1=An,2=Auto
+                $ok = $this->irSetModeInt($v);
+                if ($ok) { $this->UpdateIrStatus(); }
+                return;
 
             case "EmailNotify":
                 $ok = $this->EmailApply((bool)$Value, null, null);
@@ -2495,22 +2492,6 @@ class Reolink extends IPSModule
     public function IR_Off(): bool { return $this->irSetModeInt(0); }
     public function IR_Auto(): bool{ return $this->irSetModeInt(2); }
     public function IR_GetMode(): ?int { return $this->irGetModeInt(); } // 0/1/2
-
-    // ---- IR: RequestAction
-    public function RequestAction($Ident, $Value)
-    {
-        switch ($Ident) {
-            case 'IRLights':
-                $v = (int)$Value; // 0=Aus,1=An,2=Auto
-                $ok = $this->irSetModeInt($v);
-                if ($ok) { $this->UpdateIrStatus(); }
-                return;
-            // ... bestehende cases ...
-        }
-        throw new Exception("Invalid Ident");
-    }
-
-    // ---- IR: intern – holt Zustand und setzt Zustand
 
     private function irGetModeInt(): ?int
     {
