@@ -680,14 +680,14 @@ class Reolink extends IPSModule
 
     private function dbg(string $tag, string $msg, $data = null): void
     {
-        // Einfacher Prefix: Modulname + InstanzID
-        $prefix = 'Reolink ' . $this->InstanceID;
-
         if ($data !== null) {
-            // $data hier nur als "saubere" Werte übergeben (keine rohen Binärdaten!)
-            IPS_LogMessage($prefix . ' | ' . $tag, $msg . ' | ' . json_encode($data));
+            // JSON-sicher encoden (UTF-8)
+            $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+            // In das echte Symcon-Debug der Instanz schreiben
+            $this->SendDebug($tag, $msg . ' | ' . $json, 0);
         } else {
-            IPS_LogMessage($prefix . ' | ' . $tag, $msg);
+            $this->SendDebug($tag, $msg, 0);
         }
     }
 
