@@ -540,7 +540,7 @@ class Reolink extends IPSModule
         }
     }
 
-    private function InitBaichuan(): void
+    public function InitBaichuan(): void
     {
         $state = $this->ReadAttributeString('BaichuanState');
         $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
