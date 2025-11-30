@@ -326,15 +326,14 @@ class Reolink extends IPSModule
         $buffer = $this->ReadAttributeString('BaichuanBuffer') ?? '';
         $buffer .= $data;
 
-        $magicLE = pack('V', self::BAICHUAN_MAGIC);
+        $magicLE = pack('H*', 'f0debc0a'); // HEADER_MAGIC
 
         while (true) {
-            // Mindestens 20 Byte nötig (kleinste Headergröße)
             if (strlen($buffer) < 20) {
                 break;
             }
 
-            // Auf Magic-Header synchronisieren
+            // Magic suchen
             if (strncmp($buffer, $magicLE, 4) !== 0) {
                 $pos = strpos($buffer, $magicLE);
                 if ($pos === false) {
@@ -342,7 +341,6 @@ class Reolink extends IPSModule
                     $buffer = '';
                     break;
                 }
-
                 if ($pos > 0) {
                     $this->dbg('BAICHUAN', 'Magic-Header nicht am Anfang, verwerfe ' . $pos . ' Byte Pre-Daten');
                     $buffer = substr($buffer, $pos);
@@ -352,45 +350,50 @@ class Reolink extends IPSModule
                 }
             }
 
-            // Header-Felder
             $cmdId   = unpack('V', substr($buffer, 4, 4))[1];
             $bodyLen = unpack('V', substr($buffer, 8, 4))[1];
+            $messId  = unpack('V', substr($buffer, 12, 4))[1];
 
-            // class als Hex-String wie in reolink_aio
+            // encrypt / status (2 Byte) + class (2 Byte)
+            $encrypt = unpack('v', substr($buffer, 16, 2))[1];
             $classHex = bin2hex(substr($buffer, 18, 2));
 
-            // Headerlänge anhand der Klasse bestimmen
-            // "1466" -> 20 Byte, sonst 24 Byte (payload_offset vorhanden)
+            // Header-Länge bestimmen (20 oder 24)
             $lenHeader = ($classHex === '1466') ? 20 : 24;
-
-            $totalLen = $lenHeader + $bodyLen;
+            $totalLen  = $lenHeader + $bodyLen;
 
             if (strlen($buffer) < $totalLen) {
-                // Noch nicht kompletter Frame da
-                break;
+                break; // noch nicht komplett
             }
 
-            $frame = substr($buffer, 0, $totalLen);
+            $frame  = substr($buffer, 0, $totalLen);
             $buffer = substr($buffer, $totalLen);
 
             $body = substr($frame, $lenHeader);
 
-            // Für Debug eine kompakte Zusammenfassung
-            $this->BaichuanHandleFrame($cmdId, $classHex, $body, $bodyLen);
+            $this->BaichuanHandleFrame($cmdId, $classHex, $body, $bodyLen, $encrypt, $messId);
         }
 
         $this->WriteAttributeString('BaichuanBuffer', $buffer);
     }
 
-    private function BaichuanHandleFrame(int $cmdId, string $classHex, string $body, int $bodyLen): void
-    {
+    private function BaichuanHandleFrame(
+        int $cmdId,
+        string $classHex,
+        string $body,
+        int $bodyLen,
+        int $encrypt,
+        int $messId
+    ): void {
         $this->dbg(
             'BAICHUAN',
             sprintf(
-                'Frame empfangen | cmd=%d, class=%s, bodyLen=%d',
+                'Frame empfangen | cmd=%d, class=%s, bodyLen=%d, encrypt=0x%04X, messId=%d',
                 $cmdId,
                 $classHex,
-                $bodyLen
+                $bodyLen,
+                $encrypt,
+                $messId
             ),
             [
                 'body_hex' => bin2hex(substr($body, 0, 64)),
@@ -399,8 +402,8 @@ class Reolink extends IPSModule
 
         $state = $this->ReadAttributeString('BaichuanState');
 
-        if ($state === 'handshake') {
-            $this->BaichuanHandleHandshake($cmdId, $body, $classHex);
+        if ($state === 'handshake' && $cmdId === 1) {
+            $this->BaichuanHandleHandshake($cmdId, $body, $classHex, $encrypt, $messId);
             return;
         }
 
@@ -514,20 +517,26 @@ class Reolink extends IPSModule
         $this->BaichuanSendRaw($frame);
     }
 
-    public function BaichuanHandleHandshake(int $cmdId, string $body, string $classHex = ''): void
-    {
+    public function BaichuanHandleHandshake(
+        int $cmdId,
+        string $body,
+        string $classHex,
+        int $encrypt,
+        int $messId
+    ): void {
         $this->dbg(
             'BAICHUAN',
             'Handshake-Frame empfangen',
             [
                 'cmd'      => $cmdId,
                 'class'    => $classHex,
+                'encrypt'  => sprintf('0x%04X', $encrypt),
+                'messId'   => $messId,
                 'body_hex' => bin2hex(substr($body, 0, 128)),
             ]
         );
 
-        // TODO: Hier später Nonce aus XML ziehen & echten Login bauen.
-        // Für jetzt nur "ready" schalten, damit Events/Responses weiterlaufen.
+        // TODO: hier später decrypten & Nonce etc. aus XML holen
         $this->WriteAttributeString('BaichuanState', 'ready');
         $this->dbg('BAICHUAN', 'Handshake abgeschlossen (Dummy), BaichuanState=ready');
     }
