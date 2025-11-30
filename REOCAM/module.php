@@ -787,9 +787,154 @@ class Reolink extends IPSModule
         $this->dbg('BAICHUAN', 'Event/Response-XML', ['cmd' => $cmdId, 'xml' => $xml]);
     }
 
+    private function BaichuanMd5Modern(string $input): string
+    {
+        // MD5 als Binärdaten
+        $md5 = md5($input, true);
+        // In HEX wandeln und groß schreiben
+        $hex = strtoupper(bin2hex($md5));
+        // Baichuan-„Spezialität“: nur 31 Zeichen
+        return substr($hex, 0, 31);
+    }
 
+    private string $BaichuanNonce = '';
+    private string $BaichuanAesKey = '';
 
+    private function HandleHandshakeXml(string $xml): void
+    {
+        // Nonce aus dem XML holen
+        $nonce = $this->ExtractXmlTag($xml, 'nonce');
+        if ($nonce === '') {
+            $this->SendDebug('BAICHUAN', 'Kein Nonce im Handshake-XML gefunden', 0);
+            return;
+        }
 
+        $this->BaichuanNonce = $nonce;
+        $this->SendDebug('BAICHUAN', 'Nonce erhalten: ' . $nonce, 0);
+
+        // AES-Key aus Nonce + Passwort ableiten
+        $password = $this->ReadPropertyString('Password'); // oder wie deine Eigenschaft heißt
+        $tmp      = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        $this->BaichuanAesKey = substr($tmp, 0, 16);
+
+        $this->SendDebug('BAICHUAN', 'AES-Key (hex, 16 Zeichen): ' . $this->BaichuanAesKey, 0);
+
+        // Jetzt sind wir "ready" → Login schicken
+        $this->BaichuanSendLogin();
+    }
+
+    private function ExtractXmlTag(string $xml, string $tag): string
+    {
+        $pattern = sprintf('/<%1$s>(.*?)<\/%1$s>/s', preg_quote($tag, '/'));
+        if (preg_match($pattern, $xml, $m)) {
+            return trim($m[1]);
+        }
+        return '';
+    }
+
+    private function BuildBaichuanLoginXml(): string
+    {
+        $username = $this->ReadPropertyString('Username');
+        $password = $this->ReadPropertyString('Password');
+        $nonce    = $this->BaichuanNonce;
+
+        // Hashes nach Baichuan-Schema
+        $userHash     = $this->BaichuanMd5Modern($username . $nonce);
+        $passwordHash = $this->BaichuanMd5Modern($password . $nonce);
+
+        // Login-XML zusammenbauen
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<body>';
+        $xml .= '<LoginUser version="1.1">';
+        $xml .= '<userName>' . $userHash . '</userName>';
+        $xml .= '<password>' . $passwordHash . '</password>';
+        $xml .= '<userVer>1</userVer>';
+        $xml .= '</LoginUser>';
+        $xml .= '<LoginNet version="1.1">';
+        $xml .= '<type>LAN</type>';
+        $xml .= '<udpPort>0</udpPort>';
+        $xml .= '</LoginNet>';
+        $xml .= '</body>';
+
+        $this->SendDebug('BAICHUAN', 'Login-XML: ' . $xml, 0);
+
+        return $xml;
+    }
+
+    private int $BaichuanMessId = 250; // z.B. Startwert
+
+    private function NextMessId(): int
+    {
+        $this->BaichuanMessId++;
+        if ($this->BaichuanMessId > 0xFFFF) {
+            $this->BaichuanMessId = 1;
+        }
+        return $this->BaichuanMessId;
+    }
+
+    private function BaichuanSendLogin(): void
+    {
+        $xml    = $this->BuildBaichuanLoginXml();
+        $messId = $this->NextMessId();
+
+        // Deine bereits vorhandene Funktion, die den kompletten TCP-Frame baut:
+        // - Magic f0debc0a
+        // - Header mit length, cmd_id, class, enc_type, messId
+        // - Body mit BC-verschlüsseltem XML
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId),
+            0
+        );
+
+        $this->BaichuanSendFrame(
+            1,          // cmd_id
+            0x1465,     // class
+            $messId,
+            0x01,       // enc_type = BC (dein XOR-Scrambler)
+            $xml
+        );
+    }
+
+    private function HandleBaichuanMessage(int $cmdId, string $bodyXml): void
+    {
+        if ($cmdId === 1) {
+            if (strpos($bodyXml, '<Encryption') !== false) {
+                // das ist der Nonce-Handshake
+                $this->SendDebug('BAICHUAN', 'Handshake-XML: ' . $bodyXml, 0);
+                $this->HandleHandshakeXml($bodyXml);
+            } else {
+                // das ist die Login-Antwort
+                $this->SendDebug('BAICHUAN', 'Login-Response-XML: ' . $bodyXml, 0);
+                $this->HandleLoginResponse($bodyXml);
+            }
+        } else {
+            // später: andere cmdIds (Events, AI, Config, ...)
+        }
+    }
+
+    private function HandleLoginResponse(string $xml): void
+    {
+        $sx = @simplexml_load_string($xml);
+        if ($sx === false) {
+            $this->SendDebug('BAICHUAN', 'Login-Response: ungültiges XML', 0);
+            return;
+        }
+
+        // Beispiel: DeviceInfo, Model, Firmware
+        $deviceInfo = $sx->xpath('//DeviceInfo')[0] ?? null;
+        if ($deviceInfo !== null) {
+            $model    = (string)($deviceInfo->model ?? '');
+            $fw       = (string)($deviceInfo->swVersion ?? '');
+            $hw       = (string)($deviceInfo->hardwareVer ?? '');
+
+            $this->SendDebug('BAICHUAN', "DeviceInfo: Model=$model, FW=$fw, HW=$hw", 0);
+
+            // Hier kannst du IP-Symcon-Variablen befüllen (Modell, Firmware usw.)
+        }
+
+        // Später: StreamInfoList auswerten (RTSP-Pfade), AI-Caps etc.
+    }
 
 
 
