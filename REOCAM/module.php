@@ -7,7 +7,8 @@ class Reolink extends IPSModule
     {
         parent::Create();
 
-        $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}'); // Client Socket GUID
+        // Baichuan: Parent ist der Client Socket (TCP 9000)
+        $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
 
         // Basis
         $this->RegisterPropertyString("CameraIP", "");
@@ -15,6 +16,8 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
         $this->RegisterPropertyBoolean("InstanceStatus", true);
+
+        // NEU: Schalter für Baichuan
         $this->RegisterPropertyBoolean("UseBaichuan", true);
 
         // Sichtbarkeit / UI
@@ -33,11 +36,10 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiFTP", false);
-        $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
-        $this->RegisterPropertyBoolean('EnableApiSiren', true); 
+        $this->RegisterPropertyBoolean('EnableApiSensitivity', true);
+        $this->RegisterPropertyBoolean('EnableApiSiren', true);
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
-
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -53,6 +55,8 @@ class Reolink extends IPSModule
         $this->RegisterAttributeInteger("ExecLastTs", 0);
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
+
+        // NEU: Buffer für Baichuan-Stream
         $this->RegisterAttributeString("BaichuanBuffer", "");
 
         // Timer
@@ -122,7 +126,7 @@ class Reolink extends IPSModule
 
         // API-Schalter
         $enableWhiteLed    = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR          = $this->ReadPropertyBoolean("EnableApiIR");      
+        $enableIR          = $this->ReadPropertyBoolean("EnableApiIR");
         $enableEmail       = $this->ReadPropertyBoolean("EnableApiEmail");
         $enablePTZ         = $this->ReadPropertyBoolean("EnableApiPTZ");
         $enableFTP         = $this->ReadPropertyBoolean("EnableApiFTP");
@@ -137,6 +141,7 @@ class Reolink extends IPSModule
 
         $this->CreateOrUpdateApiVariablesUnified();
 
+        // Timer für API-Requests / Token
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
         if ($anyFeatureOn) {
             $this->GetToken();
