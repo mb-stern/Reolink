@@ -72,7 +72,9 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        $enabled = $this->ReadPropertyBoolean("InstanceStatus");
+        $enabled     = $this->ReadPropertyBoolean("InstanceStatus");
+        $useBaichuan = $this->ReadPropertyBoolean("UseBaichuan");
+
         if (!$enabled) {
             $this->SetStatus(104);
             foreach ([
@@ -85,7 +87,7 @@ class Reolink extends IPSModule
             $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
             $this->WriteAttributeBoolean("TokenRefreshing", false);
 
-            // NEU: Baichuan-Buffer leeren
+            // Baichuan-Buffer leeren
             $this->WriteAttributeString("BaichuanBuffer", "");
 
             return;
@@ -96,6 +98,7 @@ class Reolink extends IPSModule
         // Wenn Baichuan genutzt werden soll, sicherstellen, dass ein Parent verbunden ist
         if ($useBaichuan) {
             $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
+        }
 
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
@@ -118,20 +121,19 @@ class Reolink extends IPSModule
         }
 
         // API-Schalter
-        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
-        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
+        $enableWhiteLed    = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableIR          = $this->ReadPropertyBoolean("EnableApiIR");      
+        $enableEmail       = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ         = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enableFTP         = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSensitivity = $this->ReadPropertyBoolean("EnableApiSensitivity");
+        $enableSiren       = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableRecord      = $this->ReadPropertyBoolean("EnableApiRecord");
 
         $anyFeatureOn = (
             $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
             $enableFTP || $enableSensitivity || $enableSiren || $enableRecord
         );
-
 
         $this->CreateOrUpdateApiVariablesUnified();
 
@@ -144,7 +146,6 @@ class Reolink extends IPSModule
         }
 
         $this->UpdateOnlineStatus();
-
     }
 
     public function RequestAction($Ident, $Value)
