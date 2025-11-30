@@ -295,21 +295,30 @@ class Reolink extends IPSModule
 
     public function ReceiveData($JSONString)
     {
-        $data = json_decode($JSONString, true);
-        if (!is_array($data) || !isset($data['Buffer'])) {
-            $this->dbg('BAICHUAN', 'ReceiveData: ungültige Daten', $data ?? $JSONString);
+        $data = json_decode($JSONString);
+        if (!isset($data->Buffer)) {
             return;
         }
 
-        $buffer = $data['Buffer']; // direkt der Binärstring
-        $len    = strlen($buffer);
+        $buffer = $data->Buffer;
 
+        // Original (UTF-8 verunstaltete) Daten zu Debug-Zwecken
         $this->dbg('BAICHUAN', 'Rohdaten empfangen', [
-            'length' => $len,
-            'hex'    => bin2hex(substr($buffer, 0, 64))
+            'length' => strlen($buffer),
+            'hex'    => bin2hex($buffer),
         ]);
 
-        $this->BaichuanFeed($buffer);
+        // WICHTIG: zurück in Einzelbytes umwandeln
+        // UTF-8 → ISO-8859-1 (1 Byte = 1 Codepoint, also wieder f0 de bc ...)
+        $raw = utf8_decode($buffer);
+
+        $this->dbg('BAICHUAN', 'Dekodierte Rohdaten', [
+            'length' => strlen($raw),
+            'hex'    => bin2hex($raw),
+        ]);
+
+        // Jetzt erst in den Baichuan-Parser
+        $this->BaichuanFeed($raw);
     }
 
     private function BaichuanFeed(string $data): void
