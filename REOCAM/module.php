@@ -7,12 +7,15 @@ class Reolink extends IPSModule
     {
         parent::Create();
 
+        $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}'); // Client Socket GUID
+
         // Basis
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
         $this->RegisterPropertyString("Password", "");
         $this->RegisterPropertyString("StreamType", "sub");
         $this->RegisterPropertyBoolean("InstanceStatus", true);
+        $this->RegisterPropertyBoolean("UseBaichuan", true);
 
         // Sichtbarkeit / UI
         $this->RegisterPropertyBoolean("ShowMoveVariables", true);
@@ -50,6 +53,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeInteger("ExecLastTs", 0);
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
+        $this->RegisterAttributeString("BaichuanBuffer", "");
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -80,10 +84,18 @@ class Reolink extends IPSModule
             $this->WriteAttributeString("ApiToken", "");
             $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
             $this->WriteAttributeBoolean("TokenRefreshing", false);
+
+            // NEU: Baichuan-Buffer leeren
+            $this->WriteAttributeString("BaichuanBuffer", "");
+
             return;
         }
 
         $this->SetStatus(102);
+
+        // Wenn Baichuan genutzt werden soll, sicherstellen, dass ein Parent verbunden ist
+        if ($useBaichuan) {
+            $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
 
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
@@ -240,6 +252,45 @@ class Reolink extends IPSModule
             default:
                 throw new Exception("Invalid Ident");
         }
+    }
+
+    public function ReceiveData($JSONString)
+    {
+        $data = json_decode($JSONString, true);
+        if (!is_array($data) || !isset($data['Buffer'])) {
+            $this->dbg('BAICHUAN', 'ReceiveData: ungültige Daten', $data ?? null);
+            return;
+        }
+
+        // Rohdaten vom Client Socket (TCP 9000)
+        $buffer = $data['Buffer'];
+        $len    = strlen($buffer);
+
+        $this->dbg('BAICHUAN', 'Rohdaten empfangen', [
+            'length' => $len,
+            // nur die ersten Bytes als Hex, sonst wird das Debug zu groß
+            'hex'    => bin2hex(substr($buffer, 0, 64))
+        ]);
+
+        // NEU: Rohdaten in unseren internen Baichuan-Buffer schieben
+        $this->BaichuanFeed($buffer);
+    }
+
+    private function BaichuanFeed(string $chunk): void
+    {
+        // Bestehenden Restpuffer holen
+        $buffer = $this->ReadAttributeString('BaichuanBuffer');
+        $buffer .= $chunk;
+
+        // TODO: Später hier Baichuan-Frames herausparsen (Header + Länge + AES-Decrypt)
+
+        // Zum Start nur die Länge loggen
+        $this->dbg('BAICHUAN', 'Buffer-Update', [
+            'newLength' => strlen($buffer)
+        ]);
+
+        // Puffer zurückspeichern
+        $this->WriteAttributeString('BaichuanBuffer', $buffer);
     }
 
     public function SetInstanceStatus(bool $value): bool
