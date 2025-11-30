@@ -506,17 +506,22 @@ class Reolink extends IPSModule
         switch ($state) {
             case 'idle':
                 // HIER: echten Legacy-Login / Hello-Frame bauen
-                // -> aus reolink_aio / neolink portieren
-                $this->dbg('BAICHUAN', 'Sende ersten Handshake-Frame (TODO: echten Frame implementieren)');
+                $this->dbg('BAICHUAN', 'Sende ersten Handshake-Frame (noch Dummy, aber mit korrekter Länge)');
 
-                // Aktuell nur Dummy-Bytes, damit wir Aussendaten im Wireshark / Debug sehen
-                // Achtung: Frame ist NICHT gültig, muss später ersetzt werden!
-                $dummy = "\x14\x00\x00\x00" . "BAICHUAN-HELLO";
-                $this->BaichuanSendRaw($dummy);
+                // Dummy-Payload (später durch echten Baichuan-Login ersetzen)
+                $body = "BAICHUAN-HELLO";
+
+                // Baichuan-Rahmen: erste 4 Bytes = Gesamtlänge (Header+Payload) im Little Endian
+                // In unserem Fall gibt es noch keinen separaten Header, also nur 4 + strlen(body)
+                $totalLen = 4 + strlen($body);
+                $frame    = pack('V', $totalLen) . $body;
+
+                $this->BaichuanSendRaw($frame);
 
                 $this->WriteAttributeString('BaichuanState', 'handshake');
                 $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
                 break;
+
 
             case 'handshake':
                 // Prüfen, ob schon etwas im Buffer angekommen ist
