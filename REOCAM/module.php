@@ -291,14 +291,21 @@ class Reolink extends IPSModule
     public function ReceiveData($JSONString)
     {
         $data = json_decode($JSONString, true);
-        if (!isset($data['Buffer'])) {
+        if (!is_array($data) || !isset($data['Buffer'])) {
+            $this->dbg('BAICHUAN', 'ReceiveData: ungültige Daten', $data ?? null);
             return;
         }
 
-        $buf = base64_decode($data['Buffer']);
-        $this->dbg('BAICHUAN', 'Rohdaten empfangen | {"len":' . strlen($buf) . ',"hex":"' . bin2hex($buf) . '"}');
+        // KEIN base64_decode mehr!
+        $buffer = $data['Buffer'];
+        $len    = strlen($buffer);
 
-        $this->BaichuanFeed($buf);
+        $this->dbg('BAICHUAN', 'Rohdaten empfangen', [
+            'length' => $len,
+            'hex'    => bin2hex(substr($buffer, 0, 64))
+        ]);
+
+        $this->BaichuanFeed($buffer);
     }
 
     private function BaichuanFeed(string $data): void
@@ -379,15 +386,20 @@ class Reolink extends IPSModule
     private function BaichuanSendRaw(string $data): void
     {
         $len = strlen($data);
-        $this->dbg('BAICHUAN', sprintf('Sende Rohdaten | {"length":%d,"hex":"%s"}', $len, bin2hex($data)));
-
-        $json = json_encode([
-            'DataID' => '{F84D4F5F-7070-46D4-A8A5-DF9770542648}', // I/O-Interface-ID von IPS-Clientsockets
-            'Buffer' => base64_encode($data),
+        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
+            'length' => $len,
+            'hex'    => bin2hex(substr($data, 0, 64))
         ]);
-        $this->SendDataToParent($json);
-    }
 
+        $send = [
+            // Standard-DataID für Client Socket-Kinder
+            'DataID' => '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}',
+            // Rohdaten direkt, NICHT base64
+            'Buffer' => $data
+        ];
+
+        $this->SendDataToParent(json_encode($send));
+    }
 
     private function BaichuanBuildFrame(int $cmdId, string $body, int $flags = 0, int $channel = 0): string
     {
