@@ -292,12 +292,11 @@ class Reolink extends IPSModule
     {
         $data = json_decode($JSONString, true);
         if (!is_array($data) || !isset($data['Buffer'])) {
-            $this->dbg('BAICHUAN', 'ReceiveData: ungültige Daten', $data ?? null);
+            $this->dbg('BAICHUAN', 'ReceiveData: ungültige Daten', $data ?? $JSONString);
             return;
         }
 
-        // KEIN base64_decode mehr!
-        $buffer = $data['Buffer'];
+        $buffer = $data['Buffer']; // direkt der Binärstring
         $len    = strlen($buffer);
 
         $this->dbg('BAICHUAN', 'Rohdaten empfangen', [
@@ -391,14 +390,25 @@ class Reolink extends IPSModule
             'hex'    => bin2hex(substr($data, 0, 64))
         ]);
 
+        // Paket für den Client Socket bauen
         $send = [
-            // Standard-DataID für Client Socket-Kinder
+            // DataID für Client-Socket-Kinder
             'DataID' => '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}',
-            // Rohdaten direkt, NICHT base64
+            // Rohdaten (Binärstring) als Buffer
             'Buffer' => $data
         ];
 
-        $this->SendDataToParent(json_encode($send));
+        // WICHTIG: Immer json_encode, niemals das Array direkt schicken!
+        $json = json_encode($send);
+        if ($json === false) {
+            $this->dbg('BAICHUAN', 'json_encode fehlgeschlagen in BaichuanSendRaw', [
+                'json_error' => json_last_error(),
+                'json_msg'   => json_last_error_msg()
+            ]);
+            return;
+        }
+
+        $this->SendDataToParent($json);
     }
 
     private function BaichuanBuildFrame(int $cmdId, string $body, int $flags = 0, int $channel = 0): string
