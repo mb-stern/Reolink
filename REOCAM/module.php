@@ -79,35 +79,59 @@ class Reolink extends IPSModule
     {
         parent::ApplyChanges();
 
-        $enabled     = $this->ReadPropertyBoolean("InstanceStatus");
+        $enabled = $this->ReadPropertyBoolean("InstanceStatus");
 
         if (!$enabled) {
             $this->SetStatus(104);
+
             foreach ([
                 "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
                 "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
+
             $this->WriteAttributeString("ApiToken", "");
             $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
             $this->WriteAttributeBoolean("TokenRefreshing", false);
 
-            // Baichuan-Buffer leeren
+            // Baichuan: Buffer & State zurücksetzen, Timer stoppen
             $this->WriteAttributeString("BaichuanBuffer", "");
+            $this->WriteAttributeString("BaichuanState", "idle");
+            $this->SetTimerInterval("BaichuanInitTimer", 0);
 
             return;
         }
 
         $this->SetStatus(102);
 
-         $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
+        // -----------------------
+        // Baichuan aktivieren/deaktivieren
+        // -----------------------
+        if ($this->ReadPropertyBoolean("UseBaichuan")) {
+            $this->dbg('BAICHUAN', 'Baichuan aktiviert, starte Init-Timer');
 
-        // Ab hier: dein bisheriger Inhalt (Hook, Variablen, API usw.)
+            // Beim (Re-)Aktivieren sauber neu anfangen
+            $this->WriteAttributeString("BaichuanState", "idle");
+            $this->WriteAttributeString("BaichuanBuffer", "");
+
+            // kurzer Delay, damit Parent-IO Zeit hat zum Verbinden
+            $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
+        } else {
+            $this->dbg('BAICHUAN', 'Baichuan deaktiviert, stoppe Init-Timer');
+            $this->SetTimerInterval('BaichuanInitTimer', 0);
+        }
+
+        // -----------------------
+        // Ab hier dein bisheriger Inhalt (Hook, Variablen, API usw.)
+        // -----------------------
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
-            $this->dbg('WEBHOOK', 'Hook init', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
+            $this->dbg('WEBHOOK', 'Hook init', [
+                'path' => $hookPath,
+                'full' => $this->BuildWebhookFullUrl($hookPath)
+            ]);
         }
 
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
@@ -280,7 +304,12 @@ class Reolink extends IPSModule
 
     /**
      * Fügt neue Baichuan-Bytes in den internen Puffer ein
-     * und versucht, vollständige Frames zu verarbeiten.
+     * und versucht, vollständige Frames zu extrahieren.
+     *
+     * Aktuell wird sehr generisch davon ausgegangen, dass die ersten 4 Bytes
+     * eines Frames eine (little-endian) Länge enthalten.
+     * Das ist ein bewusst generisches Gerüst, das du an das echte
+     * Baichuan-Headerlayout anpassen musst (reolink_aio / neolink).
      */
     private function BaichuanFeed(string $chunk): void
     {
@@ -291,12 +320,115 @@ class Reolink extends IPSModule
             'length' => strlen($buffer)
         ]);
 
-        // TODO: Hier später Frames herausparsen (Header+Länge etc.)
-        // Solange wir den Parser noch nicht haben, speichern wir nur.
-        // Du kannst hier schon mal eine Dummy-Analyse machen:
-        // z.B. nach einem bekannten Magic-Byte suchen.
+        $frames = [];
 
+        // Solange genug Daten für mindestens die Längenangabe da sind:
+        while (strlen($buffer) >= 4) {
+            // Erste 4 Bytes als Länge interpretieren (little endian)
+            $lenBytes = substr($buffer, 0, 4);
+            $unpacked = @unpack('Vlen', $lenBytes);
+            $len      = (int)($unpacked['len'] ?? 0);
+
+            // Grobe Plausibilitätsprüfung, damit wir bei Müll versuchen zu resyncen
+            if ($len <= 0 || $len > 4 * 1024 * 1024) {
+                $this->dbg('BAICHUAN', 'Ungültige Frame-Länge, versuche Resync', [
+                    'len' => $len,
+                    'hex' => bin2hex($lenBytes)
+                ]);
+
+                // ein Byte verwerfen und erneut versuchen
+                $buffer = substr($buffer, 1);
+                continue;
+            }
+
+            // Haben wir schon den kompletten Frame?
+            if (strlen($buffer) < $len) {
+                // Noch nicht vollständig -> auf nächste ReceiveData warten
+                break;
+            }
+
+            // Vollständigen Frame ausschneiden
+            $frame  = substr($buffer, 0, $len);
+            $buffer = substr($buffer, $len);
+
+            $frames[] = $frame;
+        }
+
+        // Restpuffer speichern
         $this->WriteAttributeString('BaichuanBuffer', $buffer);
+
+        // Einzelne Frames verarbeiten
+        foreach ($frames as $idx => $frame) {
+            $this->BaichuanHandleFrame($frame);
+        }
+    }
+
+        /**
+     * Verarbeitet einen einzelnen (bereits herausgeschnittenen) Baichuan-Frame.
+     *
+     * Aktuell:
+     *  - loggt Header und Payload (Hex + ggf. Text)
+     *  - versucht grob zu erkennen, ob es XML/JSON ist
+     *  - TODO: Login-/Event-Logik implementieren
+     */
+    private function BaichuanHandleFrame(string $frame): void
+    {
+        $len = strlen($frame);
+
+        if ($len < 16) {
+            $this->dbg('BAICHUAN', 'Frame zu kurz, ignoriere', [
+                'len' => $len,
+                'hex' => bin2hex($frame)
+            ]);
+            return;
+        }
+
+        // Ganz grob: ersten 16 Bytes als "Header", Rest als "Payload"
+        $header  = substr($frame, 0, 16);
+        $payload = substr($frame, 16);
+
+        $this->dbg('BAICHUAN', 'Frame empfangen', [
+            'len'         => $len,
+            'hdr_hex'     => bin2hex($header),
+            'payload_len' => strlen($payload),
+            'payload_hex' => bin2hex(substr($payload, 0, 64))
+        ]);
+
+        // Versuch, den Payload lesbar zu machen (falls nicht verschlüsselt / obfuskiert)
+        $textPreview = '';
+        $isText      = false;
+
+        // Wenn der Payload druckbare Zeichen enthält, kurz als Text loggen
+        if ($payload !== '' && preg_match('/[[:print:]]/', $payload)) {
+            $isText      = true;
+            $textPreview = mb_substr(preg_replace('/[^\P{C}\n\r\t]/u', '.', $payload), 0, 200, 'UTF-8');
+        }
+
+        if ($isText) {
+            $this->dbg('BAICHUAN', 'Payload (Textvorscha u)', $textPreview);
+        }
+
+        // Grobe Erkennung von XML / JSON
+        $trim = ltrim($payload);
+        if (str_starts_with($trim, '<')) {
+            $this->dbg('BAICHUAN', 'Payload sieht nach XML aus (Baichuan-Cmd?)');
+            // TODO: XML parsen und je nach CmdId/Element State/Variablen setzen
+        } elseif (str_starts_with($trim, '{') || str_starts_with($trim, '[')) {
+            $this->dbg('BAICHUAN', 'Payload sieht nach JSON aus');
+            $json = @json_decode($trim, true);
+            if (is_array($json)) {
+                $this->dbg('BAICHUAN', 'JSON-Parsed', $json);
+                // TODO: hier z.B. AI-/Motion-Events in IPS-Variablen mappen
+            }
+        }
+
+        // TODO:
+        //  - Header auswerten (Cmd-ID, Stream-ID, Flags, ...)
+        //  - Login-Response erkennen:
+        //      -> bei Erfolg: $this->WriteAttributeString('BaichuanState', 'ready');
+        //      -> ggf. Session/Keepalive-Frame zurücksenden
+        //  - Push-Events (AI/Motion) erkennen und auf bestehende Variablen (Person/Tier/Fahrzeug/Bewegung)
+        //    bzw. neue Variablen abbilden.
     }
 
     /**
@@ -323,6 +455,13 @@ class Reolink extends IPSModule
      */
     public function InitBaichuan(): void
     {
+        // Fallback: wenn Baichuan abgeschaltet wurde, Timer stoppen
+        if (!$this->ReadPropertyBoolean("UseBaichuan")) {
+            $this->dbg('BAICHUAN', 'InitBaichuan: UseBaichuan=false, stoppe Timer');
+            $this->SetTimerInterval('BaichuanInitTimer', 0);
+            return;
+        }
+
         $ip   = $this->ReadPropertyString('CameraIP');
         $user = $this->ReadPropertyString('Username');
         $pass = $this->ReadPropertyString('Password');
@@ -334,19 +473,44 @@ class Reolink extends IPSModule
             return;
         }
 
+        // -----------------------
+        // Parent-IO (Client Socket) prüfen
+        // -----------------------
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'InitBaichuan: kein Parent-IO verbunden (Client Socket nicht zugeordnet?)');
+            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+            return;
+        }
+
+        $parent = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'InitBaichuan: Parent-IO nicht online', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+            return;
+        }
+
+        // -----------------------
+        // State-Maschine
+        // -----------------------
         $state = $this->ReadAttributeString('BaichuanState');
         $this->dbg('BAICHUAN', 'InitBaichuan-State', ['state' => $state]);
 
         switch ($state) {
             case 'idle':
-                // Hier solltest du den "Legacy Login" / ersten Hello-Frame bauen.
-                // Die genaue Struktur musst du aus z.B. reolink_baichuan / reolink_aio portieren.
-                // Typisch: fester Header + MD5/Hash deines Passwortes.
-
+                // HIER: echten Legacy-Login / Hello-Frame bauen
+                // -> aus reolink_aio / neolink portieren
                 $this->dbg('BAICHUAN', 'Sende ersten Handshake-Frame (TODO: echten Frame implementieren)');
 
-                // Beispiel: aktuell nur Dummy-Bytes senden, damit du sie im Debug siehst.
-                // Achtung: der Frame ist NICHT gültig, du musst ihn später ersetzen!
+                // Aktuell nur Dummy-Bytes, damit wir Aussendaten im Wireshark / Debug sehen
+                // Achtung: Frame ist NICHT gültig, muss später ersetzt werden!
                 $dummy = "\x14\x00\x00\x00" . "BAICHUAN-HELLO";
                 $this->BaichuanSendRaw($dummy);
 
@@ -355,17 +519,19 @@ class Reolink extends IPSModule
                 break;
 
             case 'handshake':
-                // Hier könntest du prüfen, ob im Buffer schon eine Login-Antwort liegt
-                // und dann den "modernen" Login-Frame senden.
-                // Solange der Parser noch fehlt, loggen wir nur.
+                // Prüfen, ob schon etwas im Buffer angekommen ist
+                $buf = $this->ReadAttributeString('BaichuanBuffer');
+                $bufLen = strlen($buf);
 
-                $bufLen = strlen($this->ReadAttributeString('BaichuanBuffer'));
-                $this->dbg('BAICHUAN', 'Handshake läuft, Buffer-Länge', ['len' => $bufLen]);
+                $this->dbg('BAICHUAN', 'Handshake läuft, Buffer-Länge', [
+                    'len'   => $bufLen,
+                    'hex'   => bin2hex(substr($buf, 0, 32))
+                ]);
 
-                // TODO: Wenn gültige Login-Antwort erkannt:
-                //   - zweiten Login/Session-Frame senden
-                //   - State auf 'ready'
-                //   - InitTimer in Keepalive-Ping umwandeln
+                // TODO:
+                //  - An dieser Stelle Login-Antwort analysieren (über BaichuanHandleFrame)
+                //  - Bei Erfolg: zweiten Login/Session-Frame senden
+                //  - State -> 'ready'
 
                 // vorerst retry alle 10s
                 $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
