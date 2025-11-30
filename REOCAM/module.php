@@ -5,6 +5,11 @@ class Reolink extends IPSModule
 {
 
     private $BaichuanSeq = 1;
+    private const BAICHUAN_MAGIC           = 0x0ABCDEF0; // f0 de bc 0a
+    // "Class"-Felder (werden als Hex-String "1464", "1465", "1466" gelesen)
+    private const BAICHUAN_CLASS_MODERN    = 0x6414;      // -> Bytes 14 64 -> "1464"
+    private const BAICHUAN_CLASS_NONCE     = 0x6514;      // -> "1465"
+    private const BAICHUAN_CLASS_HEADER20  = 0x6614;      // -> "1466"
 
     public function Create()
     {
@@ -312,73 +317,84 @@ class Reolink extends IPSModule
         $buffer = $this->ReadAttributeString('BaichuanBuffer') ?? '';
         $buffer .= $data;
 
+        $magicLE = pack('V', self::BAICHUAN_MAGIC);
+
         while (true) {
-            if (strlen($buffer) < 4) {
-                break; // noch nicht mal Length-Feld komplett
-            }
-
-            $lenBytes = substr($buffer, 0, 4);
-            $unpacked = @unpack('Vlen', $lenBytes);
-            $len      = (int)($unpacked['len'] ?? 0);
-
-            if ($len <= 0 || $len > 0x100000) {
-                // Irgendwas läuft völlig schief, Buffer wegwerfen
-                $this->dbg('BAICHUAN', 'Ungültige Frame-Länge, Buffer verwerfen | {"len":' . $len . '}');
-                $buffer = '';
+            // Mindestens 20 Byte nötig (kleinste Headergröße)
+            if (strlen($buffer) < 20) {
                 break;
             }
 
-            if (strlen($buffer) < $len) {
-                // Frame noch nicht vollständig
+            // Auf Magic-Header synchronisieren
+            if (strncmp($buffer, $magicLE, 4) !== 0) {
+                $pos = strpos($buffer, $magicLE);
+                if ($pos === false) {
+                    $this->dbg('BAICHUAN', 'Kein gültiger Magic-Header im Buffer, verwerfe alles');
+                    $buffer = '';
+                    break;
+                }
+
+                if ($pos > 0) {
+                    $this->dbg('BAICHUAN', 'Magic-Header nicht am Anfang, verwerfe ' . $pos . ' Byte Pre-Daten');
+                    $buffer = substr($buffer, $pos);
+                    if (strlen($buffer) < 20) {
+                        break;
+                    }
+                }
+            }
+
+            // Header-Felder
+            $cmdId   = unpack('V', substr($buffer, 4, 4))[1];
+            $bodyLen = unpack('V', substr($buffer, 8, 4))[1];
+
+            // class als Hex-String wie in reolink_aio
+            $classHex = bin2hex(substr($buffer, 18, 2));
+
+            // Headerlänge anhand der Klasse bestimmen
+            // "1466" -> 20 Byte, sonst 24 Byte (payload_offset vorhanden)
+            $lenHeader = ($classHex === '1466') ? 20 : 24;
+
+            $totalLen = $lenHeader + $bodyLen;
+
+            if (strlen($buffer) < $totalLen) {
+                // Noch nicht kompletter Frame da
                 break;
             }
 
-            $frame = substr($buffer, 4, $len - 4);
-            $buffer = substr($buffer, $len);
+            $frame = substr($buffer, 0, $totalLen);
+            $buffer = substr($buffer, $totalLen);
 
-            $this->BaichuanHandleFrame($frame);
+            $body = substr($frame, $lenHeader);
+
+            // Für Debug eine kompakte Zusammenfassung
+            $this->BaichuanHandleFrame($cmdId, $classHex, $body, $bodyLen);
         }
 
         $this->WriteAttributeString('BaichuanBuffer', $buffer);
     }
 
-    private function BaichuanHandleFrame(string $frame): void
+    private function BaichuanHandleFrame(int $cmdId, string $classHex, string $body, int $bodyLen): void
     {
-        if (strlen($frame) < 16) {
-            $this->dbg('BAICHUAN', 'Frame zu kurz');
-            return;
-        }
-
-        // Header wieder so interpretieren, wie wir ihn gebaut haben.
-        // Wenn du das Layout anpasst, MUSST du das hier spiegeln.
-
-        $magic   = substr($frame, 0, 2);
-        $version = @unpack('vver', substr($frame, 2, 2))['ver'] ?? 0;
-        $cmdId   = @unpack('Vcmd', substr($frame, 4, 4))['cmd'] ?? 0;
-        $seq     = @unpack('Vseq', substr($frame, 8, 4))['seq'] ?? 0;
-        $flags   = @unpack('Vflags', substr($frame, 12, 4))['flags'] ?? 0;
-        $channel = @unpack('Vch', substr($frame, 16, 4))['ch'] ?? 0;
-
-        $body = substr($frame, 20);
-
-        $this->dbg('BAICHUAN', sprintf(
-            'Frame empfangen | {"cmd":%d,"seq":%d,"ver":%d,"flags":%d,"ch":%d}',
-            $cmdId,
-            $seq,
-            $version,
-            $flags,
-            $channel
-        ));
+        $this->dbg(
+            'BAICHUAN',
+            sprintf(
+                'Frame empfangen | cmd=%d, class=%s, bodyLen=%d',
+                $cmdId,
+                $classHex,
+                $bodyLen
+            ),
+            [
+                'body_hex' => bin2hex(substr($body, 0, 64)),
+            ]
+        );
 
         $state = $this->ReadAttributeString('BaichuanState');
 
-        // Grobe State-Logik
         if ($state === 'handshake') {
-            $this->BaichuanHandleHandshake($cmdId, $body);
+            $this->BaichuanHandleHandshake($cmdId, $body, $classHex);
             return;
         }
 
-        // Danach: Events etc.
         $this->BaichuanHandleEventOrResponse($cmdId, $body);
     }
 
@@ -417,115 +433,92 @@ class Reolink extends IPSModule
         CSCK_SendText($parentId, $data);
     }
 
-    private function BaichuanBuildFrame(int $cmdId, string $body, int $flags = 0, int $channel = 0): string
-    {
-        // ------------------------------------------------------------
-        // WICHTIG:
-        // Header-Layout ist hier nur eine "sinnvolle Annahme".
-        // Du musst das gegen reolink_aio / neolink einmal abgleichen
-        // und ggf. anpassen (Reihenfolge, Endianness, zusätzliche Felder).
-        //
-        // Für modernes Baichuan (E-Serie, FW 3.x) ist bekannt:
-        //  * Länge (4 Byte, little endian)
-        //  * "bc" / Magic + Version
-        //  * CmdID, Seq, evtl. Flags / Channel
-        //  * Body = meist XML
-        // ------------------------------------------------------------
+    private function BaichuanBuildFrame(
+        int $cmdId,
+        string $body,
+        int $class = self::BAICHUAN_CLASS_MODERN,
+        ?int $payloadOffset = 0,
+        int $channelId = 0,
+        int $streamType = 0,
+        int $msgNum = 0,
+        int $responseCode = 0
+    ): string {
+        // Vorerst KEINE Verschlüsselung – wir wollen erst sehen, was kommt.
+        $bodyBytes = $body;
+        $bodyLen   = strlen($bodyBytes);
 
-        $seq = $this->BaichuanSeq++;
-        if ($this->BaichuanSeq > 0x7FFFFFFF) {
-            $this->BaichuanSeq = 1;
+        // Wenn es keinen Body gibt → Header-Only (kein payloadOffset-Feld, 20-Byte-Header)
+        if ($bodyLen === 0) {
+            $payloadOffset = null;
+        } elseif ($payloadOffset === null) {
+            // Bei Body standardmäßig: payload startet direkt nach Header
+            $payloadOffset = 0;
         }
 
-        // Beispiel-Header (PSEUDO!):
-        // 4B length
-        // 2B magic 'b','c'   (0x62,0x63)
-        // 2B version         (z.B. 0x0003)  -> TODO: prüfen
-        // 4B cmdId           (uint32 LE)
-        // 4B seq             (uint32 LE)
-        // 4B flags           (uint32 LE)
-        // 4B channel         (uint32 LE)
-
-        $magic   = "bc";      // TODO: gegen echte Implementation checken
-        $version = 3;         // FW 3.x -> wahrscheinlich Protokoll v3
-
+        // Header gemäß neolink / reolink_aio:
+        // magic(u32) | cmd_id(u32) | body_len(u32) | ch(u8) | stream(u8) |
+        // msg_num(u16) | resp_code(u16) | class(u16) | [payload_offset(u32)]
         $header  = '';
-        $header .= $magic;                     // 2 Byte
-        $header .= pack('v', $version);       // 2 Byte, uint16 LE
-        $header .= pack('V', $cmdId);         // 4 Byte
-        $header .= pack('V', $seq);           // 4 Byte
-        $header .= pack('V', $flags);         // 4 Byte
-        $header .= pack('V', $channel);       // 4 Byte
+        $header .= pack('V', self::BAICHUAN_MAGIC);  // magic
+        $header .= pack('V', $cmdId);                // cmd_id
+        $header .= pack('V', $bodyLen);             // body_len
+        $header .= pack('C', $channelId);           // channel_id
+        $header .= pack('C', $streamType);          // stream_type
+        $header .= pack('v', $msgNum);              // msg_num
+        $header .= pack('v', $responseCode);        // response_code
+        $header .= pack('v', $class);               // class (z.B. 0x6614 -> "1466")
 
-        $frameWithoutLen = $header . $body;
+        if ($payloadOffset !== null) {
+            $header .= pack('V', $payloadOffset);   // payload_offset
+        }
 
-        // Länge = 4 (Len-Feld selbst) + Header + Body
-        $totalLen = 4 + strlen($frameWithoutLen);
-        $lenBytes = pack('V', $totalLen);
-
-        return $lenBytes . $frameWithoutLen;
+        // Wichtig: KEIN extra Längenprefix – das ist schon der komplette Frame.
+        return $header . $bodyBytes;
     }
 
     private function BaichuanSendLoginRequest(): void
     {
-        // TODO: XML gegen reolink_aio/neolink checken.
-        // Baichuan nutzt XML, z.B. ähnlich:
-        //
-        // <body>
-        //   <Login>
-        //      <username>...</username>
-        //      <password>...</password>  (ggf. Hash!)
-        //      <clientType>PC</clientType>
-        //      <feature>Baichuan</feature>
-        //   </Login>
-        // </body>
+        // Modernes Protokoll: Nonce-Request
+        // Analog zu reolink_aio: cmd_id=1, enc_type=BC, message_class="1465"
+        // Wir schicken vorerst NUR den Header (kein Body, keine Verschlüsselung),
+        // um überhaupt eine Antwort zu provozieren und Frames im Debug zu sehen.
 
-        $username = $this->ReadPropertyString('Username');
-        $password = $this->ReadPropertyString('Password');
-
-        // Platzhalter-Variante: Klartext-Passwort im XML
-        // (bei modernen FW wird i.d.R. ein Hash/NONCE verwendet → unbedingt Referenzcode checken!)
-        $xml  = '<?xml version="1.0" encoding="UTF-8"?>';
-        $xml .= '<body>';
-        $xml .= '<Login version="1.1">';
-        $xml .= '<username>' . htmlspecialchars($username, ENT_QUOTES | ENT_XML1, 'UTF-8') . '</username>';
-        $xml .= '<password>' . htmlspecialchars($password, ENT_QUOTES | ENT_XML1, 'UTF-8') . '</password>';
-        $xml .= '<clientType>PC</clientType>';
-        $xml .= '<clientVer>3.1.0</clientVer>';
-        $xml .= '</Login>';
-        $xml .= '</body>';
-
-        // CmdID 1 = Login (so wird es üblicherweise verwendet – bitte gegen Referenz prüfen)
         $cmdId = 1;
+        $body  = '';
 
-        $frame = $this->BaichuanBuildFrame($cmdId, $xml);
-        $this->dbg('BAICHUAN', 'Sende Login-Request');
+        // class "1465" -> numerisch 0x6514 (siehe Konstanten oben),
+        // Header-Only -> payloadOffset=null -> 20-Byte-Header
+        $frame = $this->BaichuanBuildFrame(
+            $cmdId,
+            $body,
+            self::BAICHUAN_CLASS_NONCE,
+            null,   // payloadOffset
+            0,      // channelId
+            0,      // streamType
+            0,      // msgNum
+            0       // responseCode
+        );
+
+        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only)');
         $this->BaichuanSendRaw($frame);
     }
 
-    public function BaichuanHandleHandshake(int $cmdId, string $body): void
+    public function BaichuanHandleHandshake(int $cmdId, string $body, string $classHex = ''): void
     {
-        // TODO: Prüfen, welcher cmdId die Login-Antwort ist.
-        // Häufig ist Request = 1, Response = 2 o.ä.
-        if ($cmdId !== 2) {
-            $this->dbg('BAICHUAN', 'Handshake: Unerwarteter cmdId ' . $cmdId);
-            return;
-        }
+        $this->dbg(
+            'BAICHUAN',
+            'Handshake-Frame empfangen',
+            [
+                'cmd'      => $cmdId,
+                'class'    => $classHex,
+                'body_hex' => bin2hex(substr($body, 0, 128)),
+            ]
+        );
 
-        $xml = trim($body);
-
-        $this->dbg('BAICHUAN', 'Handshake-Antwort XML | ' . $xml);
-
-        // TODO: XML parsen, Session/Nonce/etc. extrahieren
-        // $doc = @simplexml_load_string($xml);
-        // ...
-
-        // Wenn alles gut:
+        // TODO: Hier später Nonce aus XML ziehen & echten Login bauen.
+        // Für jetzt nur "ready" schalten, damit Events/Responses weiterlaufen.
         $this->WriteAttributeString('BaichuanState', 'ready');
-        $this->dbg('BAICHUAN', 'Handshake abgeschlossen, BaichuanState=ready');
-
-        // Optional: direkt Event-Subscription schicken
-        // $this->BaichuanSubscribeEvents();
+        $this->dbg('BAICHUAN', 'Handshake abgeschlossen (Dummy), BaichuanState=ready');
     }
 
     private function BaichuanHandleEventOrResponse(int $cmdId, string $body): void
