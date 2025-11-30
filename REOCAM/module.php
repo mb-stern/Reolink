@@ -58,6 +58,7 @@ class Reolink extends IPSModule
 
         // NEU: Buffer für Baichuan
         $this->RegisterAttributeString("BaichuanBuffer", "");
+        $this->RegisterAttributeString('BaichuanState', 'idle');
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -70,6 +71,8 @@ class Reolink extends IPSModule
         $this->RegisterTimer("PollingTimer",      0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer",   0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\'], false);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
+
+        $this->RegisterTimer('BaichuanInitTimer', 0, 'REOCAM_InitBaichuan($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges()
@@ -97,6 +100,8 @@ class Reolink extends IPSModule
         }
 
         $this->SetStatus(102);
+
+         $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
 
         // Ab hier: dein bisheriger Inhalt (Hook, Variablen, API usw.)
         $hookPath = $this->ReadAttributeString("CurrentHook");
@@ -273,16 +278,112 @@ class Reolink extends IPSModule
         $this->BaichuanFeed($buffer);
     }
 
+    /**
+     * Fügt neue Baichuan-Bytes in den internen Puffer ein
+     * und versucht, vollständige Frames zu verarbeiten.
+     */
     private function BaichuanFeed(string $chunk): void
     {
         $buffer = $this->ReadAttributeString('BaichuanBuffer');
         $buffer .= $chunk;
 
-        $this->dbg('BAICHUAN', 'Buffer-Update', [
-            'newLength' => strlen($buffer)
+        $this->dbg('BAICHUAN', 'Buffer-Update vor Parse', [
+            'length' => strlen($buffer)
         ]);
 
+        // TODO: Hier später Frames herausparsen (Header+Länge etc.)
+        // Solange wir den Parser noch nicht haben, speichern wir nur.
+        // Du kannst hier schon mal eine Dummy-Analyse machen:
+        // z.B. nach einem bekannten Magic-Byte suchen.
+
         $this->WriteAttributeString('BaichuanBuffer', $buffer);
+    }
+
+    /**
+     * Sendet rohe Baichuan-Daten (binär) an den Client Socket.
+     */
+    private function BaichuanSendRaw(string $payload): void
+    {
+        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
+            'length' => strlen($payload),
+            'hex'    => bin2hex(substr($payload, 0, 64))
+        ]);
+
+        $tx = [
+            'DataID' => '{79827379-F36E-4ADA-8A95-5F8D1DC92FA9}', // Simple TX
+            'Buffer' => $payload
+        ];
+
+        $this->SendDataToParent(json_encode($tx));
+    }
+
+        /**
+     * Initialisiert die Baichuan-Verbindung (Handshake/Login).
+     * Wird vom Timer "BaichuanInitTimer" aufgerufen.
+     */
+    public function InitBaichuan(): void
+    {
+        $ip   = $this->ReadPropertyString('CameraIP');
+        $user = $this->ReadPropertyString('Username');
+        $pass = $this->ReadPropertyString('Password');
+
+        if ($ip === '' || $user === '' || $pass === '') {
+            $this->dbg('BAICHUAN', 'InitBaichuan: IP/User/Pass nicht gesetzt');
+            // Timer gelegentlich nochmal probieren
+            $this->SetTimerInterval('BaichuanInitTimer', 30 * 1000);
+            return;
+        }
+
+        $state = $this->ReadAttributeString('BaichuanState');
+        $this->dbg('BAICHUAN', 'InitBaichuan-State', ['state' => $state]);
+
+        switch ($state) {
+            case 'idle':
+                // Hier solltest du den "Legacy Login" / ersten Hello-Frame bauen.
+                // Die genaue Struktur musst du aus z.B. reolink_baichuan / reolink_aio portieren.
+                // Typisch: fester Header + MD5/Hash deines Passwortes.
+
+                $this->dbg('BAICHUAN', 'Sende ersten Handshake-Frame (TODO: echten Frame implementieren)');
+
+                // Beispiel: aktuell nur Dummy-Bytes senden, damit du sie im Debug siehst.
+                // Achtung: der Frame ist NICHT gültig, du musst ihn später ersetzen!
+                $dummy = "\x14\x00\x00\x00" . "BAICHUAN-HELLO";
+                $this->BaichuanSendRaw($dummy);
+
+                $this->WriteAttributeString('BaichuanState', 'handshake');
+                $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+                break;
+
+            case 'handshake':
+                // Hier könntest du prüfen, ob im Buffer schon eine Login-Antwort liegt
+                // und dann den "modernen" Login-Frame senden.
+                // Solange der Parser noch fehlt, loggen wir nur.
+
+                $bufLen = strlen($this->ReadAttributeString('BaichuanBuffer'));
+                $this->dbg('BAICHUAN', 'Handshake läuft, Buffer-Länge', ['len' => $bufLen]);
+
+                // TODO: Wenn gültige Login-Antwort erkannt:
+                //   - zweiten Login/Session-Frame senden
+                //   - State auf 'ready'
+                //   - InitTimer in Keepalive-Ping umwandeln
+
+                // vorerst retry alle 10s
+                $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+                break;
+
+            case 'ready':
+                // Verbindung steht, hier könntest du Keepalive senden.
+                $this->dbg('BAICHUAN', 'Ready - ggf. Keepalive senden');
+                // TODO: echten Keepalive-Frame senden
+                $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
+                break;
+
+            default:
+                $this->dbg('BAICHUAN', 'Unbekannter BaichuanState, resette auf idle', ['state' => $state]);
+                $this->WriteAttributeString('BaichuanState', 'idle');
+                $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+                break;
+        }
     }
 
     public function SetInstanceStatus(bool $value): bool
