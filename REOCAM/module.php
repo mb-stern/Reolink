@@ -475,7 +475,7 @@ class Reolink extends IPSModule
         $this->BaichuanSendRaw($frame);
     }
 
-    private function BaichuanHandleHandshake(int $cmdId, string $body): void
+    public function BaichuanHandleHandshake(int $cmdId, string $body): void
     {
         // TODO: Prüfen, welcher cmdId die Login-Antwort ist.
         // Häufig ist Request = 1, Response = 2 o.ä.
