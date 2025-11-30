@@ -540,6 +540,28 @@ class Reolink extends IPSModule
         }
     }
 
+    private function InitBaichuan(): void
+    {
+        $state = $this->ReadAttributeString('BaichuanState');
+        $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
+
+        switch ($state) {
+            case '':
+            case 'idle':
+                $this->BaichuanSendLoginRequest();
+                $this->WriteAttributeString('BaichuanState', 'handshake');
+                $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+                break;
+
+            case 'handshake':
+                $this->BaichuanCheckHandshake();
+                break;
+
+            case 'ready':
+                // Nichts tun, oder evtl. Keepalive prüfen
+                break;
+        }
+    }
 
 
 
