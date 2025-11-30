@@ -385,6 +385,7 @@ class Reolink extends IPSModule
         int $encrypt,
         int $messId
     ): void {
+        // Rohdaten-Log
         $this->dbg(
             'BAICHUAN',
             sprintf(
@@ -400,14 +401,26 @@ class Reolink extends IPSModule
             ]
         );
 
+        // **WICHTIG**: ab hier IMMER decrypten (oder versuchen)
+        $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
+
+        if ($xml !== '') {
+            // Debug zur Kontrolle
+            $this->dbg('BAICHUAN', 'Frame-decrypted-xml', ['cmd' => $cmdId, 'xml' => $xml]);
+
+            // Optional: eine Debug-String-Variable in der Instanz befüllen
+            $this->SetValueStringSafe('LastBaichuanXML', $xml);
+        }
+
         $state = $this->ReadAttributeString('BaichuanState');
 
         if ($state === 'handshake' && $cmdId === 1) {
-            $this->BaichuanHandleHandshake($cmdId, $body, $classHex, $encrypt, $messId);
+            $this->BaichuanHandleHandshakeXml($xml, $encrypt, $messId);
             return;
         }
 
-        $this->BaichuanHandleEventOrResponse($cmdId, $body);
+        // Ab hier: "Normalbetrieb" – Events, Antworten, usw.
+        $this->BaichuanHandleEventOrResponseXml($cmdId, $xml);
     }
 
     private function BaichuanSendRaw(string $data): void
@@ -684,30 +697,66 @@ class Reolink extends IPSModule
 
     private function BaichuanDecrypt(int $encrypt, int $messId, string $body): string
     {
-        // Pseudocode-Struktur:
-        switch ($encrypt) {
-            case 0x12DC:
-                // BC / XOR Modus
-                // - mit XML_KEY
-                // - Offset abhängig von messId / Position
-                // - ergibt am Ende Klartext-XML
-                return $this->DecryptBC($body, $messId);
+        // Noch kein echter Decrypt – nur Struktur.
+        // So siehst du, DASS der Weg funktioniert.
 
-            case 0x12DD:
-                // AES Modus
-                // - AES-Key vorher aus Nonce+Passwort berechnet
-                // - AES-128-CBC mit IV "0123456789abcdef"
-                return $this->DecryptAES($body);
-
-            default:
-                $this->dbg('BAICHUAN', 'Unbekannter encrypt-Wert: ' . sprintf('0x%04X', $encrypt));
-                return $body; // zur Sicherheit einfach so zurück
+        // Wenn kein Body, nichts tun
+        if ($body === '') {
+            return '';
         }
+
+        // Hier später:
+        // - wenn $encrypt == 0x12DC → XOR/BC-Decrypt
+        // - wenn $encrypt == 0x12DD → AES-Decrypt mit Key aus Passwort+Nonce
+
+        // AKTUELL: nur Hex zurückgeben, damit du siehst, dass Daten durchfließen
+        return '';
+    }
+
+
+    private function SetValueStringSafe(string $ident, string $value): void
+    {
+        $vid = @$this->GetIDForIdent($ident);
+        if ($vid === 0) {
+            $vid = $this->RegisterVariableString($ident, $ident);
+        }
+        SetValueString($vid, $value);
+    }
+
+    private function BaichuanHandleHandshakeXml(string $xml, int $encrypt, int $messId): void
+    {
+        $this->dbg('BAICHUAN', 'Handshake-XML', ['xml' => $xml]);
+
+        // TODO: wenn xml != '', hier Nonce auslesen
+        // und AES-Key berechnen, im Attribut speichern
+
+        $this->WriteAttributeString('BaichuanState', 'ready');
+    }
+
+    private function BaichuanHandleEventOrResponseXml(int $cmdId, string $xml): void
+    {
+        // Wenn nichts da, abbrechen
+        if (trim($xml) === '') {
+            return;
+        }
+
+        // Später:
+        // - bei cmdId == 33 → AI/Motion-Events
+        // - aus XML AI-Type/Alarmstatus auslesen
+        // - Variablen Person/Tier/Fahrzeug/Bewegung setzen
+        // - Snapshots triggern
+
+        $this->dbg('BAICHUAN', 'Event/Response-XML', ['cmd' => $cmdId, 'xml' => $xml]);
     }
 
 
 
 
+
+
+
+
+    
 
 
 
