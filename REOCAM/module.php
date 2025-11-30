@@ -272,7 +272,7 @@ class Reolink extends IPSModule
             'hex'    => bin2hex(substr($buffer, 0, 64))
         ]);
 
-        // NEU: Rohdaten in unseren internen Baichuan-Buffer schieben
+        // NEU: Rohdaten in unseren internen Baichuan-Buffer schieben 
         $this->BaichuanFeed($buffer);
     }
 
