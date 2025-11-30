@@ -536,9 +536,16 @@ class Reolink extends IPSModule
             ]
         );
 
-        // TODO: hier später decrypten & Nonce etc. aus XML holen
+        // ➜ HIER: Body entschlüsseln
+        $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
+
+        $this->dbg('BAICHUAN', 'Handshake-decrypted-xml', [
+            'xml' => $xml
+        ]);
+
+        // Später: aus dem XML Nonce herausziehen + Login bauen
+        // vorerst Dummy
         $this->WriteAttributeString('BaichuanState', 'ready');
-        $this->dbg('BAICHUAN', 'Handshake abgeschlossen (Dummy), BaichuanState=ready');
     }
 
     private function BaichuanHandleEventOrResponse(int $cmdId, string $body): void
@@ -675,6 +682,28 @@ class Reolink extends IPSModule
         $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
     }
 
+    private function BaichuanDecrypt(int $encrypt, int $messId, string $body): string
+    {
+        // Pseudocode-Struktur:
+        switch ($encrypt) {
+            case 0x12DC:
+                // BC / XOR Modus
+                // - mit XML_KEY
+                // - Offset abhängig von messId / Position
+                // - ergibt am Ende Klartext-XML
+                return $this->DecryptBC($body, $messId);
+
+            case 0x12DD:
+                // AES Modus
+                // - AES-Key vorher aus Nonce+Passwort berechnet
+                // - AES-128-CBC mit IV "0123456789abcdef"
+                return $this->DecryptAES($body);
+
+            default:
+                $this->dbg('BAICHUAN', 'Unbekannter encrypt-Wert: ' . sprintf('0x%04X', $encrypt));
+                return $body; // zur Sicherheit einfach so zurück
+        }
+    }
 
 
 
