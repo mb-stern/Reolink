@@ -385,25 +385,24 @@ class Reolink extends IPSModule
     private function BaichuanSendRaw(string $data): void
     {
         $len = strlen($data);
-        
-        // <-- SEHR WICHTIG: Debug nicht mit JSON mischen
+
+        // Nur Debug – hier übergeben wir NUR saubere Daten (int + hex-String)
         $this->dbg('BAICHUAN', 'Sende Rohdaten', [
             'len' => $len,
-            'hex' => bin2hex($data)
+            'hex' => bin2hex(substr($data, 0, 64))
         ]);
 
-        $send = [
-            'DataID' => '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}',
-            'Buffer' => $data
-        ];
+        // Parent-IO (Client Socket) holen
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
 
-        $json = json_encode($send);
-        if ($json === false) {
-            IPS_LogMessage('BAICHUAN', 'FATAL: json_encode fehlgeschlagen: ' . json_last_error_msg());
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'Kein Parent-IO zum Senden gefunden');
             return;
         }
 
-        $this->SendDataToParent($json);
+        // WICHTIG: direkt über ClientSocket senden – KEIN json_encode, KEIN SendDataToParent
+        CSCK_SendText($parentId, $data);
     }
 
     private function BaichuanBuildFrame(int $cmdId, string $body, int $flags = 0, int $channel = 0): string
@@ -681,10 +680,8 @@ class Reolink extends IPSModule
     private function dbg(string $tag, string $msg, $data = null): void
     {
         if ($data !== null) {
-            // JSON-sicher encoden (UTF-8)
+            // hier NUR Arrays mit Zahlen/Strings übergeben
             $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-            // In das echte Symcon-Debug der Instanz schreiben
             $this->SendDebug($tag, $msg . ' | ' . $json, 0);
         } else {
             $this->SendDebug($tag, $msg, 0);
