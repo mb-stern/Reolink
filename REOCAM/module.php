@@ -697,22 +697,60 @@ class Reolink extends IPSModule
 
     private function BaichuanDecrypt(int $encrypt, int $messId, string $body): string
     {
-        // Noch kein echter Decrypt – nur Struktur.
-        // So siehst du, DASS der Weg funktioniert.
-
-        // Wenn kein Body, nichts tun
+        // Kein Body → nichts zu tun
         if ($body === '') {
             return '';
         }
 
-        // Hier später:
-        // - wenn $encrypt == 0x12DC → XOR/BC-Decrypt
-        // - wenn $encrypt == 0x12DD → AES-Decrypt mit Key aus Passwort+Nonce
+        // encrypt-Feld (u16 little-endian) zurück in Hex-String wandeln:
+        // 0xDD12 -> bytes [0x12, 0xDD] -> "12dd"
+        $encBytes   = pack('v', $encrypt);
+        $encTypeHex = strtolower(bin2hex($encBytes)); // z.B. "12dd"
 
-        // AKTUELL: nur Hex zurückgeben, damit du siehst, dass Daten durchfließen
+        // Offset = messId (wie in reolink_aio: mess_id = enc_offset)
+        $offset = $messId % 256;
+
+        // 0x12DD/0x01DD → Baichuan-XOR (BC)
+        if (in_array($encTypeHex, ['12dd', '01dd'], true)) {
+            return $this->BaichuanDecryptBC($body, $offset);
+        }
+
+        // 0x00DD → unverschlüsselt (nur der Vollständigkeit halber)
+        if ($encTypeHex === '00dd') {
+            // Kamera schickt dann reinen UTF-8-Text
+            return $body;
+        }
+
+        // Andere Typen (später: AES 02dd/03dd) → aktuell nur loggen
+        $this->dbg('BAICHUAN', 'BaichuanDecrypt: unbekannter encrypt-Typ', [
+            'encrypt'    => sprintf('0x%04X', $encrypt),
+            'encTypeHex' => $encTypeHex,
+            'messId'     => $messId,
+            'body_hex'   => bin2hex(substr($body, 0, 32)),
+        ]);
+
         return '';
     }
 
+        private function BaichuanDecryptBC(string $body, int $offset): string
+    {
+        // Gleiche XML_KEY-Werte wie in reolink_aio
+        $xmlKey = [0x1F, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0xFF];
+
+        $offset = $offset % 256;
+        $lenKey = count($xmlKey);
+        $len    = strlen($body);
+        $result = '';
+
+        for ($i = 0; $i < $len; $i++) {
+            $byte = ord($body[$i]);
+            $key  = $xmlKey[($offset + $i) % $lenKey];
+            $char = $byte ^ $key ^ $offset;
+            $result .= chr($char);
+        }
+
+        return $result;
+    }
 
     private function SetValueStringSafe(string $ident, string $value): void
     {
@@ -756,7 +794,7 @@ class Reolink extends IPSModule
 
 
 
-    
+
 
 
 
