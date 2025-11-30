@@ -678,24 +678,16 @@ class Reolink extends IPSModule
         return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
     }
 
-    private function dbg(string $tag, $msg, $data = null): void
+    private function dbg(string $tag, string $msg, $data = null): void
     {
+        // Einfacher Prefix: Modulname + InstanzID
+        $prefix = 'Reolink ' . $this->InstanceID;
+
         if ($data !== null) {
-            // Daten für Debug IMMER HEX oder BASE64 kodieren!
-            if (is_string($data)) {
-                $data = bin2hex($data);
-            }
-            elseif (is_array($data)) {
-                // Strings in Arrays hexkodieren
-                foreach ($data as $k => $v) {
-                    if (is_string($v)) {
-                        $data[$k] = bin2hex($v);
-                    }
-                }
-            }
-            IPS_LogMessage("{$this->ModuleID} | $tag", $msg . " | " . json_encode($data));
+            // $data hier nur als "saubere" Werte übergeben (keine rohen Binärdaten!)
+            IPS_LogMessage($prefix . ' | ' . $tag, $msg . ' | ' . json_encode($data));
         } else {
-            IPS_LogMessage("{$this->ModuleID} | $tag", $msg);
+            IPS_LogMessage($prefix . ' | ' . $tag, $msg);
         }
     }
 
