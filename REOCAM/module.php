@@ -386,22 +386,34 @@ class Reolink extends IPSModule
     {
         $len = strlen($data);
 
-        // Nur Debug – hier übergeben wir NUR saubere Daten (int + hex-String)
+        // Debug nur mit sauberen Daten
         $this->dbg('BAICHUAN', 'Sende Rohdaten', [
             'len' => $len,
             'hex' => bin2hex(substr($data, 0, 64))
         ]);
 
-        // Parent-IO (Client Socket) holen
+        // Parent-IO (Client Socket) ermitteln
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
 
         if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'Kein Parent-IO zum Senden gefunden');
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden');
             return;
         }
 
-        // WICHTIG: direkt über ClientSocket senden – KEIN json_encode, KEIN SendDataToParent
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus !== 102) {
+            // Socket ist nicht verbunden → NICHT senden (sonst "Socket ist nicht verbunden"-Warning)
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            return;
+        }
+
+        // Jetzt ist der Socket wirklich verbunden → senden
         CSCK_SendText($parentId, $data);
     }
 
