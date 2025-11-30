@@ -385,26 +385,21 @@ class Reolink extends IPSModule
     private function BaichuanSendRaw(string $data): void
     {
         $len = strlen($data);
+        
+        // <-- SEHR WICHTIG: Debug nicht mit JSON mischen
         $this->dbg('BAICHUAN', 'Sende Rohdaten', [
-            'length' => $len,
-            'hex'    => bin2hex(substr($data, 0, 64))
+            'len' => $len,
+            'hex' => bin2hex($data)
         ]);
 
-        // Paket für den Client Socket bauen
         $send = [
-            // DataID für Client-Socket-Kinder
             'DataID' => '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}',
-            // Rohdaten (Binärstring) als Buffer
             'Buffer' => $data
         ];
 
-        // WICHTIG: Immer json_encode, niemals das Array direkt schicken!
         $json = json_encode($send);
         if ($json === false) {
-            $this->dbg('BAICHUAN', 'json_encode fehlgeschlagen in BaichuanSendRaw', [
-                'json_error' => json_last_error(),
-                'json_msg'   => json_last_error_msg()
-            ]);
+            IPS_LogMessage('BAICHUAN', 'FATAL: json_encode fehlgeschlagen: ' . json_last_error_msg());
             return;
         }
 
@@ -683,14 +678,25 @@ class Reolink extends IPSModule
         return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
     }
 
-    private function dbg(string $topic, string $message, $data = null, bool $ignored = false): void
+    private function dbg(string $tag, $msg, $data = null): void
     {
-        $label = strtoupper($topic);
-        $text  = $message;
         if ($data !== null) {
-            $text .= ' | ' . $this->toStr($this->redactDeep($data));
+            // Daten für Debug IMMER HEX oder BASE64 kodieren!
+            if (is_string($data)) {
+                $data = bin2hex($data);
+            }
+            elseif (is_array($data)) {
+                // Strings in Arrays hexkodieren
+                foreach ($data as $k => $v) {
+                    if (is_string($v)) {
+                        $data[$k] = bin2hex($v);
+                    }
+                }
+            }
+            IPS_LogMessage("{$this->ModuleID} | $tag", $msg . " | " . json_encode($data));
+        } else {
+            IPS_LogMessage("{$this->ModuleID} | $tag", $msg);
         }
-        $this->SendDebug($label, $text, 0);
     }
 
     private function toStr($v): string
