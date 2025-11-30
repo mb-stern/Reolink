@@ -7,8 +7,8 @@ class Reolink extends IPSModule
     {
         parent::Create();
 
-        // Baichuan: Parent ist der Client Socket (TCP 9000)
-        $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
+        // Sagt der Konsole: dieses Modul braucht einen Client Socket als Parent
+        $this->RequireParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
 
         // Basis
         $this->RegisterPropertyString("CameraIP", "");
@@ -17,7 +17,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyString("StreamType", "sub");
         $this->RegisterPropertyBoolean("InstanceStatus", true);
 
-        // NEU: Schalter für Baichuan
+        // Baichuan ein/aus
         $this->RegisterPropertyBoolean("UseBaichuan", true);
 
         // Sichtbarkeit / UI
@@ -27,7 +27,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("ShowTestElements", false);
         $this->RegisterPropertyBoolean("ShowVisitorElements", false);
 
-        // Polling
+        // Polling (lassen wir erstmal so)
         $this->RegisterPropertyBoolean("EnablePolling", false);
         $this->RegisterPropertyInteger("PollingInterval", 2);
 
@@ -56,7 +56,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
 
-        // NEU: Buffer für Baichuan-Stream
+        // NEU: Buffer für Baichuan
         $this->RegisterAttributeString("BaichuanBuffer", "");
 
         // Timer
@@ -77,7 +77,6 @@ class Reolink extends IPSModule
         parent::ApplyChanges();
 
         $enabled     = $this->ReadPropertyBoolean("InstanceStatus");
-        $useBaichuan = $this->ReadPropertyBoolean("UseBaichuan");
 
         if (!$enabled) {
             $this->SetStatus(104);
@@ -99,11 +98,7 @@ class Reolink extends IPSModule
 
         $this->SetStatus(102);
 
-        // Wenn Baichuan genutzt werden soll, sicherstellen, dass ein Parent verbunden ist
-        if ($useBaichuan) {
-            $this->ConnectParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
-        }
-
+        // Ab hier: dein bisheriger Inhalt (Hook, Variablen, API usw.)
         $hookPath = $this->ReadAttributeString("CurrentHook");
         if ($hookPath === "") {
             $hookPath = $this->RegisterHook();
@@ -141,8 +136,7 @@ class Reolink extends IPSModule
 
         $this->CreateOrUpdateApiVariablesUnified();
 
-        // Timer für API-Requests / Token
-        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // Online-Check
         if ($anyFeatureOn) {
             $this->GetToken();
             $this->ExecuteApiRequests(true);
@@ -151,7 +145,7 @@ class Reolink extends IPSModule
         }
 
         $this->UpdateOnlineStatus();
-    }
+    }   
 
     public function RequestAction($Ident, $Value)
     {
@@ -268,34 +262,26 @@ class Reolink extends IPSModule
             return;
         }
 
-        // Rohdaten vom Client Socket (TCP 9000)
         $buffer = $data['Buffer'];
         $len    = strlen($buffer);
 
         $this->dbg('BAICHUAN', 'Rohdaten empfangen', [
             'length' => $len,
-            // nur die ersten Bytes als Hex, sonst wird das Debug zu groß
             'hex'    => bin2hex(substr($buffer, 0, 64))
         ]);
 
-        // NEU: Rohdaten in unseren internen Baichuan-Buffer schieben 
         $this->BaichuanFeed($buffer);
     }
 
     private function BaichuanFeed(string $chunk): void
     {
-        // Bestehenden Restpuffer holen
         $buffer = $this->ReadAttributeString('BaichuanBuffer');
         $buffer .= $chunk;
 
-        // TODO: Später hier Baichuan-Frames herausparsen (Header + Länge + AES-Decrypt)
-
-        // Zum Start nur die Länge loggen
         $this->dbg('BAICHUAN', 'Buffer-Update', [
             'newLength' => strlen($buffer)
         ]);
 
-        // Puffer zurückspeichern
         $this->WriteAttributeString('BaichuanBuffer', $buffer);
     }
 
