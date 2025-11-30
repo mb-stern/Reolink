@@ -3,9 +3,14 @@ declare(strict_types=1);
 
 class Reolink extends IPSModule
 {
+
+    private $BaichuanSeq = 1;
+
     public function Create()
     {
         parent::Create();
+
+        $this->BaichuanSeq = 1;
 
         // Sagt der Konsole: dieses Modul braucht einen Client Socket als Parent
         $this->RequireParent('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}');
@@ -286,168 +291,103 @@ class Reolink extends IPSModule
     public function ReceiveData($JSONString)
     {
         $data = json_decode($JSONString, true);
-        if (!is_array($data) || !isset($data['Buffer'])) {
-            $this->dbg('BAICHUAN', 'ReceiveData: ungültige Daten', $data ?? null);
+        if (!isset($data['Buffer'])) {
             return;
         }
 
-        $buffer = $data['Buffer'];
-        $len    = strlen($buffer);
+        $buf = base64_decode($data['Buffer']);
+        $this->dbg('BAICHUAN', 'Rohdaten empfangen | {"len":' . strlen($buf) . ',"hex":"' . bin2hex($buf) . '"}');
 
-        $this->dbg('BAICHUAN', 'Rohdaten empfangen', [
-            'length' => $len,
-            'hex'    => bin2hex(substr($buffer, 0, 64))
-        ]);
-
-        $this->BaichuanFeed($buffer);
+        $this->BaichuanFeed($buf);
     }
 
-    /**
-     * Fügt neue Baichuan-Bytes in den internen Puffer ein
-     * und versucht, vollständige Frames zu extrahieren.
-     *
-     * Aktuell wird sehr generisch davon ausgegangen, dass die ersten 4 Bytes
-     * eines Frames eine (little-endian) Länge enthalten.
-     * Das ist ein bewusst generisches Gerüst, das du an das echte
-     * Baichuan-Headerlayout anpassen musst (reolink_aio / neolink).
-     */
-    private function BaichuanFeed(string $chunk): void
+    private function BaichuanFeed(string $data): void
     {
-        $buffer = $this->ReadAttributeString('BaichuanBuffer');
-        $buffer .= $chunk;
+        $buffer = $this->ReadAttributeString('BaichuanBuffer') ?? '';
+        $buffer .= $data;
 
-        $this->dbg('BAICHUAN', 'Buffer-Update vor Parse', [
-            'length' => strlen($buffer)
-        ]);
+        while (true) {
+            if (strlen($buffer) < 4) {
+                break; // noch nicht mal Length-Feld komplett
+            }
 
-        $frames = [];
-
-        // Solange genug Daten für mindestens die Längenangabe da sind:
-        while (strlen($buffer) >= 4) {
-            // Erste 4 Bytes als Länge interpretieren (little endian)
             $lenBytes = substr($buffer, 0, 4);
             $unpacked = @unpack('Vlen', $lenBytes);
             $len      = (int)($unpacked['len'] ?? 0);
 
-            // Grobe Plausibilitätsprüfung, damit wir bei Müll versuchen zu resyncen
-            if ($len <= 0 || $len > 4 * 1024 * 1024) {
-                $this->dbg('BAICHUAN', 'Ungültige Frame-Länge, versuche Resync', [
-                    'len' => $len,
-                    'hex' => bin2hex($lenBytes)
-                ]);
-
-                // ein Byte verwerfen und erneut versuchen
-                $buffer = substr($buffer, 1);
-                continue;
-            }
-
-            // Haben wir schon den kompletten Frame?
-            if (strlen($buffer) < $len) {
-                // Noch nicht vollständig -> auf nächste ReceiveData warten
+            if ($len <= 0 || $len > 0x100000) {
+                // Irgendwas läuft völlig schief, Buffer wegwerfen
+                $this->dbg('BAICHUAN', 'Ungültige Frame-Länge, Buffer verwerfen | {"len":' . $len . '}');
+                $buffer = '';
                 break;
             }
 
-            // Vollständigen Frame ausschneiden
-            $frame  = substr($buffer, 0, $len);
+            if (strlen($buffer) < $len) {
+                // Frame noch nicht vollständig
+                break;
+            }
+
+            $frame = substr($buffer, 4, $len - 4);
             $buffer = substr($buffer, $len);
 
-            $frames[] = $frame;
-        }
-
-        // Restpuffer speichern
-        $this->WriteAttributeString('BaichuanBuffer', $buffer);
-
-        // Einzelne Frames verarbeiten
-        foreach ($frames as $idx => $frame) {
             $this->BaichuanHandleFrame($frame);
         }
+
+        $this->WriteAttributeString('BaichuanBuffer', $buffer);
     }
 
-        /**
-     * Verarbeitet einen einzelnen (bereits herausgeschnittenen) Baichuan-Frame.
-     *
-     * Aktuell:
-     *  - loggt Header und Payload (Hex + ggf. Text)
-     *  - versucht grob zu erkennen, ob es XML/JSON ist
-     *  - TODO: Login-/Event-Logik implementieren
-     */
     private function BaichuanHandleFrame(string $frame): void
     {
-        $len = strlen($frame);
-
-        if ($len < 16) {
-            $this->dbg('BAICHUAN', 'Frame zu kurz, ignoriere', [
-                'len' => $len,
-                'hex' => bin2hex($frame)
-            ]);
+        if (strlen($frame) < 16) {
+            $this->dbg('BAICHUAN', 'Frame zu kurz');
             return;
         }
 
-        // Ganz grob: ersten 16 Bytes als "Header", Rest als "Payload"
-        $header  = substr($frame, 0, 16);
-        $payload = substr($frame, 16);
+        // Header wieder so interpretieren, wie wir ihn gebaut haben.
+        // Wenn du das Layout anpasst, MUSST du das hier spiegeln.
 
-        $this->dbg('BAICHUAN', 'Frame empfangen', [
-            'len'         => $len,
-            'hdr_hex'     => bin2hex($header),
-            'payload_len' => strlen($payload),
-            'payload_hex' => bin2hex(substr($payload, 0, 64))
-        ]);
+        $magic   = substr($frame, 0, 2);
+        $version = @unpack('vver', substr($frame, 2, 2))['ver'] ?? 0;
+        $cmdId   = @unpack('Vcmd', substr($frame, 4, 4))['cmd'] ?? 0;
+        $seq     = @unpack('Vseq', substr($frame, 8, 4))['seq'] ?? 0;
+        $flags   = @unpack('Vflags', substr($frame, 12, 4))['flags'] ?? 0;
+        $channel = @unpack('Vch', substr($frame, 16, 4))['ch'] ?? 0;
 
-        // Versuch, den Payload lesbar zu machen (falls nicht verschlüsselt / obfuskiert)
-        $textPreview = '';
-        $isText      = false;
+        $body = substr($frame, 20);
 
-        // Wenn der Payload druckbare Zeichen enthält, kurz als Text loggen
-        if ($payload !== '' && preg_match('/[[:print:]]/', $payload)) {
-            $isText      = true;
-            $textPreview = mb_substr(preg_replace('/[^\P{C}\n\r\t]/u', '.', $payload), 0, 200, 'UTF-8');
+        $this->dbg('BAICHUAN', sprintf(
+            'Frame empfangen | {"cmd":%d,"seq":%d,"ver":%d,"flags":%d,"ch":%d}',
+            $cmdId,
+            $seq,
+            $version,
+            $flags,
+            $channel
+        ));
+
+        $state = $this->ReadAttributeString('BaichuanState');
+
+        // Grobe State-Logik
+        if ($state === 'handshake') {
+            $this->BaichuanHandleHandshake($cmdId, $body);
+            return;
         }
 
-        if ($isText) {
-            $this->dbg('BAICHUAN', 'Payload (Textvorscha u)', $textPreview);
-        }
-
-        // Grobe Erkennung von XML / JSON
-        $trim = ltrim($payload);
-        if (str_starts_with($trim, '<')) {
-            $this->dbg('BAICHUAN', 'Payload sieht nach XML aus (Baichuan-Cmd?)');
-            // TODO: XML parsen und je nach CmdId/Element State/Variablen setzen
-        } elseif (str_starts_with($trim, '{') || str_starts_with($trim, '[')) {
-            $this->dbg('BAICHUAN', 'Payload sieht nach JSON aus');
-            $json = @json_decode($trim, true);
-            if (is_array($json)) {
-                $this->dbg('BAICHUAN', 'JSON-Parsed', $json);
-                // TODO: hier z.B. AI-/Motion-Events in IPS-Variablen mappen
-            }
-        }
-
-        // TODO:
-        //  - Header auswerten (Cmd-ID, Stream-ID, Flags, ...)
-        //  - Login-Response erkennen:
-        //      -> bei Erfolg: $this->WriteAttributeString('BaichuanState', 'ready');
-        //      -> ggf. Session/Keepalive-Frame zurücksenden
-        //  - Push-Events (AI/Motion) erkennen und auf bestehende Variablen (Person/Tier/Fahrzeug/Bewegung)
-        //    bzw. neue Variablen abbilden.
+        // Danach: Events etc.
+        $this->BaichuanHandleEventOrResponse($cmdId, $body);
     }
 
-    /**
-     * Sendet rohe Baichuan-Daten (binär) an den Client Socket.
-     */
-    private function BaichuanSendRaw(string $payload): void
+    private function BaichuanSendRaw(string $data): void
     {
-        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
-            'length' => strlen($payload),
-            'hex'    => bin2hex(substr($payload, 0, 64))
+        $len = strlen($data);
+        $this->dbg('BAICHUAN', sprintf('Sende Rohdaten | {"length":%d,"hex":"%s"}', $len, bin2hex($data)));
+
+        $json = json_encode([
+            'DataID' => '{F84D4F5F-7070-46D4-A8A5-DF9770542648}', // I/O-Interface-ID von IPS-Clientsockets
+            'Buffer' => base64_encode($data),
         ]);
-
-        $tx = [
-            'DataID' => '{79827379-F36E-4ADA-8A95-5F8D1DC92FA9}', // Simple TX
-            'Buffer' => $payload
-        ];
-
-        $this->SendDataToParent(json_encode($tx));
+        $this->SendDataToParent($json);
     }
+
 
         /**
      * Initialisiert die Baichuan-Verbindung (Handshake/Login).
@@ -556,6 +496,194 @@ class Reolink extends IPSModule
                 break;
         }
     }
+
+    private function BaichuanBuildFrame(int $cmdId, string $body, int $flags = 0, int $channel = 0): string
+    {
+        // ------------------------------------------------------------
+        // WICHTIG:
+        // Header-Layout ist hier nur eine "sinnvolle Annahme".
+        // Du musst das gegen reolink_aio / neolink einmal abgleichen
+        // und ggf. anpassen (Reihenfolge, Endianness, zusätzliche Felder).
+        //
+        // Für modernes Baichuan (E-Serie, FW 3.x) ist bekannt:
+        //  * Länge (4 Byte, little endian)
+        //  * "bc" / Magic + Version
+        //  * CmdID, Seq, evtl. Flags / Channel
+        //  * Body = meist XML
+        // ------------------------------------------------------------
+
+        $seq = $this->BaichuanSeq++;
+        if ($this->BaichuanSeq > 0x7FFFFFFF) {
+            $this->BaichuanSeq = 1;
+        }
+
+        // Beispiel-Header (PSEUDO!):
+        // 4B length
+        // 2B magic 'b','c'   (0x62,0x63)
+        // 2B version         (z.B. 0x0003)  -> TODO: prüfen
+        // 4B cmdId           (uint32 LE)
+        // 4B seq             (uint32 LE)
+        // 4B flags           (uint32 LE)
+        // 4B channel         (uint32 LE)
+
+        $magic   = "bc";      // TODO: gegen echte Implementation checken
+        $version = 3;         // FW 3.x -> wahrscheinlich Protokoll v3
+
+        $header  = '';
+        $header .= $magic;                     // 2 Byte
+        $header .= pack('v', $version);       // 2 Byte, uint16 LE
+        $header .= pack('V', $cmdId);         // 4 Byte
+        $header .= pack('V', $seq);           // 4 Byte
+        $header .= pack('V', $flags);         // 4 Byte
+        $header .= pack('V', $channel);       // 4 Byte
+
+        $frameWithoutLen = $header . $body;
+
+        // Länge = 4 (Len-Feld selbst) + Header + Body
+        $totalLen = 4 + strlen($frameWithoutLen);
+        $lenBytes = pack('V', $totalLen);
+
+        return $lenBytes . $frameWithoutLen;
+    }
+
+    private function InitBaichuan(): void
+    {
+        $state = $this->ReadAttributeString('BaichuanState');
+        $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
+
+        switch ($state) {
+            case '':
+            case 'idle':
+                $this->BaichuanSendLoginRequest();
+                $this->WriteAttributeString('BaichuanState', 'handshake');
+                $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+                break;
+
+            case 'handshake':
+                $this->BaichuanCheckHandshake();
+                break;
+
+            case 'ready':
+                // Nichts tun, oder evtl. Keepalive prüfen
+                break;
+        }
+    }
+
+    private function BaichuanSendLoginRequest(): void
+    {
+        // TODO: XML gegen reolink_aio/neolink checken.
+        // Baichuan nutzt XML, z.B. ähnlich:
+        //
+        // <body>
+        //   <Login>
+        //      <username>...</username>
+        //      <password>...</password>  (ggf. Hash!)
+        //      <clientType>PC</clientType>
+        //      <feature>Baichuan</feature>
+        //   </Login>
+        // </body>
+
+        $username = $this->ReadPropertyString('Username');
+        $password = $this->ReadPropertyString('Password');
+
+        // Platzhalter-Variante: Klartext-Passwort im XML
+        // (bei modernen FW wird i.d.R. ein Hash/NONCE verwendet → unbedingt Referenzcode checken!)
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>';
+        $xml .= '<body>';
+        $xml .= '<Login version="1.1">';
+        $xml .= '<username>' . htmlspecialchars($username, ENT_QUOTES | ENT_XML1, 'UTF-8') . '</username>';
+        $xml .= '<password>' . htmlspecialchars($password, ENT_QUOTES | ENT_XML1, 'UTF-8') . '</password>';
+        $xml .= '<clientType>PC</clientType>';
+        $xml .= '<clientVer>3.1.0</clientVer>';
+        $xml .= '</Login>';
+        $xml .= '</body>';
+
+        // CmdID 1 = Login (so wird es üblicherweise verwendet – bitte gegen Referenz prüfen)
+        $cmdId = 1;
+
+        $frame = $this->BaichuanBuildFrame($cmdId, $xml);
+        $this->dbg('BAICHUAN', 'Sende Login-Request');
+        $this->BaichuanSendRaw($frame);
+    }
+
+    private function BaichuanHandleHandshake(int $cmdId, string $body): void
+    {
+        // TODO: Prüfen, welcher cmdId die Login-Antwort ist.
+        // Häufig ist Request = 1, Response = 2 o.ä.
+        if ($cmdId !== 2) {
+            $this->dbg('BAICHUAN', 'Handshake: Unerwarteter cmdId ' . $cmdId);
+            return;
+        }
+
+        $xml = trim($body);
+
+        $this->dbg('BAICHUAN', 'Handshake-Antwort XML | ' . $xml);
+
+        // TODO: XML parsen, Session/Nonce/etc. extrahieren
+        // $doc = @simplexml_load_string($xml);
+        // ...
+
+        // Wenn alles gut:
+        $this->WriteAttributeString('BaichuanState', 'ready');
+        $this->dbg('BAICHUAN', 'Handshake abgeschlossen, BaichuanState=ready');
+
+        // Optional: direkt Event-Subscription schicken
+        // $this->BaichuanSubscribeEvents();
+    }
+
+    private function BaichuanHandleEventOrResponse(int $cmdId, string $body): void
+    {
+        // Beispiel: 33 = AlarmEvent (Motion / AI)
+        if ($cmdId === 33) {
+            $this->BaichuanHandleAlarmEvent($body);
+            return;
+        }
+
+        // Andere cmdIds -> Logging oder spätere Funktionen
+        $this->dbg('BAICHUAN', 'Unbekannter cmdId, ignoriere vorerst | {"cmd":' . $cmdId . '}');
+    }
+
+    private function BaichuanHandleAlarmEvent(string $body): void
+    {
+        $xml = trim($body);
+        $this->dbg('BAICHUAN', 'AlarmEvent XML | ' . $xml);
+
+        $doc = @simplexml_load_string($xml);
+        if ($doc === false) {
+            $this->dbg('BAICHUAN', 'XML-Parsing fehlgeschlagen');
+            return;
+        }
+
+        // Pfad muss an echte Struktur angepasst werden:
+        // <body><AlarmEventList><AlarmEvent>...</AlarmEvent></AlarmEventList></body>
+        $events = $doc->AlarmEventList->AlarmEvent ?? null;
+        if ($events === null) {
+            return;
+        }
+
+        foreach ($events as $event) {
+            $status  = (string)$event->status;
+            $channel = (int)$event->channelId;
+
+            // Hier dann deine Bool-Variablen Person/Tier/Fahrzeug/Bewegung schalten
+            // und Snapshot pro Variable erstellen.
+            $this->ProcessAlarmStatus($channel, $status);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     public function SetInstanceStatus(bool $value): bool
     {
