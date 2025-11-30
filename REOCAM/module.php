@@ -444,71 +444,73 @@ class Reolink extends IPSModule
 
     private function BaichuanBuildFrame(
         int $cmdId,
-        string $body,
-        int $class = self::BAICHUAN_CLASS_MODERN,
-        ?int $payloadOffset = 0,
-        int $channelId = 0,
-        int $streamType = 0,
-        int $msgNum = 0,
-        int $responseCode = 0
+        string $body = '',
+        string $messageClass = '1464', // "1465", "1464" oder "0000"
+        string $encType = 'AES',       // 'BC' oder 'AES', für zukünftige Nutzung
+        int $messId = 250,             // wie bei reolink_aio: 250 = Host, 1-100 = Channel
+        int $payloadOffset = 0         // nur bei 24-Byte-Header relevant
     ): string {
-        // Vorerst KEINE Verschlüsselung – wir wollen erst sehen, was kommt.
-        $bodyBytes = $body;
-        $bodyLen   = strlen($bodyBytes);
+        // MAGIC wie in reolink_aio.util
+        $magic = pack('H*', 'f0debc0a');
 
-        // Wenn es keinen Body gibt → Header-Only (kein payloadOffset-Feld, 20-Byte-Header)
-        if ($bodyLen === 0) {
-            $payloadOffset = null;
-        } elseif ($payloadOffset === null) {
-            // Bei Body standardmäßig: payload startet direkt nach Header
-            $payloadOffset = 0;
+        $bodyLen      = strlen($body);
+        $cmdIdBytes   = pack('V', $cmdId);
+        $bodyLenBytes = pack('V', $bodyLen);
+        $messIdBytes  = pack('V', $messId);
+
+        $header = '';
+
+        if ($messageClass === '1465') {
+            // Legacy 20-Byte-Header (Nonce-Request)
+            // encrypt-Feld für BC: 0x12dc
+            $encryptHex = '12dc';
+            $header = $magic
+                    . $cmdIdBytes
+                    . $bodyLenBytes
+                    . $messIdBytes
+                    . pack('H*', $encryptHex . $messageClass);
+            // -> 4 + 4 + 4 + 4 + 2 + 2 = 20 Bytes
+        } elseif ($messageClass === '1464' || $messageClass === '0000') {
+            // Moderner 24-Byte-Header
+            $statusHex = '0000';
+            $header = $magic
+                    . $cmdIdBytes
+                    . $bodyLenBytes
+                    . $messIdBytes
+                    . pack('H*', $statusHex . $messageClass)
+                    . pack('V', $payloadOffset);
+            // -> 24 Bytes
+        } else {
+            throw new \Exception('BaichuanBuildFrame: Ungültige messageClass: ' . $messageClass);
         }
 
-        // Header gemäß neolink / reolink_aio:
-        // magic(u32) | cmd_id(u32) | body_len(u32) | ch(u8) | stream(u8) |
-        // msg_num(u16) | resp_code(u16) | class(u16) | [payload_offset(u32)]
-        $header  = '';
-        $header .= pack('V', self::BAICHUAN_MAGIC);  // magic
-        $header .= pack('V', $cmdId);                // cmd_id
-        $header .= pack('V', $bodyLen);             // body_len
-        $header .= pack('C', $channelId);           // channel_id
-        $header .= pack('C', $streamType);          // stream_type
-        $header .= pack('v', $msgNum);              // msg_num
-        $header .= pack('v', $responseCode);        // response_code
-        $header .= pack('v', $class);               // class (z.B. 0x6614 -> "1466")
-
-        if ($payloadOffset !== null) {
-            $header .= pack('V', $payloadOffset);   // payload_offset
-        }
-
-        // Wichtig: KEIN extra Längenprefix – das ist schon der komplette Frame.
-        return $header . $bodyBytes;
+        // Body vorerst unverschlüsselt anhängen – solange wir nur Header-Only senden,
+        // ist das ohnehin leer. Später: encryptBaichuan() / AES hier integrieren.
+        return $header . $body;
     }
 
     private function BaichuanSendLoginRequest(): void
     {
-        // Modernes Protokoll: Nonce-Request
-        // Analog zu reolink_aio: cmd_id=1, enc_type=BC, message_class="1465"
-        // Wir schicken vorerst NUR den Header (kein Body, keine Verschlüsselung),
-        // um überhaupt eine Antwort zu provozieren und Frames im Debug zu sehen.
+        // Nonce-Request wie in reolink_aio._get_nonce():
+        // cmd_id=1, enc_type=BC, message_class="1465"
+        // send only a header to receive the nonce
 
-        $cmdId = 1;
-        $body  = '';
+        $cmdId        = 1;
+        $body         = '';        // Header-Only
+        $messageClass = '1465';
+        $encType      = 'BC';
+        $messId       = 250;       // Host
 
-        // class "1465" -> numerisch 0x6514 (siehe Konstanten oben),
-        // Header-Only -> payloadOffset=null -> 20-Byte-Header
         $frame = $this->BaichuanBuildFrame(
             $cmdId,
             $body,
-            self::BAICHUAN_CLASS_NONCE,
-            null,   // payloadOffset
-            0,      // channelId
-            0,      // streamType
-            0,      // msgNum
-            0       // responseCode
+            $messageClass,
+            $encType,
+            $messId,
+            0  // payloadOffset, bei 1465/20-Byte nicht genutzt
         );
 
-        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only)');
+        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465 mit 12dc, messId=250)');
         $this->BaichuanSendRaw($frame);
     }
 
