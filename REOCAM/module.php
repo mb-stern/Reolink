@@ -563,6 +563,76 @@ class Reolink extends IPSModule
         }
     }
 
+    private function BaichuanCheckHandshake(): void
+    {
+        // Wenn Baichuan inzwischen deaktiviert wurde, Timer stoppen
+        if (!$this->ReadPropertyBoolean('UseBaichuan')) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: UseBaichuan=false, stoppe Timer');
+            $this->SetTimerInterval('BaichuanInitTimer', 0);
+            return;
+        }
+
+        // Parent/ClientSocket ermitteln
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: kein Parent-IO verbunden');
+            // nach kurzer Zeit erneut versuchen
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+            return;
+        }
+
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        // Wenn der Socket nicht online ist, wieder bei idle beginnen
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Parent-IO nicht online, reset auf idle', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+            return;
+        }
+
+        // Handshake läuft, schauen ob schon Daten angekommen sind
+        $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
+        $bufLen = strlen($buf);
+
+        $this->dbg('BAICHUAN', 'CheckHandshake: Buffer-Status', [
+            'len' => $bufLen,
+            'hex' => bin2hex(substr($buf, 0, 32))
+        ]);
+
+        if ($bufLen === 0) {
+            // Noch gar keine Antwort gesehen → Login erneut senden
+            $this->dbg('BAICHUAN', 'CheckHandshake: noch keine Antwort, sende Login erneut');
+            $this->BaichuanSendLoginRequest();
+            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+            return;
+        }
+
+        // Wenn bereits Frames verarbeitet wurden, sollte BaichuanHandleHandshake()
+        // den State irgendwann auf "ready" setzen.
+        $state = $this->ReadAttributeString('BaichuanState');
+        if ($state === 'handshake') {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Buffer nicht leer, warte auf Verarbeitung', [
+                'state' => $state,
+                'len'   => $bufLen
+            ]);
+        } elseif ($state === 'ready') {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Handshake abgeschlossen (ready)');
+            // später: Keepalive-Timer hier einstellen
+            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
+            return;
+        }
+
+        // Default: nochmal später checken
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+    }
 
 
 
