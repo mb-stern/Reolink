@@ -597,6 +597,10 @@ class Reolink extends IPSModule
 
     public function InitBaichuan(): void
     {
+    if (!$this->BaichuanEnsureSocketOnline()) {
+        return;
+    }
+
         $state = $this->ReadAttributeString('BaichuanState');
         $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
 
@@ -748,18 +752,11 @@ class Reolink extends IPSModule
 
     private function SetValueStringSafe(string $ident, string $value): void
     {
-        // Bestehende Variable suchen
         $vid = @$this->GetIDForIdent($ident);
 
-        // Wenn nicht gefunden (false oder 0), neu anlegen
+        // Korrekt prüfen: false ODER 0 => neu anlegen
         if ($vid === false || $vid === 0) {
             $vid = $this->RegisterVariableString($ident, $ident);
-        }
-
-        // Sicherheitsnetz: falls aus irgendeinem Grund immer noch nichts Sinnvolles da ist
-        if (!is_int($vid) || $vid <= 0) {
-            $this->SendDebug('BAICHUAN', 'SetValueStringSafe: Konnte Variable nicht anlegen', 0);
-            return;
         }
 
         SetValueString($vid, $value);
@@ -1008,6 +1005,10 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
+        if (!$this->BaichuanEnsureSocketOnline()) {
+        return;
+    }
+
         // Baichuan generell aus?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
@@ -1197,6 +1198,33 @@ class Reolink extends IPSModule
                 break;
         }
     }
+
+    private function BaichuanEnsureSocketOnline(): bool
+    {
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'Kein Parent-IO verbunden');
+            return false;
+        }
+
+        $parent  = IPS_GetInstance($parentId);
+        $status  = $parent['InstanceStatus'] ?? 0;
+
+        if ($status !== 102) {
+            $this->dbg('BAICHUAN', 'Parent-IO offline, versuche zu öffnen...', [
+                'ParentID' => $parentId,
+                'Status'   => $status
+            ]);
+            @CSCK_SetOpen($parentId, true);
+            IPS_ApplyChanges($parentId);
+            return false;
+        }
+
+        return true;
+    }
+
+
 
 
 
