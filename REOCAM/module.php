@@ -748,10 +748,20 @@ class Reolink extends IPSModule
 
     private function SetValueStringSafe(string $ident, string $value): void
     {
+        // Bestehende Variable suchen
         $vid = @$this->GetIDForIdent($ident);
-        if ($vid === 0) {
+
+        // Wenn nicht gefunden (false oder 0), neu anlegen
+        if ($vid === false || $vid === 0) {
             $vid = $this->RegisterVariableString($ident, $ident);
         }
+
+        // Sicherheitsnetz: falls aus irgendeinem Grund immer noch nichts Sinnvolles da ist
+        if (!is_int($vid) || $vid <= 0) {
+            $this->SendDebug('BAICHUAN', 'SetValueStringSafe: Konnte Variable nicht anlegen', 0);
+            return;
+        }
+
         SetValueString($vid, $value);
     }
 
