@@ -424,7 +424,7 @@ class Reolink extends IPSModule
             $this->BaichuanSubscribeEvents();
 
             // Keepalive **sehr häufig**, z.B. alle 2 Sekunden
-            $this->SetTimerInterval('BaichuanKeepaliveTimer', 5 * 1000);
+            $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
 
             return;
         }
