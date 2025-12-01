@@ -597,10 +597,6 @@ class Reolink extends IPSModule
 
     public function InitBaichuan(): void
     {
-    if (!$this->BaichuanEnsureSocketOnline()) {
-        return;
-    }
-
         $state = $this->ReadAttributeString('BaichuanState');
         $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
 
@@ -750,16 +746,12 @@ class Reolink extends IPSModule
         return $result;
     }
 
-    private function SetValueStringSafe(string $ident, string $value): void
+    private function BaichuanSendKeepalive(): void
     {
-        $vid = @$this->GetIDForIdent($ident);
+        $this->SendDebug('BAICHUAN', 'Sende Keepalive (cmd=93)', 0);
 
-        // Korrekt prüfen: false ODER 0 => neu anlegen
-        if ($vid === false || $vid === 0) {
-            $vid = $this->RegisterVariableString($ident, $ident);
-        }
-
-        SetValueString($vid, $value);
+        $frame = $this->BaichuanBuildHeaderOnly(93, 0x0000); // gleiche Helper-Funktion wie bei Subscribe
+        $this->BaichuanSendRaw($frame);
     }
 
     private function BaichuanMd5Modern(string $input): string
@@ -928,11 +920,17 @@ class Reolink extends IPSModule
         $this->WriteAttributeString('BaichuanState', 'ready');
         $this->dbg('BAICHUAN', 'Login abgeschlossen, State=ready');
 
-        // Direkt nach Login: Events abonnieren (cmd=31) und Keepalive starten
+        // Handshake-Init-Timer (falls genutzt) stoppen
+        $this->SetTimerInterval('BaichuanInitTimer', 0);
+
+        // Direkt nach Login: Events abonnieren (cmd=31)
         $this->BaichuanSubscribeEvents();
 
-        // Keepalive alle 30 Sekunden
-        $this->SetTimerInterval('BaichuanKeepaliveTimer', 30 * 1000);
+        // ***WICHTIG: ersten Keepalive sofort senden***
+        $this->BaichuanKeepalive();
+
+        // Danach Keepalive regelmäßig, aber deutlich öfter (z. B. alle 10 Sekunden)
+        $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
     }
 
     private function BaichuanSendFrame(
@@ -1005,10 +1003,6 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
-        if (!$this->BaichuanEnsureSocketOnline()) {
-        return;
-    }
-
         // Baichuan generell aus?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
@@ -1199,35 +1193,10 @@ class Reolink extends IPSModule
         }
     }
 
-    private function BaichuanEnsureSocketOnline(): bool
-    {
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'Kein Parent-IO verbunden');
-            return false;
-        }
-
-        $parent  = IPS_GetInstance($parentId);
-        $status  = $parent['InstanceStatus'] ?? 0;
-
-        if ($status !== 102) {
-            $this->dbg('BAICHUAN', 'Parent-IO offline, versuche zu öffnen...', [
-                'ParentID' => $parentId,
-                'Status'   => $status
-            ]);
-            @CSCK_SetOpen($parentId, true);
-            IPS_ApplyChanges($parentId);
-            return false;
-        }
-
-        return true;
-    }
 
 
 
-
-
+    
 
 
 
