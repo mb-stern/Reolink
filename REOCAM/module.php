@@ -424,7 +424,7 @@ class Reolink extends IPSModule
             $this->BaichuanSubscribeEvents();
 
             // Keepalive **sehr häufig**, z.B. alle 2 Sekunden
-            $this->SetTimerInterval('BaichuanKeepaliveTimer', 2 * 1000);
+            $this->SetTimerInterval('BaichuanKeepaliveTimer', 5 * 1000);
 
             return;
         }
@@ -998,13 +998,17 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
-        // Wenn Baichuan deaktiviert oder nicht "ready" → Timer aus
-        if (
-            !$this->ReadPropertyBoolean('UseBaichuan') ||
-            $this->ReadAttributeString('BaichuanState') !== 'ready'
-        ) {
-            $this->dbg('BAICHUAN', 'Keepalive: Baichuan nicht aktiv oder nicht ready, stoppe Timer');
+        // Baichuan generell aus?
+        if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
+            return;
+        }
+
+        $state = $this->ReadAttributeString('BaichuanState');
+
+        // Wenn wir nicht ready sind, lieber nichts spammen
+        if ($state !== 'ready') {
+            $this->dbg('BAICHUAN', 'Keepalive: State != ready, tue nichts', ['state' => $state]);
             return;
         }
 
@@ -1017,21 +1021,29 @@ class Reolink extends IPSModule
         }
         $parent  = IPS_GetInstance($parentId);
         $pStatus = $parent['InstanceStatus'] ?? 0;
+
         if ($pStatus !== 102) {
+            // Verbindung ist weg (z.B. 200)
             $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online', [
                 'ParentID' => $parentId,
                 'Status'   => $pStatus
             ]);
+
+            // Baichuan-State zurück auf idle und Init-Timer wieder anwerfen,
+            // damit ein sauberer Re-Login passieren kann, sobald der Socket wieder steht.
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+
             return;
         }
 
-        // Einfacher Keepalive: LinkType (cmd 93), moderner Header (1464), Host (messId 250)
+        // Ab hier: Parent-IO online, wir sind ready → Ping schicken
         $frame = $this->BaichuanBuildFrame(
-            93,         // cmdId: LinkType
-            '',         // body leer
-            '1464',     // class
-            'AES',      // encType-Label (Body leer, aber Schema-kompatibel)
-            250,        // messId Host
+            93,      // cmdId = PING
+            '',      // body leer
+            '1464',  // moderner Header
+            'AES',
+            250,     // messId Host
             0
         );
 
