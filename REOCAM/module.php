@@ -407,7 +407,6 @@ class Reolink extends IPSModule
 
         // ---------------------------------------------------------------------
         // SPEZIALFALL: Header-only Login-Response (kein Body, class=0000)
-        // Die Kamera bestätigt damit nur "Login OK", ohne XML-Body.
         // ---------------------------------------------------------------------
         if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
             $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
@@ -418,14 +417,14 @@ class Reolink extends IPSModule
             // Login als erfolgreich werten
             $this->WriteAttributeString('BaichuanState', 'ready');
 
-            // Init-Timer stoppen – Handshake/Retry ist abgeschlossen
+            // Handshake-Timer braucht es ab jetzt nicht mehr
             $this->SetTimerInterval('BaichuanInitTimer', 0);
 
             // Direkt nach Login: Events abonnieren (cmd=31)
             $this->BaichuanSubscribeEvents();
 
-            // Keepalive alle 30 Sekunden
-            $this->SetTimerInterval('BaichuanKeepaliveTimer', 30 * 1000);
+            // Keepalive **sehr häufig**, z.B. alle 2 Sekunden
+            $this->SetTimerInterval('BaichuanKeepaliveTimer', 2 * 1000);
 
             return;
         }
@@ -456,12 +455,7 @@ class Reolink extends IPSModule
         // Optional: letzte XML in einer String-Variable merken
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
 
-        // ---------------------------------------------------------------------
-        // Zentrale Routing-Funktion, kümmert sich um:
-        // - cmdId == 1 (Handshake-XML / Login-XML)
-        // - cmdId == 33 (Alarm-/AI-Events)
-        // - später: weitere Kommandos
-        // ---------------------------------------------------------------------
+        // Routing (Login-XML / Handshake-XML / Events)
         $this->HandleBaichuanMessage($cmdId, $xml);
     }
 
@@ -1004,11 +998,12 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
-        // Wenn Baichuan deaktiviert oder nicht ready → Timer aus
+        // Wenn Baichuan deaktiviert oder nicht "ready" → Timer aus
         if (
             !$this->ReadPropertyBoolean('UseBaichuan') ||
             $this->ReadAttributeString('BaichuanState') !== 'ready'
         ) {
+            $this->dbg('BAICHUAN', 'Keepalive: Baichuan nicht aktiv oder nicht ready, stoppe Timer');
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
             return;
         }
@@ -1030,12 +1025,12 @@ class Reolink extends IPSModule
             return;
         }
 
-        // Einfacher Keepalive: LinkType (cmd 93), Host (messId 250)
+        // Einfacher Keepalive: LinkType (cmd 93), moderner Header (1464), Host (messId 250)
         $frame = $this->BaichuanBuildFrame(
-            93,         // cmdId
-            '',         // body
-            '1464',     // class (moderner Header)
-            'AES',
+            93,         // cmdId: LinkType
+            '',         // body leer
+            '1464',     // class
+            'AES',      // encType-Label (Body leer, aber Schema-kompatibel)
             250,        // messId Host
             0
         );
