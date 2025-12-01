@@ -1233,6 +1233,17 @@ class Reolink extends IPSModule
         }
     }
 
+    private function SetValueStringSafe(string $ident, string $value): void
+    {
+        $vid = @$this->GetIDForIdent($ident);
+
+        // Korrekt prüfen: false ODER 0 => neu anlegen
+        if ($vid === false || $vid === 0) {
+            $vid = $this->RegisterVariableString($ident, $ident);
+        }
+
+        SetValueString($vid, $value);
+    }
 
 
 
