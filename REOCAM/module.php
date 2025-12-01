@@ -425,17 +425,14 @@ class Reolink extends IPSModule
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
         if ($xml === '') {
-            // Nichts verwertbares → raus
             return;
         }
 
-        // Debug zur Kontrolle
         $this->dbg('BAICHUAN', 'Frame-decrypted-xml', [
             'cmd' => $cmdId,
             'xml' => $xml
         ]);
 
-        // Letzte XML sichern (Debug/Analyse)
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
 
         // Zentrale Routing-Funktion
