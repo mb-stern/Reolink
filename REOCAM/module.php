@@ -561,46 +561,6 @@ class Reolink extends IPSModule
         $this->WriteAttributeString('BaichuanState', 'ready');
     }
 
-    private function BaichuanHandleEventOrResponse(int $cmdId, string $body): void
-    {
-        // Beispiel: 33 = AlarmEvent (Motion / AI)
-        if ($cmdId === 33) {
-            $this->BaichuanHandleAlarmEvent($body);
-            return;
-        }
-
-        // Andere cmdIds -> Logging oder spätere Funktionen
-        $this->dbg('BAICHUAN', 'Unbekannter cmdId, ignoriere vorerst | {"cmd":' . $cmdId . '}');
-    }
-
-    private function BaichuanHandleAlarmEvent(string $body): void
-    {
-        $xml = trim($body);
-        $this->dbg('BAICHUAN', 'AlarmEvent XML | ' . $xml);
-
-        $doc = @simplexml_load_string($xml);
-        if ($doc === false) {
-            $this->dbg('BAICHUAN', 'XML-Parsing fehlgeschlagen');
-            return;
-        }
-
-        // Pfad muss an echte Struktur angepasst werden:
-        // <body><AlarmEventList><AlarmEvent>...</AlarmEvent></AlarmEventList></body>
-        $events = $doc->AlarmEventList->AlarmEvent ?? null;
-        if ($events === null) {
-            return;
-        }
-
-        foreach ($events as $event) {
-            $status  = (string)$event->status;
-            $channel = (int)$event->channelId;
-
-            // Hier dann deine Bool-Variablen Person/Tier/Fahrzeug/Bewegung schalten
-            // und Snapshot pro Variable erstellen.
-            $this->ProcessAlarmStatus($channel, $status);
-        }
-    }
-
     public function InitBaichuan(): void
     {
         $state = $this->ReadAttributeString('BaichuanState');
@@ -761,32 +721,6 @@ class Reolink extends IPSModule
         SetValueString($vid, $value);
     }
 
-    private function BaichuanHandleHandshakeXml(string $xml, int $encrypt, int $messId): void
-    {
-        $this->dbg('BAICHUAN', 'Handshake-XML', ['xml' => $xml]);
-
-        // TODO: wenn xml != '', hier Nonce auslesen
-        // und AES-Key berechnen, im Attribut speichern
-
-        $this->WriteAttributeString('BaichuanState', 'ready');
-    }
-
-    private function BaichuanHandleEventOrResponseXml(int $cmdId, string $xml): void
-    {
-        // Wenn nichts da, abbrechen
-        if (trim($xml) === '') {
-            return;
-        }
-
-        // Später:
-        // - bei cmdId == 33 → AI/Motion-Events
-        // - aus XML AI-Type/Alarmstatus auslesen
-        // - Variablen Person/Tier/Fahrzeug/Bewegung setzen
-        // - Snapshots triggern
-
-        $this->dbg('BAICHUAN', 'Event/Response-XML', ['cmd' => $cmdId, 'xml' => $xml]);
-    }
-
     private function BaichuanMd5Modern(string $input): string
     {
         // MD5 als Binärdaten
@@ -936,6 +870,51 @@ class Reolink extends IPSModule
         // Später: StreamInfoList auswerten (RTSP-Pfade), AI-Caps etc.
     }
 
+    private function BaichuanSendFrame(
+        int $cmdId,
+        int $class,
+        int $messId,
+        int $encType,
+        string $xmlBody
+    ): void {
+        // MessId → Offset wie beim Empfang
+        $offset = $messId % 256;
+
+        // Klassenwert (0x1465, 0x1464 usw.) in Hex-String wandeln
+        $messageClass = strtolower(sprintf('%04x', $class));
+
+        // Falls encType=BC (0x01) → Body XOR-"verschlüsseln"
+        if ($encType === 0x01) {
+            $body = $this->BaichuanDecryptBC($xmlBody, $offset);
+            $encMode = 'BC';
+        } else {
+            // AES wird später implementiert
+            $body = $xmlBody;
+            $encMode = 'AES';
+        }
+
+        // Jetzt kompletten Frame bauen
+        $frame = $this->BaichuanBuildFrame(
+            $cmdId,
+            $body,
+            $messageClass,
+            $encMode,
+            $messId,
+            0
+        );
+
+        // Debug-Ausgabe
+        $this->dbg('BAICHUAN', 'Sende Frame', [
+            'cmd'      => $cmdId,
+            'class'    => $messageClass,
+            'encType'  => $encType,
+            'messId'   => $messId,
+            'body_hex' => bin2hex(substr($body, 0, 64)),
+        ]);
+
+        // Jetzt per TCP an die Kamera senden
+        $this->BaichuanSendRaw($frame);
+    }
 
 
 
