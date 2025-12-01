@@ -771,6 +771,8 @@ class Reolink extends IPSModule
 
         $this->SendDebug('BAICHUAN', 'AES-Key (hex, 16 Zeichen): ' . $this->BaichuanAesKey, 0);
 
+        $this->SendDebug('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf', 0);
+
         // Jetzt sind wir "ready" → Login schicken
         $this->BaichuanSendLogin();
     }
@@ -838,6 +840,8 @@ class Reolink extends IPSModule
             sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId),
             0
         );
+
+        $this->SendDebug('BAICHUAN', 'BaichuanSendLogin: sende Login-Frame jetzt ab', 0);
 
         $this->BaichuanSendFrame(
             1,          // cmd_id
