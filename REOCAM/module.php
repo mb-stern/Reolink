@@ -401,6 +401,26 @@ class Reolink extends IPSModule
             ]
         );
 
+        // Sonderfall: Header-only Login-Response (kein Body, class=0000)
+        if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
+            $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
+                'encrypt' => sprintf('0x%04X', $encrypt),
+                'messId'  => $messId
+            ]);
+
+            // Login als erfolgreich werten
+            $this->WriteAttributeString('BaichuanState', 'ready');
+            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000); // später: Keepalive
+
+            return;
+        }
+
+        // Wenn kein Body vorhanden ist und es NICHT der spezielle Login-Header ist → ignorieren
+        if ($bodyLen === 0 || $body === '') {
+            $this->dbg('BAICHUAN', 'Leerer Body, keine weitere Verarbeitung', []);
+            return;
+        }
+
         // Immer versuchen zu entschlüsseln
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
@@ -415,10 +435,10 @@ class Reolink extends IPSModule
             'xml' => $xml
         ]);
 
-        // Optional: letzte XML sichern
+        // Letzte XML sichern (Debug/Analyse)
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
 
-        // Zentrale Routing-Funktion verwenden
+        // Zentrale Routing-Funktion
         $this->HandleBaichuanMessage($cmdId, $xml);
     }
 
