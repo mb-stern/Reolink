@@ -407,14 +407,24 @@ class Reolink extends IPSModule
 
         // Sonderfall: Header-only Login-Response (kein Body, class=0000)
         if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
-            $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
-                'encrypt' => sprintf('0x%04X', $encrypt),
-                'messId'  => $messId
-            ]);
+            $this->dbg(
+                'BAICHUAN',
+                'Login-Response (Header-only) empfangen – setze State=ready',
+                [
+                    'encrypt' => sprintf('0x%04X', $encrypt),
+                    'messId'  => $messId
+                ]
+            );
 
-            // Login als erfolgreich werten
+            // Login erfolgreich
             $this->WriteAttributeString('BaichuanState', 'ready');
-            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000); // später: Keepalive
+
+            // Handshake-Timer braucht es ab jetzt nicht mehr
+            $this->SetTimerInterval('BaichuanInitTimer', 0);
+
+            // Direkt nach Login: Events abonnieren und Keepalive starten
+            $this->BaichuanSubscribeEvents();
+            $this->SetTimerInterval('BaichuanKeepaliveTimer', 30 * 1000);
 
             return;
         }
@@ -429,14 +439,17 @@ class Reolink extends IPSModule
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
         if ($xml === '') {
+            // Nichts verwertbares → raus
             return;
         }
 
+        // Debug zur Kontrolle
         $this->dbg('BAICHUAN', 'Frame-decrypted-xml', [
             'cmd' => $cmdId,
             'xml' => $xml
         ]);
 
+        // Letzte XML sichern (Debug/Analyse)
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
 
         // Zentrale Routing-Funktion
