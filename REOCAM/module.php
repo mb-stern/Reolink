@@ -401,26 +401,25 @@ class Reolink extends IPSModule
             ]
         );
 
-        // **WICHTIG**: ab hier IMMER decrypten (oder versuchen)
+        // Immer versuchen zu entschlüsseln
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
-        if ($xml !== '') {
-            // Debug zur Kontrolle
-            $this->dbg('BAICHUAN', 'Frame-decrypted-xml', ['cmd' => $cmdId, 'xml' => $xml]);
-
-            // Optional: eine Debug-String-Variable in der Instanz befüllen
-            $this->SetValueStringSafe('LastBaichuanXML', $xml);
-        }
-
-        $state = $this->ReadAttributeString('BaichuanState');
-
-        if ($state === 'handshake' && $cmdId === 1) {
-            $this->BaichuanHandleHandshakeXml($xml, $encrypt, $messId);
+        if ($xml === '') {
+            // Nichts verwertbares → raus
             return;
         }
 
-        // Ab hier: "Normalbetrieb" – Events, Antworten, usw.
-        $this->BaichuanHandleEventOrResponseXml($cmdId, $xml);
+        // Debug zur Kontrolle
+        $this->dbg('BAICHUAN', 'Frame-decrypted-xml', [
+            'cmd' => $cmdId,
+            'xml' => $xml
+        ]);
+
+        // Optional: letzte XML sichern
+        $this->SetValueStringSafe('LastBaichuanXML', $xml);
+
+        // Zentrale Routing-Funktion verwenden
+        $this->HandleBaichuanMessage($cmdId, $xml);
     }
 
     private function BaichuanSendRaw(string $data): void
@@ -549,15 +548,13 @@ class Reolink extends IPSModule
             ]
         );
 
-        // ➜ HIER: Body entschlüsseln
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
         $this->dbg('BAICHUAN', 'Handshake-decrypted-xml', [
             'xml' => $xml
         ]);
 
-        // Später: aus dem XML Nonce herausziehen + Login bauen
-        // vorerst Dummy
+        // Dummy:
         $this->WriteAttributeString('BaichuanState', 'ready');
     }
 
@@ -858,16 +855,20 @@ class Reolink extends IPSModule
         // Beispiel: DeviceInfo, Model, Firmware
         $deviceInfo = $sx->xpath('//DeviceInfo')[0] ?? null;
         if ($deviceInfo !== null) {
-            $model    = (string)($deviceInfo->model ?? '');
-            $fw       = (string)($deviceInfo->swVersion ?? '');
-            $hw       = (string)($deviceInfo->hardwareVer ?? '');
+            $model = (string)($deviceInfo->model ?? '');
+            $fw    = (string)($deviceInfo->swVersion ?? '');
+            $hw    = (string)($deviceInfo->hardwareVer ?? '');
 
             $this->SendDebug('BAICHUAN', "DeviceInfo: Model=$model, FW=$fw, HW=$hw", 0);
-
-            // Hier kannst du IP-Symcon-Variablen befüllen (Modell, Firmware usw.)
+            // hier optional IPS-Variablen setzen
         }
 
-        // Später: StreamInfoList auswerten (RTSP-Pfade), AI-Caps etc.
+        // Login erfolgreich → State umschalten
+        $this->WriteAttributeString('BaichuanState', 'ready');
+        $this->dbg('BAICHUAN', 'Login abgeschlossen, State=ready');
+
+        // Init-Timer von "Handshake-Phase" auf "Keepalive" umstellen (z.B. 60s)
+        $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
     }
 
     private function BaichuanSendFrame(
