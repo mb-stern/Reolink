@@ -405,54 +405,63 @@ class Reolink extends IPSModule
             ]
         );
 
-        // Sonderfall: Header-only Login-Response (kein Body, class=0000)
+        // ---------------------------------------------------------------------
+        // SPEZIALFALL: Header-only Login-Response (kein Body, class=0000)
+        // Die Kamera bestätigt damit nur "Login OK", ohne XML-Body.
+        // ---------------------------------------------------------------------
         if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
-            $this->dbg(
-                'BAICHUAN',
-                'Login-Response (Header-only) empfangen – setze State=ready',
-                [
-                    'encrypt' => sprintf('0x%04X', $encrypt),
-                    'messId'  => $messId
-                ]
-            );
+            $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
+                'encrypt' => sprintf('0x%04X', $encrypt),
+                'messId'  => $messId
+            ]);
 
-            // Login erfolgreich
+            // Login als erfolgreich werten
             $this->WriteAttributeString('BaichuanState', 'ready');
 
-            // Handshake-Timer braucht es ab jetzt nicht mehr
+            // Init-Timer stoppen – Handshake/Retry ist abgeschlossen
             $this->SetTimerInterval('BaichuanInitTimer', 0);
 
-            // Direkt nach Login: Events abonnieren und Keepalive starten
+            // Direkt nach Login: Events abonnieren (cmd=31)
             $this->BaichuanSubscribeEvents();
+
+            // Keepalive alle 30 Sekunden
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 30 * 1000);
 
             return;
         }
 
+        // ---------------------------------------------------------------------
         // Wenn kein Body vorhanden ist und es NICHT der spezielle Login-Header ist → ignorieren
+        // ---------------------------------------------------------------------
         if ($bodyLen === 0 || $body === '') {
             $this->dbg('BAICHUAN', 'Leerer Body, keine weitere Verarbeitung', []);
             return;
         }
 
+        // ---------------------------------------------------------------------
         // Immer versuchen zu entschlüsseln
+        // ---------------------------------------------------------------------
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
         if ($xml === '') {
-            // Nichts verwertbares → raus
+            // Entschlüsselung gescheitert / kein sinnvolles XML
             return;
         }
 
-        // Debug zur Kontrolle
         $this->dbg('BAICHUAN', 'Frame-decrypted-xml', [
             'cmd' => $cmdId,
             'xml' => $xml
         ]);
 
-        // Letzte XML sichern (Debug/Analyse)
+        // Optional: letzte XML in einer String-Variable merken
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
 
-        // Zentrale Routing-Funktion
+        // ---------------------------------------------------------------------
+        // Zentrale Routing-Funktion, kümmert sich um:
+        // - cmdId == 1 (Handshake-XML / Login-XML)
+        // - cmdId == 33 (Alarm-/AI-Events)
+        // - später: weitere Kommandos
+        // ---------------------------------------------------------------------
         $this->HandleBaichuanMessage($cmdId, $xml);
     }
 
