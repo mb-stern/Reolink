@@ -895,42 +895,82 @@ class Reolink extends IPSModule
 
     private function HandleLoginResponse(string $xml): void
     {
+        $this->SendDebug('BAICHUAN', 'Login-Response-XML (raw): ' . $xml, 0);
+
         $sx = @simplexml_load_string($xml);
         if ($sx === false) {
             $this->SendDebug('BAICHUAN', 'Login-Response: ungültiges XML', 0);
             return;
         }
 
-        // Beispiel: DeviceInfo, Model, Firmware
+        // ---------- DeviceInfo auswerten ----------
         $deviceInfo = $sx->xpath('//DeviceInfo')[0] ?? null;
         if ($deviceInfo !== null) {
-            $model = (string)($deviceInfo->model ?? '');
-            $fw    = (string)($deviceInfo->swVersion ?? '');
-            $hw    = (string)($deviceInfo->hardwareVer ?? '');
+            // Je nach Firmware heißen die Felder etwas anders – wir fangen mehrere Varianten ab
+            $model = (string)($deviceInfo->typeInfo ?? $deviceInfo->type ?? '');
+            $fw    = (string)($deviceInfo->firmVersion ?? $deviceInfo->softVer ?? '');
+            $hw    = (string)($deviceInfo->hardVer ?? '');
+            $serial = (string)($deviceInfo->secretCode ?? '');
+            $lang   = (string)($deviceInfo->language ?? '');
 
-            $this->SendDebug('BAICHUAN', "DeviceInfo: Model=$model, FW=$fw, HW=$hw", 0);
+            $this->SendDebug(
+                'BAICHUAN',
+                "DeviceInfo: Model=$model, FW=$fw, HW=$hw, Serial=$serial, Lang=$lang",
+                0
+            );
 
-            // Optional: in Variablen ablegen
-            // $this->SetValueStringSafe('Model', $model);
-            // $this->SetValueStringSafe('Firmware', $fw);
-            // $this->SetValueStringSafe('Hardware', $hw);
+            // In IP-Symcon-Variablen ablegen
+            $this->SetValueStringSafe('Model', $model);
+            $this->SetValueStringSafe('Firmware', $fw);
+            $this->SetValueStringSafe('Hardware', $hw);
+            $this->SetValueStringSafe('Serial', $serial);
+            $this->SetValueStringSafe('Language', $lang);
+        } else {
+            $this->SendDebug('BAICHUAN', 'Login-Response: kein <DeviceInfo> gefunden', 0);
         }
 
-        // Login erfolgreich → State umschalten
+        // ---------- StreamInfoList / Auflösungen ----------
+        $streamInfo = $sx->xpath('//StreamInfoList/StreamInfo[1]')[0] ?? null;
+        if ($streamInfo !== null) {
+            $mainRes  = '';
+            $subRes   = '';
+
+            foreach ($streamInfo->encodeTable as $enc) {
+                $type = (string)($enc->type ?? '');
+                $w    = (string)($enc->resolution->width ?? '');
+                $h    = (string)($enc->resolution->height ?? '');
+                $res  = ($w !== '' && $h !== '') ? ($w . 'x' . $h) : '';
+
+                if ($type === 'mainStream' && $res !== '') {
+                    $mainRes = $res;
+                }
+                if ($type === 'subStream' && $res !== '') {
+                    $subRes = $res;
+                }
+            }
+
+            if ($mainRes !== '') {
+                $this->SetValueStringSafe('MainResolution', $mainRes);
+            }
+            if ($subRes !== '') {
+                $this->SetValueStringSafe('SubResolution', $subRes);
+            }
+
+            // Optional: komplette StreamInfoList als JSON/String merken
+            $this->SetValueStringSafe('StreamInfoXml', $streamInfo->asXML() ?: '');
+        } else {
+            $this->SendDebug('BAICHUAN', 'Login-Response: keine <StreamInfoList> gefunden', 0);
+        }
+
+        // ---------- State / Events / Keepalive ----------
         $this->WriteAttributeString('BaichuanState', 'ready');
-        $this->dbg('BAICHUAN', 'Login abgeschlossen, State=ready');
+        $this->dbg('BAICHUAN', 'Login abgeschlossen, State=ready (mit DeviceInfo-Auswertung)');
 
-        // Handshake-Init-Timer (falls genutzt) stoppen
-        $this->SetTimerInterval('BaichuanInitTimer', 0);
-
-        // Direkt nach Login: Events abonnieren (cmd=31)
+        // Events abonnieren (machst du bisher schon)
         $this->BaichuanSubscribeEvents();
 
-        // ***WICHTIG: ersten Keepalive sofort senden***
-        $this->BaichuanKeepalive();
-
-        // Danach Keepalive regelmäßig, aber deutlich öfter (z. B. alle 10 Sekunden)
-        $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
+        // KeepAlive-Intervall (hier z.B. 25s – kannst du später feinjustieren)
+        $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
     }
 
     private function BaichuanSendFrame(
