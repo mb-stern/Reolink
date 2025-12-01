@@ -82,7 +82,9 @@ class Reolink extends IPSModule
         $this->RegisterTimer("ApiRequestTimer",   0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\'], false);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
 
-        $this->RegisterTimer('BaichuanInitTimer', 0, 'REOCAM_InitBaichuan($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('BaichuanInitTimer',     0, 'REOCAM_InitBaichuan($_IPS[\'TARGET\']);');
+        // NEU: separater Timer nur für Keepalive (cmd=93)
+        $this->RegisterTimer('BaichuanKeepaliveTimer', 0, 'REOCAM_BaichuanKeepalive($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges()
@@ -109,6 +111,7 @@ class Reolink extends IPSModule
             $this->WriteAttributeString("BaichuanBuffer", "");
             $this->WriteAttributeString("BaichuanState", "idle");
             $this->SetTimerInterval("BaichuanInitTimer", 0);
+            $this->SetTimerInterval("BaichuanKeepaliveTimer", 0);
 
             return;
         }
@@ -128,8 +131,9 @@ class Reolink extends IPSModule
             // kurzer Delay, damit Parent-IO Zeit hat zum Verbinden
             $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
         } else {
-            $this->dbg('BAICHUAN', 'Baichuan deaktiviert, stoppe Init-Timer');
+            $this->dbg('BAICHUAN', 'Baichuan deaktiviert, stoppe Init-/Keepalive-Timer');
             $this->SetTimerInterval('BaichuanInitTimer', 0);
+            $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
         }
 
         // -----------------------
@@ -184,7 +188,7 @@ class Reolink extends IPSModule
         }
 
         $this->UpdateOnlineStatus();
-    }   
+    }
 
     public function RequestAction($Ident, $Value)
     {
@@ -856,9 +860,18 @@ class Reolink extends IPSModule
                 $this->SendDebug('BAICHUAN', 'Login-Response-XML: ' . $bodyXml, 0);
                 $this->HandleLoginResponse($bodyXml);
             }
-        } else {
-            // später: andere cmdIds (Events, AI, Config, ...)
+            return;
         }
+
+        if ($cmdId === 33) {
+            // Alarm-/AI-Events
+            $this->SendDebug('BAICHUAN', 'AlarmEvent-XML: ' . $bodyXml, 0);
+            $this->HandleAlarmEventXml($bodyXml);
+            return;
+        }
+
+        // Weitere cmdIds (31=Subscribe-Response, 93=LinkType etc.) können später ausgewertet werden
+        $this->SendDebug('BAICHUAN', 'Unhandled Baichuan cmdId', $cmdId);
     }
 
     private function HandleLoginResponse(string $xml): void
@@ -877,15 +890,22 @@ class Reolink extends IPSModule
             $hw    = (string)($deviceInfo->hardwareVer ?? '');
 
             $this->SendDebug('BAICHUAN', "DeviceInfo: Model=$model, FW=$fw, HW=$hw", 0);
-            // hier optional IPS-Variablen setzen
+
+            // Optional: in Variablen ablegen
+            // $this->SetValueStringSafe('Model', $model);
+            // $this->SetValueStringSafe('Firmware', $fw);
+            // $this->SetValueStringSafe('Hardware', $hw);
         }
 
         // Login erfolgreich → State umschalten
         $this->WriteAttributeString('BaichuanState', 'ready');
         $this->dbg('BAICHUAN', 'Login abgeschlossen, State=ready');
 
-        // Init-Timer von "Handshake-Phase" auf "Keepalive" umstellen (z.B. 60s)
-        $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
+        // Direkt nach Login: Events abonnieren (cmd=31) und Keepalive starten
+        $this->BaichuanSubscribeEvents();
+
+        // Keepalive alle 30 Sekunden
+        $this->SetTimerInterval('BaichuanKeepaliveTimer', 30 * 1000);
     }
 
     private function BaichuanSendFrame(
@@ -934,9 +954,206 @@ class Reolink extends IPSModule
         $this->BaichuanSendRaw($frame);
     }
 
+    private function BaichuanSubscribeEvents(): void
+    {
+        // cmd_id = 31, mess_id = 251 (Push), Header-Only, moderner Header (1464)
+        $cmdId        = 31;
+        $body         = '';
+        $messageClass = '1464';
+        $encType      = 'AES';    // Body ist leer, AES hier nur "Label"
+        $messId       = 251;      // 0/251 = Push/Event-Channel
 
+        $frame = $this->BaichuanBuildFrame(
+            $cmdId,
+            $body,
+            $messageClass,
+            $encType,
+            $messId,
+            0
+        );
 
+        $this->dbg('BAICHUAN', 'Subscribe Events (cmd=31, messId=251)');
+        $this->BaichuanSendRaw($frame);
+    }
 
+    public function BaichuanKeepalive(): void
+    {
+        // Wenn Baichuan deaktiviert oder nicht ready → Timer aus
+        if (
+            !$this->ReadPropertyBoolean('UseBaichuan') ||
+            $this->ReadAttributeString('BaichuanState') !== 'ready'
+        ) {
+            $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
+            return;
+        }
+
+        // Parent/ClientSocket prüfen
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'Keepalive: kein Parent-IO verbunden');
+            return;
+        }
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            return;
+        }
+
+        // Einfacher Keepalive: LinkType (cmd 93), Host (messId 250)
+        $frame = $this->BaichuanBuildFrame(
+            93,         // cmdId
+            '',         // body
+            '1464',     // class (moderner Header)
+            'AES',
+            250,        // messId Host
+            0
+        );
+
+        $this->dbg('BAICHUAN', 'Sende Keepalive (cmd=93)');
+        $this->BaichuanSendRaw($frame);
+    }
+
+    private function HandleAlarmEventXml(string $xml): void
+    {
+        // Versuchen, das XML strukturiert zu lesen
+        $sx = @simplexml_load_string($xml);
+        if ($sx === false) {
+            $this->SendDebug('BAICHUAN', 'AlarmEvent-XML ungueltig', 0);
+            return;
+        }
+
+        // Viele Reolink-Firmwares schicken eine AlarmEventList
+        $eventNode = $sx->xpath('//AlarmEvent')[0] ?? null;
+
+        $typeUpper = '';
+
+        if ($eventNode !== null) {
+            // Typ z.B. "md", "people", "vehicle", "dog_cat", "visitor", "test"
+            $rawType = strtolower((string)($eventNode->type ?? ''));
+            switch ($rawType) {
+                case 'people':
+                    $typeUpper = 'PEOPLE';
+                    break;
+                case 'vehicle':
+                    $typeUpper = 'VEHICLE';
+                    break;
+                case 'dog_cat':
+                case 'animal':
+                    $typeUpper = 'ANIMAL';
+                    break;
+                case 'visitor':
+                    $typeUpper = 'VISITOR';
+                    break;
+                case 'test':
+                    $typeUpper = 'TEST';
+                    break;
+                case 'md':
+                    $typeUpper = 'MD';
+                    break;
+                default:
+                    // Fallback: im Roh-XML nach bekannten Strings suchen
+                    $lower = strtolower($xml);
+                    if (strpos($lower, 'people') !== false) {
+                        $typeUpper = 'PEOPLE';
+                    } elseif (strpos($lower, 'vehicle') !== false) {
+                        $typeUpper = 'VEHICLE';
+                    } elseif (strpos($lower, 'dog_cat') !== false || strpos($lower, 'animal') !== false) {
+                        $typeUpper = 'ANIMAL';
+                    } elseif (strpos($lower, 'visitor') !== false) {
+                        $typeUpper = 'VISITOR';
+                    } elseif (strpos($lower, 'test') !== false) {
+                        $typeUpper = 'TEST';
+                    } elseif (strpos($lower, '<md') !== false || strpos($lower, '<type>md</type>') !== false) {
+                        $typeUpper = 'MD';
+                    }
+                    break;
+            }
+        } else {
+            // Kein AlarmEvent-Knoten gefunden -> heuristisch
+            $lower = strtolower($xml);
+            if (strpos($lower, 'people') !== false) {
+                $typeUpper = 'PEOPLE';
+            } elseif (strpos($lower, 'vehicle') !== false) {
+                $typeUpper = 'VEHICLE';
+            } elseif (strpos($lower, 'dog_cat') !== false || strpos($lower, 'animal') !== false) {
+                $typeUpper = 'ANIMAL';
+            } elseif (strpos($lower, 'visitor') !== false) {
+                $typeUpper = 'VISITOR';
+            } elseif (strpos($lower, 'test') !== false) {
+                $typeUpper = 'TEST';
+            } elseif (strpos($lower, '<md') !== false || strpos($lower, '<type>md</type>') !== false) {
+                $typeUpper = 'MD';
+            }
+        }
+
+        if ($typeUpper === '') {
+            $this->SendDebug('BAICHUAN', 'AlarmEvent: kein bekannter Typ gefunden', 0);
+            return;
+        }
+
+        $this->SendDebug('BAICHUAN', 'AlarmEvent-Typ erkannt: ' . $typeUpper, 0);
+
+        // Mapping auf unsere Bewegungs-Logik
+        $this->HandleAlarmType($typeUpper);
+    }
+
+    private function HandleAlarmType(string $typeUpper): void
+    {
+        switch ($typeUpper) {
+            case "PEOPLE":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Person", 21);
+                }
+                $this->SetMoveTimer("Person");
+                break;
+
+            case "ANIMAL":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Tier", 26);
+                }
+                $this->SetMoveTimer("Tier");
+                break;
+
+            case "VEHICLE":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Fahrzeug", 31);
+                }
+                $this->SetMoveTimer("Fahrzeug");
+                break;
+
+            case "MD":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Bewegung", 36);
+                }
+                $this->SetMoveTimer("Bewegung");
+                break;
+
+            case "VISITOR":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Besucher", 41);
+                }
+                $this->SetMoveTimer("Besucher");
+                break;
+
+            case "TEST":
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) {
+                    $this->CreateSnapshotAtPosition("Test", 46);
+                }
+                if ($this->ReadPropertyBoolean("ShowTestElements")) {
+                    $this->SetMoveTimer("Test");
+                }
+                break;
+
+            default:
+                $this->SendDebug('BAICHUAN', 'HandleAlarmType: unbekannter Typ ' . $typeUpper, 0);
+                break;
+        }
+    }
 
 
 
