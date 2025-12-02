@@ -1024,7 +1024,7 @@ class Reolink extends IPSModule
         $xml .= '</GetDevInfo>';
         $xml .= '</body>';
 
-        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML', $xml, 0);
+        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML', $xml);
         return $xml;
     }
 
