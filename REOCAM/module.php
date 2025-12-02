@@ -417,16 +417,17 @@ class Reolink extends IPSModule
             // Login als erfolgreich werten
             $this->WriteAttributeString('BaichuanState', 'ready');
 
-            // Handshake-Timer braucht es ab jetzt nicht mehr
-            $this->SetTimerInterval('BaichuanInitTimer', 0);
-
             // Direkt nach Login: Events abonnieren (cmd=31)
             $this->BaichuanSubscribeEvents();
 
-            // Keepalive **sehr häufig**, z.B. alle 2 Sekunden
+            // NEU: Kamera- / Stream-Infos aktiv anfragen
+            $this->BaichuanRequestDevAndStreamInfo();
+
+            // Keepalive **sehr häufig**, z.B. alle 10 Sekunden
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
 
             return;
+
         }
 
         // ---------------------------------------------------------------------
@@ -870,26 +871,40 @@ class Reolink extends IPSModule
     private function HandleBaichuanMessage(int $cmdId, string $bodyXml): void
     {
         if ($cmdId === 1) {
-            if (strpos($bodyXml, '<Encryption') !== false) {
-                // das ist der Nonce-Handshake
+            // 1) Handshake (Nonce + Encryption-Info)
+            if (strpos($bodyXml, '<Encryption') !== false && strpos($bodyXml, '<nonce>') !== false) {
                 $this->SendDebug('BAICHUAN', 'Handshake-XML: ' . $bodyXml, 0);
                 $this->HandleHandshakeXml($bodyXml);
-            } else {
-                // das ist die Login-Antwort
+                return;
+            }
+
+            // 2) Device-/Stream-Infos (können separat nach dem Login kommen)
+            if (strpos($bodyXml, '<DeviceInfo') !== false ||
+                strpos($bodyXml, '<StreamInfoList') !== false) {
+                $this->SendDebug('BAICHUAN', 'Dev/Stream-Info-XML: ' . $bodyXml, 0);
+                $this->HandleLoginResponse($bodyXml);
+                return;
+            }
+
+            // 3) Login-Response (falls deine Kamera doch mal XML zurückliefert)
+            if (strpos($bodyXml, '<LoginUserResponse') !== false ||
+                strpos($bodyXml, '<LoginUser ') !== false) {
                 $this->SendDebug('BAICHUAN', 'Login-Response-XML: ' . $bodyXml, 0);
                 $this->HandleLoginResponse($bodyXml);
+                return;
             }
+
+            // Fallback
+            $this->SendDebug('BAICHUAN', 'Unbekanntes cmd=1-XML', $bodyXml);
             return;
         }
 
         if ($cmdId === 33) {
-            // Alarm-/AI-Events
             $this->SendDebug('BAICHUAN', 'AlarmEvent-XML: ' . $bodyXml, 0);
             $this->HandleAlarmEventXml($bodyXml);
             return;
         }
 
-        // Weitere cmdIds (31=Subscribe-Response, 93=LinkType etc.) können später ausgewertet werden
         $this->SendDebug('BAICHUAN', 'Unhandled Baichuan cmdId', $cmdId);
     }
 
@@ -1244,6 +1259,75 @@ class Reolink extends IPSModule
 
         SetValueString($vid, $value);
     }
+
+    private function BuildBaichuanGetDevInfoXml(): string
+    {
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<body>';
+        $xml .= '<GetDevInfo version="1.0">';
+        $xml .= '<channel>0</channel>';
+        $xml .= '</GetDevInfo>';
+        $xml .= '</body>';
+
+        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML: ' . $xml, 0);
+
+        return $xml;
+    }
+
+    private function BuildBaichuanGetStreamInfoXml(): string
+    {
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<body>';
+        $xml .= '<GetStreamInfo version="1.0">';
+        $xml .= '<channel>0</channel>';
+        $xml .= '</GetStreamInfo>';
+        $xml .= '</body>';
+
+        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML: ' . $xml, 0);
+
+        return $xml;
+    }
+
+    private function BaichuanRequestDevAndStreamInfo(): void
+    {
+        // Nach Login: zusätzliche Infos über cmd_id=1, class=0x1464 (moderner Header), BC-Verschlüsselung
+        $devXml    = $this->BuildBaichuanGetDevInfoXml();
+        $streamXml = $this->BuildBaichuanGetStreamInfoXml();
+
+        // Neue messIds für die Requests
+        $messIdDev    = $this->NextMessId();
+        $messIdStream = $this->NextMessId();
+
+        // DeviceInfo anfragen
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdDev),
+            0
+        );
+        $this->BaichuanSendFrame(
+            1,          // cmd_id
+            0x1464,     // class (moderner Header)
+            $messIdDev,
+            0x01,       // enc_type = BC
+            $devXml
+        );
+
+        // StreamInfo anfragen
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdStream),
+            0
+        );
+        $this->BaichuanSendFrame(
+            1,          // cmd_id
+            0x1464,     // class
+            $messIdStream,
+            0x01,       // enc_type = BC
+            $streamXml
+        );
+    }
+
+
 
 
 
