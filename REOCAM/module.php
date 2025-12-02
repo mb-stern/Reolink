@@ -754,7 +754,6 @@ class Reolink extends IPSModule
         int $encrypt,
         int $messId
     ): void {
-        // Rohdaten-Log
         $this->dbg(
             'BAICHUAN',
             sprintf(
@@ -770,61 +769,47 @@ class Reolink extends IPSModule
             ]
         );
 
-        // ---------------------------------------------------------------------
-        // HEADER-ONLY-FRAMES
-        // ---------------------------------------------------------------------
+        // ---------------- HEADER-ONLY ----------------
         if ($bodyLen === 0 || $body === '') {
 
-            // 1) Login-ACK (cmd=1, class=0000)
+            // 🔹 Login-ACK
             if ($cmdId === 1 && $classHex === '0000') {
                 $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
                     'encrypt' => sprintf('0x%04X', $encrypt),
                     'messId'  => $messId
                 ]);
 
-                // Login als erfolgreich werten
                 $this->WriteAttributeString('BaichuanState', 'ready');
-
-                // Handshake-Timer aus
                 $this->SetTimerInterval('BaichuanInitTimer', 0);
 
-                // Direkt nach Login:
                 // 1) Events abonnieren
                 $this->BaichuanSubscribeEvents();
 
-                // 2) DevInfo & StreamInfo ANFRAGEN (NEU!)
+                // ⚠️ GANZ WICHTIG: 2) DevInfo & StreamInfo anfordern
                 $this->BaichuanRequestDevAndStreamInfo();
 
-                // 3) Keepalive aktivieren
+                // 3) Keepalive
                 $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
 
                 return;
             }
 
-            // 2) Handshake-ACK deiner Kamera: cmd=1, class=1466, bodyLen=0
+            // 🔹 Handshake-ACK
             if ($cmdId === 1 && $classHex === '1466') {
                 $this->dbg('BAICHUAN', 'Handshake-ACK (Header-only, class=1466) empfangen – sende jetzt Login', [
                     'encrypt' => sprintf('0x%04X', $encrypt),
                     'messId'  => $messId
                 ]);
 
-                // Hier kommt KEIN <nonce>-XML, also ist BaichuanNonce leer.
-                // Wir versuchen trotzdem den Login, und sehen im Debug,
-                // ob die Kamera ihn akzeptiert (was sie ja tut).
                 $this->BaichuanSendLogin();
                 return;
             }
 
-            // 3) Alle anderen Header-only Frames erst mal ignorieren
             $this->dbg('BAICHUAN', 'Leerer Body, keine weitere Verarbeitung', []);
             return;
         }
 
-        // ---------------------------------------------------------------------
-        // AB HIER: FRAMES MIT BODY
-        // ---------------------------------------------------------------------
-
-        // Entschlüsseln
+        // ---------------- MIT BODY ----------------
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
         if ($xml === '') {
             return;
@@ -835,10 +820,7 @@ class Reolink extends IPSModule
             'xml' => $xml
         ]);
 
-        // Optional: letzte XML in einer String-Variable merken
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
-
-        // Routing (Handshake-XML, Login-XML, DevInfo/StreamInfo, Events)
         $this->HandleBaichuanMessage($cmdId, $xml);
     }
 
