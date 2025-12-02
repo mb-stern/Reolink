@@ -544,6 +544,51 @@ class Reolink extends IPSModule
         return $header . $body;
     }
 
+    private function BaichuanSendFrame(
+        int $cmdId,
+        int $messageClass,
+        int $messId,
+        int $encType,
+        string $xmlBody
+    ): void {
+        $classHex = sprintf('%04X', $messageClass);
+        $encMode  = 'NONE';
+
+        if ($encType === 0x01) {
+            // BC
+            $encMode = 'BC';
+            // HIER deine echte BC-Verschlüsselung auf $xmlBody anwenden,
+            // aktuell nur Platzhalter:
+            $body = $xmlBody;
+        } elseif ($encType === 0x02) {
+            // AES
+            $encMode = 'AES';
+            // HIER deine AES-Verschlüsselung auf $xmlBody anwenden,
+            $body = $xmlBody;
+        } else {
+            $body = $xmlBody;
+        }
+
+        $frame = $this->BaichuanBuildFrame(
+            $cmdId,
+            $body,
+            $classHex,
+            $encMode,
+            $messId,
+            0
+        );
+
+        $this->SendDebug('BAICHUAN', 'Sende Frame', [
+            'cmd'      => $cmdId,
+            'class'    => $classHex,
+            'encType'  => $encType,
+            'messId'   => $messId,
+            'body_hex' => bin2hex($body)
+        ], 0);
+
+        $this->BaichuanSendRaw($frame);
+    }
+
     private function BaichuanSendLoginRequest(): void
     {
         // Nonce-Request wie in reolink_aio._get_nonce():
@@ -987,52 +1032,6 @@ class Reolink extends IPSModule
 
         // KeepAlive-Intervall (hier z.B. 25s – kannst du später feinjustieren)
         $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
-    }
-
-    private function BaichuanSendFrame(
-        int $cmdId,
-        int $class,
-        int $messId,
-        int $encType,
-        string $xmlBody
-    ): void {
-        // MessId → Offset wie beim Empfang
-        $offset = $messId % 256;
-
-        // Klassenwert (0x1465, 0x1464 usw.) in Hex-String wandeln
-        $messageClass = strtolower(sprintf('%04x', $class));
-
-        // Falls encType=BC (0x01) → Body XOR-"verschlüsseln"
-        if ($encType === 0x01) {
-            $body = $this->BaichuanDecryptBC($xmlBody, $offset);
-            $encMode = 'BC';
-        } else {
-            // AES wird später implementiert
-            $body = $xmlBody;
-            $encMode = 'AES';
-        }
-
-        // Jetzt kompletten Frame bauen
-        $frame = $this->BaichuanBuildFrame(
-            $cmdId,
-            $body,
-            $messageClass,
-            $encMode,
-            $messId,
-            0
-        );
-
-        // Debug-Ausgabe
-        $this->dbg('BAICHUAN', 'Sende Frame', [
-            'cmd'      => $cmdId,
-            'class'    => $messageClass,
-            'encType'  => $encType,
-            'messId'   => $messId,
-            'body_hex' => bin2hex(substr($body, 0, 64)),
-        ]);
-
-        // Jetzt per TCP an die Kamera senden
-        $this->BaichuanSendRaw($frame);
     }
 
     private function BaichuanSubscribeEvents(): void
