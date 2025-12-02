@@ -1019,7 +1019,7 @@ class Reolink extends IPSModule
         $xml .= '</GetStreamInfo>';
         $xml .= '</body>';
 
-        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML', $xml, 0);
+        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML', $xml);
         return $xml;
     }
 
