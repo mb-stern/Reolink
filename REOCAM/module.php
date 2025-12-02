@@ -770,28 +770,51 @@ class Reolink extends IPSModule
             ]
         );
 
-        // Spezialfall: Login-Header ohne Body
-        if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
-            $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
-                'encrypt' => sprintf('0x%04X', $encrypt),
-                'messId'  => $messId
-            ]);
-
-            $this->WriteAttributeString('BaichuanState', 'ready');
-
-            // Direkt nach Login: Events abonnieren + Dev/Stream-Info anfragen
-            $this->BaichuanSubscribeEvents();
-            $this->BaichuanRequestDevAndStreamInfo();
-
-            $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
-            return;
-        }
-
-        // Leerer Body → ignorieren (außer obigem Spezialfall)
+        // -----------------------------------------------------------------
+        // HEADER-ONLY-FRAMES
+        // -----------------------------------------------------------------
         if ($bodyLen === 0 || $body === '') {
+
+            // Login-ACK (wie bisher vorgesehen)
+            if ($cmdId === 1 && $classHex === '0000') {
+                $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
+                    'encrypt' => sprintf('0x%04X', $encrypt),
+                    'messId'  => $messId
+                ]);
+
+                $this->WriteAttributeString('BaichuanState', 'ready');
+
+                // Direkt nach Login: Events abonnieren + Dev/Stream-Info anfragen
+                $this->BaichuanSubscribeEvents();
+                $this->BaichuanRequestDevAndStreamInfo();
+
+                $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
+                return;
+            }
+
+            // Handshake-ACK deiner Kamera: cmd=1, class=1466, bodyLen=0
+            if ($cmdId === 1 && $classHex === '1466') {
+                $this->dbg('BAICHUAN', 'Handshake-ACK (Header-only, 1466) empfangen', [
+                    'encrypt' => sprintf('0x%04X', $encrypt),
+                    'messId'  => $messId
+                ]);
+
+                // Es kam KEIN <nonce>-XML.
+                // Nächster Schritt: Login schicken.
+                // Da keine Nonce vorliegt, ist $this->BaichuanNonce leer.
+                // BuildBaichuanLoginXml() verwendet dann username+"" bzw. password+"".
+                $this->BaichuanSendLogin();
+                return;
+            }
+
+            // Alle anderen header-only Frames ignorieren wir erstmal
             $this->dbg('BAICHUAN', 'Leerer Body, keine weitere Verarbeitung', []);
             return;
         }
+
+        // -----------------------------------------------------------------
+        // AB HIER: FRAMES MIT BODY
+        // -----------------------------------------------------------------
 
         // Entschlüsseln
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
