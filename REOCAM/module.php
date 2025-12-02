@@ -297,6 +297,371 @@ class Reolink extends IPSModule
         }
     }
 
+    private function BaichuanSendRaw(string $data): void
+    {
+        $len = strlen($data);
+
+        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
+            'len' => $len,
+            'hex' => bin2hex(substr($data, 0, 64))
+        ]);
+
+        // Parent-IO (Client Socket) ermitteln
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden');
+            return;
+        }
+
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            return;
+        }
+
+        CSCK_SendText($parentId, $data);
+    }
+
+    private function BaichuanBuildFrame(
+        int $cmdId,
+        string $body = '',
+        string $messageClass = '1464',
+        string $encMode = 'BC',  // 'BC', 'AES' oder 'NONE'
+        int $messId = 250,
+        int $payloadOffset = 0
+    ): string {
+        $magic        = pack('H*', 'f0debc0a');
+        $bodyLen      = strlen($body);
+        $cmdIdBytes   = pack('V', $cmdId);
+        $bodyLenBytes = pack('V', $bodyLen);
+        $messIdBytes  = pack('V', $messId);
+
+        if ($messageClass === '1465') {
+            // 20-Byte-Header (Handshake/Nonce)
+            $encryptHex = '12dd'; // Typ für 1465
+            $header = $magic
+                    . $cmdIdBytes
+                    . $bodyLenBytes
+                    . $messIdBytes
+                    . pack('H*', $encryptHex . $messageClass);
+            return $header . $body;
+        }
+
+        // 24-Byte-Header (1464 / 0000)
+        switch ($encMode) {
+            case 'BC':
+                $encryptHex = '01dd';
+                break;
+            case 'AES':
+                $encryptHex = '02dd';
+                break;
+            case 'NONE':
+            default:
+                $encryptHex = '00dd';
+                break;
+        }
+
+        $header = $magic
+                . $cmdIdBytes
+                . $bodyLenBytes
+                . $messIdBytes
+                . pack('H*', $encryptHex . $messageClass)
+                . pack('V', $payloadOffset);
+
+        return $header . $body;
+    }
+
+    private function BaichuanSendFrame(
+        int $cmdId,
+        int $class,
+        int $messId,
+        int $encType,
+        string $xmlBody
+    ): void {
+        // MessId → Offset wie beim Empfang
+        $offset       = $messId % 256;
+        $messageClass = strtolower(sprintf('%04x', $class));
+
+        if ($encType === 0x01) {
+            // BC "verschlüsseln"
+            $body    = $this->BaichuanDecryptBC($xmlBody, $offset);
+            $encMode = 'BC';
+        } elseif ($encType === 0x02) {
+            // später AES
+            $body    = $xmlBody;
+            $encMode = 'AES';
+        } else {
+            $body    = $xmlBody;
+            $encMode = 'NONE';
+        }
+
+        $frame = $this->BaichuanBuildFrame(
+            $cmdId,
+            $body,
+            $messageClass,
+            $encMode,
+            $messId,
+            0
+        );
+
+        $this->dbg('BAICHUAN', 'Sende Frame', [
+            'cmd'      => $cmdId,
+            'class'    => $messageClass,
+            'encType'  => $encType,
+            'messId'   => $messId,
+            'body_hex' => bin2hex(substr($body, 0, 64)),
+        ]);
+
+        $this->BaichuanSendRaw($frame);
+    }
+
+    public function BaichuanHandleHandshake(
+        int $cmdId,
+        string $body,
+        string $classHex,
+        int $encrypt,
+        int $messId
+    ): void {
+        $this->dbg(
+            'BAICHUAN',
+            'Handshake-Frame empfangen',
+            [
+                'cmd'      => $cmdId,
+                'class'    => $classHex,
+                'encrypt'  => sprintf('0x%04X', $encrypt),
+                'messId'   => $messId,
+                'body_hex' => bin2hex(substr($body, 0, 128)),
+            ]
+        );
+
+        $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
+
+        $this->dbg('BAICHUAN', 'Handshake-decrypted-xml', [
+            'xml' => $xml
+        ]);
+
+        // Dummy:
+        $this->WriteAttributeString('BaichuanState', 'ready');
+    }
+
+    private string $BaichuanNonce  = '';
+    private string $BaichuanAesKey = '';
+    private int    $BaichuanMessId = 250;
+
+    private function BaichuanMd5Modern(string $input): string
+    {
+        $md5 = md5($input, true);
+        $hex = strtoupper(bin2hex($md5));
+        return substr($hex, 0, 31);
+    }
+
+    private function NextMessId(): int
+    {
+        $this->BaichuanMessId++;
+        if ($this->BaichuanMessId > 0xFFFF) {
+            $this->BaichuanMessId = 1;
+        }
+        return $this->BaichuanMessId;
+    }
+
+    private function HandleHandshakeXml(string $xml): void
+    {
+        $nonce = $this->ExtractXmlTag($xml, 'nonce');
+        if ($nonce === '') {
+            $this->SendDebug('BAICHUAN', 'Kein Nonce im Handshake-XML gefunden', 0);
+            return;
+        }
+
+        $this->BaichuanNonce = $nonce;
+        $this->SendDebug('BAICHUAN', 'Nonce erhalten: ' . $nonce, 0);
+
+        $password = $this->ReadPropertyString('Password');
+        $tmp      = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        $this->BaichuanAesKey = substr($tmp, 0, 16);
+
+        $this->SendDebug('BAICHUAN', 'AES-Key (hex, 16 Zeichen): ' . $this->BaichuanAesKey, 0);
+        $this->SendDebug('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf', 0);
+
+        $this->BaichuanSendLogin();
+    }
+
+    private function ExtractXmlTag(string $xml, string $tag): string
+    {
+        $pattern = sprintf('/<%1$s>(.*?)<\/%1$s>/s', preg_quote($tag, '/'));
+        if (preg_match($pattern, $xml, $m)) {
+            return trim($m[1]);
+        }
+        return '';
+    }
+
+    private function BuildBaichuanLoginXml(): string
+    {
+        $username = $this->ReadPropertyString('Username');
+        $password = $this->ReadPropertyString('Password');
+        $nonce    = $this->BaichuanNonce;
+
+        $userHash     = $this->BaichuanMd5Modern($username . $nonce);
+        $passwordHash = $this->BaichuanMd5Modern($password . $nonce);
+
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<body>';
+        $xml .= '<LoginUser version="1.1">';
+        $xml .= '<userName>' . $userHash . '</userName>';
+        $xml .= '<password>' . $passwordHash . '</password>';
+        $xml .= '<userVer>1</userVer>';
+        $xml .= '</LoginUser>';
+        $xml .= '<LoginNet version="1.1">';
+        $xml .= '<type>LAN</type>';
+        $xml .= '<udpPort>0</udpPort>';
+        $xml .= '</LoginNet>';
+        $xml .= '</body>';
+
+        $this->SendDebug('BAICHUAN', 'Login-XML: ' . $xml, 0);
+
+        return $xml;
+    }
+
+    private function BaichuanSendLogin(): void
+    {
+        $xml    = $this->BuildBaichuanLoginXml();
+        $messId = $this->NextMessId();
+
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId),
+            0
+        );
+
+        $this->BaichuanSendFrame(
+            1,
+            0x1465,
+            $messId,
+            0x01,   // enc_type = BC
+            $xml
+        );
+    }
+
+    private function BaichuanSendLoginRequest(): void
+    {
+        // Nonce-Request: cmd_id=1, class=1465, Header-only
+        $cmdId        = 1;
+        $body         = '';
+        $messageClass = '1465';
+        $encMode      = 'BC';
+        $messId       = 250;
+
+        $frame = $this->BaichuanBuildFrame(
+            $cmdId,
+            $body,
+            $messageClass,
+            $encMode,
+            $messId,
+            0
+        );
+
+        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465, messId=250)');
+        $this->BaichuanSendRaw($frame);
+    }
+
+    public function InitBaichuan(): void
+    {
+        $state = $this->ReadAttributeString('BaichuanState');
+        $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
+
+        switch ($state) {
+            case '':
+            case 'idle':
+                $this->BaichuanSendLoginRequest();
+                $this->WriteAttributeString('BaichuanState', 'handshake');
+                $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+                break;
+
+            case 'handshake':
+                $this->BaichuanCheckHandshake();
+                break;
+
+            case 'ready':
+                // nichts
+                break;
+        }
+    }
+
+    private function BaichuanCheckHandshake(): void
+    {
+        if (!$this->ReadPropertyBoolean('UseBaichuan')) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: UseBaichuan=false, stoppe Timer');
+            $this->SetTimerInterval('BaichuanInitTimer', 0);
+            return;
+        }
+
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: kein Parent-IO verbunden');
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+            return;
+        }
+
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Parent-IO nicht online, reset auf idle', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+            return;
+        }
+
+        $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
+        $bufLen = strlen($buf);
+
+        $this->dbg('BAICHUAN', 'CheckHandshake: Buffer-Status', [
+            'len' => $bufLen,
+            'hex' => bin2hex(substr($buf, 0, 32))
+        ]);
+
+        if ($bufLen === 0) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: noch keine Antwort, sende Login erneut');
+            $this->BaichuanSendLoginRequest();
+            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+            return;
+        }
+
+        $state = $this->ReadAttributeString('BaichuanState');
+        if ($state === 'handshake') {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Buffer nicht leer, warte auf Verarbeitung', [
+                'state' => $state,
+                'len'   => $bufLen
+            ]);
+        } elseif ($state === 'ready') {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Handshake abgeschlossen (ready)');
+            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
+            return;
+        }
+
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+    }
+
+    private function BaichuanSendKeepalive(): void
+    {
+        $this->SendDebug('BAICHUAN', 'Sende Keepalive (cmd=93)', 0);
+
+        $frame = $this->BaichuanBuildHeaderOnly(93, 0x0000); // gleiche Helper-Funktion wie bei Subscribe
+        $this->BaichuanSendRaw($frame);
+    }
+
     public function ReceiveData($JSONString)
     {
         $data = json_decode($JSONString);
@@ -359,7 +724,7 @@ class Reolink extends IPSModule
             $messId  = unpack('V', substr($buffer, 12, 4))[1];
 
             // encrypt / status (2 Byte) + class (2 Byte)
-            $encrypt = unpack('v', substr($buffer, 16, 2))[1];
+            $encrypt  = unpack('v', substr($buffer, 16, 2))[1];
             $classHex = bin2hex(substr($buffer, 18, 2));
 
             // Header-Länge bestimmen (20 oder 24)
@@ -405,46 +770,32 @@ class Reolink extends IPSModule
             ]
         );
 
-        // ---------------------------------------------------------------------
-        // SPEZIALFALL: Header-only Login-Response (kein Body, class=0000)
-        // ---------------------------------------------------------------------
+        // Spezialfall: Login-Header ohne Body
         if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
             $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
                 'encrypt' => sprintf('0x%04X', $encrypt),
                 'messId'  => $messId
             ]);
 
-            // Login als erfolgreich werten
             $this->WriteAttributeString('BaichuanState', 'ready');
 
-            // Direkt nach Login: Events abonnieren (cmd=31)
+            // Direkt nach Login: Events abonnieren + Dev/Stream-Info anfragen
             $this->BaichuanSubscribeEvents();
-
-            // NEU: Kamera- / Stream-Infos aktiv anfragen
             $this->BaichuanRequestDevAndStreamInfo();
 
-            // Keepalive **sehr häufig**, z.B. alle 10 Sekunden
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
-
             return;
-
         }
 
-        // ---------------------------------------------------------------------
-        // Wenn kein Body vorhanden ist und es NICHT der spezielle Login-Header ist → ignorieren
-        // ---------------------------------------------------------------------
+        // Leerer Body → ignorieren (außer obigem Spezialfall)
         if ($bodyLen === 0 || $body === '') {
             $this->dbg('BAICHUAN', 'Leerer Body, keine weitere Verarbeitung', []);
             return;
         }
 
-        // ---------------------------------------------------------------------
-        // Immer versuchen zu entschlüsseln
-        // ---------------------------------------------------------------------
+        // Entschlüsseln
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
-
         if ($xml === '') {
-            // Entschlüsselung gescheitert / kein sinnvolles XML
             return;
         }
 
@@ -456,290 +807,11 @@ class Reolink extends IPSModule
         // Optional: letzte XML in einer String-Variable merken
         $this->SetValueStringSafe('LastBaichuanXML', $xml);
 
-        // Routing (Login-XML / Handshake-XML / Events)
         $this->HandleBaichuanMessage($cmdId, $xml);
-    }
-
-    private function BaichuanSendRaw(string $data): void
-    {
-        $len = strlen($data);
-
-        // Debug nur mit sauberen Daten
-        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
-            'len' => $len,
-            'hex' => bin2hex(substr($data, 0, 64))
-        ]);
-
-        // Parent-IO (Client Socket) ermitteln
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
-
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden');
-            return;
-        }
-
-        $parent  = IPS_GetInstance($parentId);
-        $pStatus = $parent['InstanceStatus'] ?? 0;
-
-        if ($pStatus !== 102) {
-            // Socket ist nicht verbunden → NICHT senden (sonst "Socket ist nicht verbunden"-Warning)
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht', [
-                'ParentID' => $parentId,
-                'Status'   => $pStatus
-            ]);
-            return;
-        }
-
-        // Jetzt ist der Socket wirklich verbunden → senden
-        CSCK_SendText($parentId, $data);
-    }
-
-    private function BaichuanBuildFrame(
-        int $cmdId,
-        string $body = '',
-        string $messageClass = '1464',
-        string $encMode = 'BC',  // 'BC', 'AES' oder 'NONE'
-        int $messId = 250,
-        int $payloadOffset = 0
-    ): string {
-        $magic        = pack('H*', 'f0debc0a');
-        $bodyLen      = strlen($body);
-        $cmdIdBytes   = pack('V', $cmdId);
-        $bodyLenBytes = pack('V', $bodyLen);
-        $messIdBytes  = pack('V', $messId);
-
-        if ($messageClass === '1465') {
-            // 20-Byte-Header (Handshake/Nonce)
-            $encryptHex = '12dd'; // dein bekannter Typ für 1465
-            $header = $magic
-                    . $cmdIdBytes
-                    . $bodyLenBytes
-                    . $messIdBytes
-                    . pack('H*', $encryptHex . $messageClass);
-            return $header . $body;
-        }
-
-        // 24-Byte-Header (1464 / 0000)
-        switch ($encMode) {
-            case 'BC':
-                $encryptHex = '01dd';
-                break;
-            case 'AES':
-                $encryptHex = '02dd';
-                break;
-            case 'NONE':
-            default:
-                $encryptHex = '00dd';
-                break;
-        }
-
-        $header = $magic
-                . $cmdIdBytes
-                . $bodyLenBytes
-                . $messIdBytes
-                . pack('H*', $encryptHex . $messageClass)
-                . pack('V', $payloadOffset);
-
-        return $header . $body;
-    }
-
-    private function BaichuanSendFrame(
-        int $cmdId,
-        int $messageClass,
-        int $messId,
-        int $encType,
-        string $xmlBody
-    ): void {
-        $classHex = sprintf('%04X', $messageClass);
-        $encMode  = 'NONE';
-
-        if ($encType === 0x01) {
-            // BC
-            $encMode = 'BC';
-            // HIER deine echte BC-Verschlüsselung auf $xmlBody anwenden,
-            // aktuell nur Platzhalter:
-            $body = $xmlBody;
-        } elseif ($encType === 0x02) {
-            // AES
-            $encMode = 'AES';
-            // HIER deine AES-Verschlüsselung auf $xmlBody anwenden,
-            $body = $xmlBody;
-        } else {
-            $body = $xmlBody;
-        }
-
-        $frame = $this->BaichuanBuildFrame(
-            $cmdId,
-            $body,
-            $classHex,
-            $encMode,
-            $messId,
-            0
-        );
-
-        $this->SendDebug('BAICHUAN', 'Sende Frame', [
-            'cmd'      => $cmdId,
-            'class'    => $classHex,
-            'encType'  => $encType,
-            'messId'   => $messId,
-            'body_hex' => bin2hex($body)
-        ], 0);
-
-        $this->BaichuanSendRaw($frame);
-    }
-
-    private function BaichuanSendLoginRequest(): void
-    {
-        // Nonce-Request wie in reolink_aio._get_nonce():
-        // cmd_id=1, enc_type=BC, message_class="1465"
-        // send only a header to receive the nonce
-
-        $cmdId        = 1;
-        $body         = '';        // Header-Only
-        $messageClass = '1465';
-        $encType      = 'BC';
-        $messId       = 250;       // Host
-
-        $frame = $this->BaichuanBuildFrame(
-            $cmdId,
-            $body,
-            $messageClass,
-            $encType,
-            $messId,
-            0  // payloadOffset, bei 1465/20-Byte nicht genutzt
-        );
-
-        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465 mit 12dc, messId=250)');
-        $this->BaichuanSendRaw($frame);
-    }
-
-    public function BaichuanHandleHandshake(
-        int $cmdId,
-        string $body,
-        string $classHex,
-        int $encrypt,
-        int $messId
-    ): void {
-        $this->dbg(
-            'BAICHUAN',
-            'Handshake-Frame empfangen',
-            [
-                'cmd'      => $cmdId,
-                'class'    => $classHex,
-                'encrypt'  => sprintf('0x%04X', $encrypt),
-                'messId'   => $messId,
-                'body_hex' => bin2hex(substr($body, 0, 128)),
-            ]
-        );
-
-        $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
-
-        $this->dbg('BAICHUAN', 'Handshake-decrypted-xml', [
-            'xml' => $xml
-        ]);
-
-        // Dummy:
-        $this->WriteAttributeString('BaichuanState', 'ready');
-    }
-
-    public function InitBaichuan(): void
-    {
-        $state = $this->ReadAttributeString('BaichuanState');
-        $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
-
-        switch ($state) {
-            case '':
-            case 'idle':
-                $this->BaichuanSendLoginRequest();
-                $this->WriteAttributeString('BaichuanState', 'handshake');
-                $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-                break;
-
-            case 'handshake':
-                $this->BaichuanCheckHandshake();
-                break;
-
-            case 'ready':
-                // Nichts tun, oder evtl. Keepalive prüfen
-                break;
-        }
-    }
-
-    private function BaichuanCheckHandshake(): void
-    {
-        // Wenn Baichuan inzwischen deaktiviert wurde, Timer stoppen
-        if (!$this->ReadPropertyBoolean('UseBaichuan')) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: UseBaichuan=false, stoppe Timer');
-            $this->SetTimerInterval('BaichuanInitTimer', 0);
-            return;
-        }
-
-        // Parent/ClientSocket ermitteln
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
-
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: kein Parent-IO verbunden');
-            // nach kurzer Zeit erneut versuchen
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-            return;
-        }
-
-        $parent  = IPS_GetInstance($parentId);
-        $pStatus = $parent['InstanceStatus'] ?? 0;
-
-        // Wenn der Socket nicht online ist, wieder bei idle beginnen
-        if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: Parent-IO nicht online, reset auf idle', [
-                'ParentID' => $parentId,
-                'Status'   => $pStatus
-            ]);
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-            return;
-        }
-
-        // Handshake läuft, schauen ob schon Daten angekommen sind
-        $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
-        $bufLen = strlen($buf);
-
-        $this->dbg('BAICHUAN', 'CheckHandshake: Buffer-Status', [
-            'len' => $bufLen,
-            'hex' => bin2hex(substr($buf, 0, 32))
-        ]);
-
-        if ($bufLen === 0) {
-            // Noch gar keine Antwort gesehen → Login erneut senden
-            $this->dbg('BAICHUAN', 'CheckHandshake: noch keine Antwort, sende Login erneut');
-            $this->BaichuanSendLoginRequest();
-            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
-            return;
-        }
-
-        // Wenn bereits Frames verarbeitet wurden, sollte BaichuanHandleHandshake()
-        // den State irgendwann auf "ready" setzen.
-        $state = $this->ReadAttributeString('BaichuanState');
-        if ($state === 'handshake') {
-            $this->dbg('BAICHUAN', 'CheckHandshake: Buffer nicht leer, warte auf Verarbeitung', [
-                'state' => $state,
-                'len'   => $bufLen
-            ]);
-        } elseif ($state === 'ready') {
-            $this->dbg('BAICHUAN', 'CheckHandshake: Handshake abgeschlossen (ready)');
-            // später: Keepalive-Timer hier einstellen
-            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
-            return;
-        }
-
-        // Default: nochmal später checken
-        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
     }
 
     private function BaichuanDecrypt(int $encrypt, int $messId, string $body): string
     {
-        // Kein Body → nichts zu tun
         if ($body === '') {
             return '';
         }
@@ -757,13 +829,12 @@ class Reolink extends IPSModule
             return $this->BaichuanDecryptBC($body, $offset);
         }
 
-        // 0x00DD → unverschlüsselt (nur der Vollständigkeit halber)
+        // 0x00DD → unverschlüsselt
         if ($encTypeHex === '00dd') {
-            // Kamera schickt dann reinen UTF-8-Text
             return $body;
         }
 
-        // Andere Typen (später: AES 02dd/03dd) → aktuell nur loggen
+        // Andere Typen → nur loggen (später AES)
         $this->dbg('BAICHUAN', 'BaichuanDecrypt: unbekannter encrypt-Typ', [
             'encrypt'    => sprintf('0x%04X', $encrypt),
             'encTypeHex' => $encTypeHex,
@@ -774,9 +845,8 @@ class Reolink extends IPSModule
         return '';
     }
 
-        private function BaichuanDecryptBC(string $body, int $offset): string
+    private function BaichuanDecryptBC(string $body, int $offset): string
     {
-        // Gleiche XML_KEY-Werte wie in reolink_aio
         $xmlKey = [0x1F, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0xFF];
 
         $offset = $offset % 256;
@@ -792,127 +862,6 @@ class Reolink extends IPSModule
         }
 
         return $result;
-    }
-
-    private function BaichuanSendKeepalive(): void
-    {
-        $this->SendDebug('BAICHUAN', 'Sende Keepalive (cmd=93)', 0);
-
-        $frame = $this->BaichuanBuildHeaderOnly(93, 0x0000); // gleiche Helper-Funktion wie bei Subscribe
-        $this->BaichuanSendRaw($frame);
-    }
-
-    private function BaichuanMd5Modern(string $input): string
-    {
-        // MD5 als Binärdaten
-        $md5 = md5($input, true);
-        // In HEX wandeln und groß schreiben
-        $hex = strtoupper(bin2hex($md5));
-        // Baichuan-„Spezialität“: nur 31 Zeichen
-        return substr($hex, 0, 31);
-    }
-
-    private string $BaichuanNonce = '';
-    private string $BaichuanAesKey = '';
-
-    private function HandleHandshakeXml(string $xml): void
-    {
-        // Nonce aus dem XML holen
-        $nonce = $this->ExtractXmlTag($xml, 'nonce');
-        if ($nonce === '') {
-            $this->SendDebug('BAICHUAN', 'Kein Nonce im Handshake-XML gefunden', 0);
-            return;
-        }
-
-        $this->BaichuanNonce = $nonce;
-        $this->SendDebug('BAICHUAN', 'Nonce erhalten: ' . $nonce, 0);
-
-        // AES-Key aus Nonce + Passwort ableiten
-        $password = $this->ReadPropertyString('Password'); // oder wie deine Eigenschaft heißt
-        $tmp      = $this->BaichuanMd5Modern($nonce . '-' . $password);
-        $this->BaichuanAesKey = substr($tmp, 0, 16);
-
-        $this->SendDebug('BAICHUAN', 'AES-Key (hex, 16 Zeichen): ' . $this->BaichuanAesKey, 0);
-
-        $this->SendDebug('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf', 0);
-
-        // Jetzt sind wir "ready" → Login schicken
-        $this->BaichuanSendLogin();
-    }
-
-    private function ExtractXmlTag(string $xml, string $tag): string
-    {
-        $pattern = sprintf('/<%1$s>(.*?)<\/%1$s>/s', preg_quote($tag, '/'));
-        if (preg_match($pattern, $xml, $m)) {
-            return trim($m[1]);
-        }
-        return '';
-    }
-
-    private function BuildBaichuanLoginXml(): string
-    {
-        $username = $this->ReadPropertyString('Username');
-        $password = $this->ReadPropertyString('Password');
-        $nonce    = $this->BaichuanNonce;
-
-        // Hashes nach Baichuan-Schema
-        $userHash     = $this->BaichuanMd5Modern($username . $nonce);
-        $passwordHash = $this->BaichuanMd5Modern($password . $nonce);
-
-        // Login-XML zusammenbauen
-        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-        $xml .= '<body>';
-        $xml .= '<LoginUser version="1.1">';
-        $xml .= '<userName>' . $userHash . '</userName>';
-        $xml .= '<password>' . $passwordHash . '</password>';
-        $xml .= '<userVer>1</userVer>';
-        $xml .= '</LoginUser>';
-        $xml .= '<LoginNet version="1.1">';
-        $xml .= '<type>LAN</type>';
-        $xml .= '<udpPort>0</udpPort>';
-        $xml .= '</LoginNet>';
-        $xml .= '</body>';
-
-        $this->SendDebug('BAICHUAN', 'Login-XML: ' . $xml, 0);
-
-        return $xml;
-    }
-
-    private int $BaichuanMessId = 250; // z.B. Startwert
-
-    private function NextMessId(): int
-    {
-        $this->BaichuanMessId++;
-        if ($this->BaichuanMessId > 0xFFFF) {
-            $this->BaichuanMessId = 1;
-        }
-        return $this->BaichuanMessId;
-    }
-
-    private function BaichuanSendLogin(): void
-    {
-        $xml    = $this->BuildBaichuanLoginXml();
-        $messId = $this->NextMessId();
-
-        // Deine bereits vorhandene Funktion, die den kompletten TCP-Frame baut:
-        // - Magic f0debc0a
-        // - Header mit length, cmd_id, class, enc_type, messId
-        // - Body mit BC-verschlüsseltem XML
-        $this->SendDebug(
-            'BAICHUAN',
-            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId),
-            0
-        );
-
-        $this->SendDebug('BAICHUAN', 'BaichuanSendLogin: sende Login-Frame jetzt ab', 0);
-
-        $this->BaichuanSendFrame(
-            1,          // cmd_id
-            0x1465,     // class
-            $messId,
-            0x01,       // enc_type = BC (dein XOR-Scrambler)
-            $xml
-        );
     }
 
     private function HandleBaichuanMessage(int $cmdId, string $bodyXml): void
@@ -1034,20 +983,83 @@ class Reolink extends IPSModule
         $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
     }
 
+    private function BuildBaichuanGetDevInfoXml(): string
+    {
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<body>';
+        $xml .= '<GetDevInfo version="1.0">';
+        $xml .= '<channel>0</channel>';
+        $xml .= '</GetDevInfo>';
+        $xml .= '</body>';
+
+        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML', $xml, 0);
+        return $xml;
+    }
+
+    private function BuildBaichuanGetStreamInfoXml(): string
+    {
+        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml .= '<body>';
+        $xml .= '<GetStreamInfo version="1.0">';
+        $xml .= '<channel>0</channel>';
+        $xml .= '</GetStreamInfo>';
+        $xml .= '</body>';
+
+        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML', $xml, 0);
+        return $xml;
+    }
+
+    private function BaichuanRequestDevAndStreamInfo(): void
+    {
+        $devXml    = $this->BuildBaichuanGetDevInfoXml();
+        $streamXml = $this->BuildBaichuanGetStreamInfoXml();
+
+        $messIdDev    = $this->NextMessId();
+        $messIdStream = $this->NextMessId();
+
+        // DeviceInfo
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdDev),
+            0
+        );
+        $this->BaichuanSendFrame(
+            1,
+            0x1464,
+            $messIdDev,
+            0x01,
+            $devXml
+        );
+
+        // StreamInfo
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdStream),
+            0
+        );
+        $this->BaichuanSendFrame(
+            1,
+            0x1464,
+            $messIdStream,
+            0x01,
+            $streamXml
+        );
+    }
+
     private function BaichuanSubscribeEvents(): void
     {
         // cmd_id = 31, mess_id = 251 (Push), Header-Only, moderner Header (1464)
         $cmdId        = 31;
         $body         = '';
         $messageClass = '1464';
-        $encType      = 'AES';    // Body ist leer, AES hier nur "Label"
-        $messId       = 251;      // 0/251 = Push/Event-Channel
+        $encMode      = 'AES';
+        $messId       = 251;
 
         $frame = $this->BaichuanBuildFrame(
             $cmdId,
             $body,
             $messageClass,
-            $encType,
+            $encMode,
             $messId,
             0
         );
@@ -1058,21 +1070,17 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
-        // Baichuan generell aus?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
             return;
         }
 
         $state = $this->ReadAttributeString('BaichuanState');
-
-        // Wenn wir nicht ready sind, lieber nichts spammen
         if ($state !== 'ready') {
             $this->dbg('BAICHUAN', 'Keepalive: State != ready, tue nichts', ['state' => $state]);
             return;
         }
 
-        // Parent/ClientSocket prüfen
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1083,27 +1091,22 @@ class Reolink extends IPSModule
         $pStatus = $parent['InstanceStatus'] ?? 0;
 
         if ($pStatus !== 102) {
-            // Verbindung ist weg (z.B. 200)
             $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online', [
                 'ParentID' => $parentId,
                 'Status'   => $pStatus
             ]);
 
-            // Baichuan-State zurück auf idle und Init-Timer wieder anwerfen,
-            // damit ein sauberer Re-Login passieren kann, sobald der Socket wieder steht.
             $this->WriteAttributeString('BaichuanState', 'idle');
             $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-
             return;
         }
 
-        // Ab hier: Parent-IO online, wir sind ready → Ping schicken
         $frame = $this->BaichuanBuildFrame(
             93,      // cmdId = PING
             '',      // body leer
             '1464',  // moderner Header
             'AES',
-            250,     // messId Host
+            250,
             0
         );
 
@@ -1258,122 +1261,6 @@ class Reolink extends IPSModule
         }
 
         SetValueString($vid, $value);
-    }
-
-private function BuildBaichuanGetDevInfoXml(): string
-{
-    $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-    $xml .= '<body>';
-    $xml .= '<GetDevInfo version="1.0">';
-    $xml .= '<channel>0</channel>';
-    $xml .= '</GetDevInfo>';
-    $xml .= '</body>';
-
-    $this->SendDebug('BAICHUAN', 'GetDevInfo-XML', $xml, 0);
-    return $xml;
-}
-
-private function BuildBaichuanGetStreamInfoXml(): string
-{
-    $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-    $xml .= '<body>';
-    $xml .= '<GetStreamInfo version="1.0">';
-    $xml .= '<channel>0</channel>';
-    $xml .= '</GetStreamInfo>';
-    $xml .= '</body>';
-
-    $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML', $xml, 0);
-    return $xml;
-}
-
-    private function BaichuanRequestDevAndStreamInfo(): void
-    {
-        $devXml    = $this->BuildBaichuanGetDevInfoXml();
-        $streamXml = $this->BuildBaichuanGetStreamInfoXml();
-
-        $messIdDev    = $this->NextMessId();
-        $messIdStream = $this->NextMessId();
-
-        // DeviceInfo
-        $this->SendDebug(
-            'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdDev),
-            0
-        );
-        $this->BaichuanSendFrame(
-            1,          // cmd_id
-            0x1464,     // class
-            $messIdDev,
-            0x01,       // enc_type = BC
-            $devXml
-        );
-
-        // StreamInfo
-        $this->SendDebug(
-            'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdStream),
-            0
-        );
-        $this->BaichuanSendFrame(
-            1,
-            0x1464,
-            $messIdStream,
-            0x01,
-            $streamXml
-        );
-    }
-
-    private function BuildBaichuanGetStreamInfoXml(): string
-    {
-        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-        $xml .= '<body>';
-        $xml .= '<GetStreamInfo version="1.0">';
-        $xml .= '<channel>0</channel>';
-        $xml .= '</GetStreamInfo>';
-        $xml .= '</body>';
-
-        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML: ' . $xml, 0);
-
-        return $xml;
-    }
-
-    private function BaichuanRequestDevAndStreamInfo(): void
-    {
-        // Nach Login: zusätzliche Infos über cmd_id=1, class=0x1464 (moderner Header), BC-Verschlüsselung
-        $devXml    = $this->BuildBaichuanGetDevInfoXml();
-        $streamXml = $this->BuildBaichuanGetStreamInfoXml();
-
-        // Neue messIds für die Requests
-        $messIdDev    = $this->NextMessId();
-        $messIdStream = $this->NextMessId();
-
-        // DeviceInfo anfragen
-        $this->SendDebug(
-            'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdDev),
-            0
-        );
-        $this->BaichuanSendFrame(
-            1,          // cmd_id
-            0x1464,     // class (moderner Header)
-            $messIdDev,
-            0x01,       // enc_type = BC
-            $devXml
-        );
-
-        // StreamInfo anfragen
-        $this->SendDebug(
-            'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdStream),
-            0
-        );
-        $this->BaichuanSendFrame(
-            1,          // cmd_id
-            0x1464,     // class
-            $messIdStream,
-            0x01,       // enc_type = BC
-            $streamXml
-        );
     }
 
     private function BaichuanDecodeRaw(string $data): string
