@@ -499,46 +499,57 @@ class Reolink extends IPSModule
         int $cmdId,
         string $body = '',
         string $messageClass = '1464', // "1465", "1464" oder "0000"
-        string $encType = 'AES',       // 'BC' oder 'AES', für zukünftige Nutzung
-        int $messId = 250,             // wie bei reolink_aio: 250 = Host, 1-100 = Channel
-        int $payloadOffset = 0         // nur bei 24-Byte-Header relevant
+        string $encType = 'AES',       // 'BC', 'AES' oder 'NONE'
+        int $messId = 250,
+        int $payloadOffset = 0
     ): string {
-        // MAGIC wie in reolink_aio.util
-        $magic = pack('H*', 'f0debc0a');
-
-        $bodyLen      = strlen($body);
-        $cmdIdBytes   = pack('V', $cmdId);
-        $bodyLenBytes = pack('V', $bodyLen);
-        $messIdBytes  = pack('V', $messId);
+        $magic         = pack('H*', 'f0debc0a');
+        $bodyLen       = strlen($body);
+        $cmdIdBytes    = pack('V', $cmdId);
+        $bodyLenBytes  = pack('V', $bodyLen);
+        $messIdBytes   = pack('V', $messId);
 
         $header = '';
 
         if ($messageClass === '1465') {
             // Legacy 20-Byte-Header (Nonce-Request)
-            // encrypt-Feld für BC: 0x12dc
-            $encryptHex = '12dc';
+            // encrypt-Feld für BC: 0x12dd (little endian = "dd12")
+            $encryptHex = '12dd';
             $header = $magic
                     . $cmdIdBytes
                     . $bodyLenBytes
                     . $messIdBytes
                     . pack('H*', $encryptHex . $messageClass);
-            // -> 4 + 4 + 4 + 4 + 2 + 2 = 20 Bytes
+            // -> 20 Byte
+
         } elseif ($messageClass === '1464' || $messageClass === '0000') {
-            // Moderner 24-Byte-Header
-            $statusHex = '0000';
+            // Moderner 24-Byte-Header: encrypt (u16) + class (u16) + payloadOffset (u32)
+
+            switch ($encType) {
+                case 'BC':
+                    $encryptHex = '01dd'; // Baichuan-XOR
+                    break;
+                case 'AES':
+                    $encryptHex = '02dd'; // AES (wenn wir später verschlüsseln)
+                    break;
+                case 'NONE':
+                default:
+                    $encryptHex = '00dd'; // unverschlüsselte Payload
+                    break;
+            }
+
             $header = $magic
                     . $cmdIdBytes
                     . $bodyLenBytes
                     . $messIdBytes
-                    . pack('H*', $statusHex . $messageClass)
+                    . pack('H*', $encryptHex . $messageClass)
                     . pack('V', $payloadOffset);
-            // -> 24 Bytes
+            // -> 24 Byte
+
         } else {
             throw new \Exception('BaichuanBuildFrame: Ungültige messageClass: ' . $messageClass);
         }
 
-        // Body vorerst unverschlüsselt anhängen – solange wir nur Header-Only senden,
-        // ist das ohnehin leer. Später: encryptBaichuan() / AES hier integrieren.
         return $header . $body;
     }
 
