@@ -1034,7 +1034,7 @@ class Reolink extends IPSModule
         $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
     }
 
-    private function BaichuanSendFrame(
+    public function BaichuanSendFrame(
         int $cmdId,
         int $class,
         int $messId,
