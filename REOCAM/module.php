@@ -1006,7 +1006,9 @@ class Reolink extends IPSModule
         $xml .= '</GetDevInfo>';
         $xml .= '</body>';
 
-        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML', $xml);
+        // Korrekt: 3. Parameter ist das Format (0 = Text)
+        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML: ' . $xml, 0);
+
         return $xml;
     }
 
@@ -1019,7 +1021,9 @@ class Reolink extends IPSModule
         $xml .= '</GetStreamInfo>';
         $xml .= '</body>';
 
-        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML', $xml);
+        // ebenfalls: 3. Parameter = 0
+        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML: ' . $xml, 0);
+
         return $xml;
     }
 
@@ -1038,10 +1042,10 @@ class Reolink extends IPSModule
             0
         );
         $this->BaichuanSendFrame(
-            1,          // cmd_id
-            0x1464,     // class
+            1,
+            0x1464,
             $messIdDev,
-            0x01,       // enc_type = BC
+            0x01,       // <-- HIER: encType = 0x01 (BC)
             $devXml
         );
 
@@ -1055,7 +1059,7 @@ class Reolink extends IPSModule
             1,
             0x1464,
             $messIdStream,
-            0x01,
+            0x01,       // <-- HIER: encType = 0x01 (BC)
             $streamXml
         );
     }
@@ -1275,171 +1279,6 @@ class Reolink extends IPSModule
         }
 
         SetValueString($vid, $value);
-    }
-
-    private function BaichuanDecodeRaw(string $data): string
-    {
-        $len = strlen($data);
-        $this->SendDebug('BAICHUAN', 'Rohdaten empfangen', [
-            'length' => $len,
-            'hex'    => bin2hex($data)
-        ], 0);
-
-        // HIER deine bestehende Dekodierlogik einsetzen (XOR / Baichuan-Handshake)
-        // Wenn du bisher schon eine Funktion wie BaichuanHandshakeXor($data) hattest,
-        // einfach die hier aufrufen:
-        //
-        $decoded = $this->BaichuanHandshakeXor($data);
-        //
-        // Zum Testen kannst du erstmal "roh" zurückgeben:
-        // $decoded = $data;
-
-        $decoded = $data; // PLACEHOLDER → durch deine echte Logik ersetzen
-
-        $this->SendDebug('BAICHUAN', 'Dekodierte Rohdaten', [
-            'length' => strlen($decoded),
-            'hex'    => bin2hex($decoded)
-        ], 0);
-
-        return $decoded;
-    }
-
-    private function BaichuanHandleIncoming(string $data): void
-    {
-        $decoded = $this->BaichuanDecodeRaw($data);
-
-        // mindestens 20 Byte für den kurzen Header
-        if (strlen($decoded) < 20) {
-            $this->SendDebug('BAICHUAN', 'Zu kurze Baichuan-Nachricht, verwerfe', [
-                'length' => strlen($decoded),
-                'hex'    => bin2hex($decoded)
-            ], 0);
-            return;
-        }
-
-        $offset = 0;
-
-        // Magic
-        $magic = substr($decoded, $offset, 4);
-        $offset += 4;
-
-        if (bin2hex($magic) !== 'f0debc0a') {
-            $this->SendDebug('BAICHUAN', 'Ungültiges Magic, verwerfe', bin2hex($magic));
-            return;
-        }
-
-        // cmdId, bodyLen, messId
-        $cmdId   = unpack('V', substr($decoded, $offset, 4))[1];
-        $offset += 4;
-        $bodyLen = unpack('V', substr($decoded, $offset, 4))[1];
-        $offset += 4;
-        $messId  = unpack('V', substr($decoded, $offset, 4))[1];
-        $offset += 4;
-
-        // encrypt + class
-        $encAndClass = substr($decoded, $offset, 4);
-        $offset += 4;
-        $encType = unpack('v', substr($encAndClass, 0, 2))[1];
-        $class   = unpack('v', substr($encAndClass, 2, 2))[1];
-
-        $payloadOffset = 0;
-
-        // moderner 24-Byte-Header → payloadOffset lesen
-        if (strlen($decoded) >= 24) {
-            $payloadOffset = unpack('V', substr($decoded, $offset, 4))[1];
-            $offset += 4;
-        }
-
-        $this->SendDebug('BAICHUAN', 'Frame empfangen', [
-            'cmd'      => $cmdId,
-            'class'    => sprintf('%04X', $class),
-            'bodyLen'  => $bodyLen,
-            'encrypt'  => sprintf('0x%04X', $encType),
-            'messId'   => $messId,
-            'offset'   => $payloadOffset
-        ], 0);
-
-        // Body extrahieren (ab offset bis offset+bodyLen)
-        $body = '';
-        if ($bodyLen > 0 && strlen($decoded) >= $offset + $bodyLen) {
-            $body = substr($decoded, $offset, $bodyLen);
-        }
-
-        // je nach encrypt-Typ weiterverarbeiten
-        if ($bodyLen > 0) {
-            $xml = $this->BaichuanDecryptPayload($encType, $body, $cmdId);
-            $this->SendDebug('BAICHUAN', 'Frame-decrypted-xml', [
-                'cmd' => $cmdId,
-                'xml' => $xml
-            ], 0);
-
-            $this->HandleBaichuanMessage($cmdId, $xml);
-        } else {
-            // z. B. Login-Ack oder (aktuell) dein Handshake ohne Body
-            $this->BaichuanHandleHeaderOnly($cmdId, $class, $encType, $messId);
-        }
-    }
-
-    private function BaichuanDecryptPayload(int $encType, string $body, int $cmdId): string
-    {
-        $encHex = sprintf('0x%04X', $encType);
-
-        switch ($encType) {
-            case 0x12DD: // Beispiel: dein initialer Handshake-Typ
-            case 0x01DD: // BC-Verschlüsselung
-                // HIER deine bestehende BC/XOR-Entschlüsselung einsetzen
-                // return $this->BaichuanDecryptBC($body);
-                $this->SendDebug('BAICHUAN', 'BaichuanDecryptPayload: BC-Placeholder', $encHex, 0);
-                return $body; // Platzhalter
-
-            case 0x02DD: // AES (wenn von Reolink so verwendet)
-                // HIER deine AES-Entschlüsselung mit dem aus Nonce abgeleiteten Key einsetzen
-                // return $this->BaichuanDecryptAES($body);
-                $this->SendDebug('BAICHUAN', 'BaichuanDecryptPayload: AES-Placeholder', $encHex, 0);
-                return $body; // Platzhalter
-
-            case 0x00DD: // unverschlüsselt
-            default:
-                $this->SendDebug('BAICHUAN', 'BaichuanDecryptPayload: unverschlüsselt oder unbekannt', $encHex, 0);
-                return $body;
-        }
-    }
-
-    private function BaichuanHandleHeaderOnly(int $cmdId, int $class, int $encType, int $messId): void
-    {
-        $classHex = sprintf('%04X', $class);
-
-        // Login-ACK (wie im Debug: cmd=1, class=0000, bodyLen=0)
-        if ($cmdId === 1 && $classHex === '0000') {
-            $this->SendDebug('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
-                'encrypt' => sprintf('0x%04X', $encType),
-                'messId'  => $messId
-            ], 0);
-
-            $this->WriteAttributeString('BaichuanState', 'ready');
-            $this->SetTimerInterval('BaichuanInitTimer', 0);
-
-            // Events abonnieren und Dev/Stream-Info anfragen
-            $this->BaichuanSubscribeEvents();
-            $this->BaichuanRequestDevAndStreamInfo();
-            $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
-            return;
-        }
-
-        // Handshake ohne Body (aktuell dein Fall bei 1466)
-        if ($cmdId === 1 && $classHex === '1466') {
-            $this->SendDebug('BAICHUAN', 'Handshake-Response ohne Body (unerwartet)', [
-                'encrypt' => sprintf('0x%04X', $encType),
-                'messId'  => $messId
-            ], 0);
-            // Noch keinen neuen Handshake triggern, nur loggen
-            return;
-        }
-
-        $this->SendDebug('BAICHUAN', 'Header-only Frame ignoriert', [
-            'cmd'   => $cmdId,
-            'class' => $classHex
-        ], 0);
     }
 
 
