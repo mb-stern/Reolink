@@ -306,23 +306,15 @@ class Reolink extends IPSModule
             'hex' => bin2hex(substr($data, 0, 64))
         ]);
 
-        // Parent-IO (Client Socket) ermitteln
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
-
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden');
+        if (!$this->EnsureParentIOOnline()) {
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht');
             return;
         }
 
-        $parent  = IPS_GetInstance($parentId);
-        $pStatus = $parent['InstanceStatus'] ?? 0;
-
-        if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht', [
-                'ParentID' => $parentId,
-                'Status'   => $pStatus
-            ]);
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden (nach EnsureParentIOOnline)');
             return;
         }
 
@@ -601,29 +593,15 @@ class Reolink extends IPSModule
             return;
         }
 
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
-
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: kein Parent-IO verbunden');
+        // Versuche Parent-IO zu öffnen
+        if (!$this->EnsureParentIOOnline()) {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Parent-IO nicht online, versuche es später erneut');
             $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
             return;
         }
 
-        $parent  = IPS_GetInstance($parentId);
-        $pStatus = $parent['InstanceStatus'] ?? 0;
-
-        if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: Parent-IO nicht online, reset auf idle', [
-                'ParentID' => $parentId,
-                'Status'   => $pStatus
-            ]);
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-            return;
-        }
-
+        // Ab hier ist IO aktiv
         $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
         $bufLen = strlen($buf);
 
@@ -1281,6 +1259,50 @@ class Reolink extends IPSModule
         SetValueString($vid, $value);
     }
 
+    private function EnsureParentIOOnline(): bool
+    {
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: kein Parent-IO verknüpft');
+            return false;
+        }
+
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        // 102 = IS_ACTIVE → alles gut
+        if ($pStatus === 102) {
+            return true;
+        }
+
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nicht aktiv, versuche zu öffnen', [
+            'ParentID' => $parentId,
+            'Status'   => $pStatus
+        ]);
+
+        // Versuche, den I/O zu öffnen (für Client Socket/IOs mit "Open"-Action)
+        @IPS_RequestAction($parentId, 'Open', true);
+
+        // Kurz danach nochmal Status prüfen
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO weiterhin nicht aktiv', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            return false;
+        }
+
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nun aktiv', [
+            'ParentID' => $parentId,
+            'Status'   => $pStatus
+        ]);
+        return true;
+    }
 
 
 
