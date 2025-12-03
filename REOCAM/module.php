@@ -323,13 +323,14 @@ class Reolink extends IPSModule
 
     private function BaichuanBuildFrame(
         int $cmdId,
-        string $body = '',
-        string $messageClass = '1464',
-        string $encMode = 'BC',  // 'BC', 'AES' oder 'NONE'
-        int $messId = 250,
+        string $body,
+        string $messageClass,  // '1465', '1464', '0000'
+        string $encMode,       // 'BC', 'AES', 'NONE'
+        int $messId,
         int $payloadOffset = 0
     ): string {
-        $magic        = pack('H*', 'f0debc0a');
+        $magic = pack('H*', 'f0debc0a');
+
         $bodyLen      = strlen($body);
         $cmdIdBytes   = pack('V', $cmdId);
         $bodyLenBytes = pack('V', $bodyLen);
@@ -337,7 +338,7 @@ class Reolink extends IPSModule
 
         if ($messageClass === '1465') {
             // 20-Byte-Header (Handshake/Nonce)
-            $encryptHex = '12dd'; // Typ für 1465
+            $encryptHex = '12dc';
             $header = $magic
                     . $cmdIdBytes
                     . $bodyLenBytes
@@ -382,7 +383,7 @@ class Reolink extends IPSModule
         $messageClass = strtolower(sprintf('%04x', $class));
 
         if ($encType === 0x01) {
-            // BC "verschlüsseln"
+            // BC-"Verschlüsselung"
             $body    = $this->BaichuanDecryptBC($xmlBody, $offset);
             $encMode = 'BC';
         } elseif ($encType === 0x02) {
@@ -390,6 +391,7 @@ class Reolink extends IPSModule
             $body    = $xmlBody;
             $encMode = 'AES';
         } else {
+            // 0x00 = unverschlüsselt
             $body    = $xmlBody;
             $encMode = 'NONE';
         }
@@ -984,7 +986,7 @@ class Reolink extends IPSModule
         $xml .= '</GetDevInfo>';
         $xml .= '</body>';
 
-        // Korrekt: 3. Parameter ist das Format (0 = Text)
+        // 3. Parameter = Format (0 = Text)
         $this->SendDebug('BAICHUAN', 'GetDevInfo-XML: ' . $xml, 0);
 
         return $xml;
@@ -999,7 +1001,6 @@ class Reolink extends IPSModule
         $xml .= '</GetStreamInfo>';
         $xml .= '</body>';
 
-        // ebenfalls: 3. Parameter = 0
         $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML: ' . $xml, 0);
 
         return $xml;
@@ -1013,31 +1014,31 @@ class Reolink extends IPSModule
         $messIdDev    = $this->NextMessId();
         $messIdStream = $this->NextMessId();
 
-        // DeviceInfo
+        // DeviceInfo anfragen (UNVERSCHLÜSSELT: encType = 0x00)
         $this->SendDebug(
             'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdDev),
+            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdDev),
             0
         );
         $this->BaichuanSendFrame(
-            1,
-            0x1464,
+            1,          // cmd_id
+            0x1464,     // class
             $messIdDev,
-            0x01,       // <-- HIER: encType = 0x01 (BC)
+            0x00,       // <-- HIER: unverschlüsselt
             $devXml
         );
 
-        // StreamInfo
+        // StreamInfo anfragen (UNVERSCHLÜSSELT: encType = 0x00)
         $this->SendDebug(
             'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d)', $messIdStream),
+            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdStream),
             0
         );
         $this->BaichuanSendFrame(
             1,
             0x1464,
             $messIdStream,
-            0x01,       // <-- HIER: encType = 0x01 (BC)
+            0x00,       // <-- HIER: unverschlüsselt
             $streamXml
         );
     }
@@ -1310,7 +1311,6 @@ class Reolink extends IPSModule
 
 
 
-    
 
 
 
