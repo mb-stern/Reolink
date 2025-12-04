@@ -497,19 +497,19 @@ class Reolink extends IPSModule
     {
         $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->SendDebug('BAICHUAN', 'Kein Nonce im Handshake-XML gefunden', 0);
+            $this->dbg('BAICHUAN', 'Kein Nonce im Handshake-XML gefunden');
             return;
         }
 
         $this->BaichuanNonce = $nonce;
-        $this->SendDebug('BAICHUAN', 'Nonce erhalten: ' . $nonce, 0);
+        $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
         $password = $this->ReadPropertyString('Password');
         $tmp      = $this->BaichuanMd5Modern($nonce . '-' . $password);
         $this->BaichuanAesKey = substr($tmp, 0, 16);
 
-        $this->SendDebug('BAICHUAN', 'AES-Key (hex, 16 Zeichen): ' . $this->BaichuanAesKey, 0);
-        $this->SendDebug('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf', 0);
+        $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
+        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
 
         $this->BaichuanSendLogin();
     }
@@ -545,7 +545,7 @@ class Reolink extends IPSModule
         $xml .= '</LoginNet>';
         $xml .= '</body>';
 
-        $this->SendDebug('BAICHUAN', 'Login-XML: ' . $xml, 0);
+        $this->dbg('BAICHUAN', 'Login-XML', $xml);
 
         return $xml;
     }
@@ -555,11 +555,11 @@ class Reolink extends IPSModule
         $xml    = $this->BuildBaichuanLoginXml();
         $messId = $this->NextMessId();
 
-        $this->SendDebug(
+        $this->dbg(
             'BAICHUAN',
-            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId),
-            0
+            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId)
         );
+
 
         $this->BaichuanSendFrame(
             1,
@@ -664,9 +664,9 @@ class Reolink extends IPSModule
 
     private function BaichuanSendKeepalive(): void
     {
-        $this->SendDebug('BAICHUAN', 'Sende Keepalive (cmd=93)', 0);
+        $this->dbg('BAICHUAN', 'Sende Keepalive (cmd=93)');
 
-        $frame = $this->BaichuanBuildHeaderOnly(93, 0x0000); // gleiche Helper-Funktion wie bei Subscribe
+        $frame = $this->BaichuanBuildHeaderOnly(93, 0x0000);
         $this->BaichuanSendRaw($frame);
     }
 
@@ -923,7 +923,7 @@ class Reolink extends IPSModule
         if ($cmdId === 1) {
             // Handshake (Nonce + Encryption-Info)
             if (strpos($bodyXml, '<Encryption') !== false && strpos($bodyXml, '<nonce>') !== false) {
-                $this->SendDebug('BAICHUAN', 'Handshake-XML', $bodyXml, 0);
+                $this->dbg('BAICHUAN', 'Handshake-XML', $bodyXml);
                 $this->HandleHandshakeXml($bodyXml);
                 return;
             }
@@ -931,7 +931,7 @@ class Reolink extends IPSModule
             // Device-/Stream-Infos
             if (strpos($bodyXml, '<DeviceInfo') !== false ||
                 strpos($bodyXml, '<StreamInfoList') !== false) {
-                $this->SendDebug('BAICHUAN', 'Dev/Stream-Info-XML', $bodyXml, 0);
+                $this->dbg('BAICHUAN', 'Dev/Stream-Info-XML', $bodyXml);
                 $this->HandleLoginResponse($bodyXml);
                 return;
             }
@@ -939,31 +939,31 @@ class Reolink extends IPSModule
             // Login-Response (falls Kamera tatsächlich XML mitliefert)
             if (strpos($bodyXml, '<LoginUserResponse') !== false ||
                 strpos($bodyXml, '<LoginUser ') !== false) {
-                $this->SendDebug('BAICHUAN', 'Login-Response-XML', $bodyXml, 0);
+                $this->dbg('BAICHUAN', 'Login-Response-XML', $bodyXml);
                 $this->HandleLoginResponse($bodyXml);
                 return;
             }
 
-            $this->SendDebug('BAICHUAN', 'Unbekanntes cmd=1-XML', $bodyXml, 0);
+            $this->dbg('BAICHUAN', 'Unbekanntes cmd=1-XML', $bodyXml);
             return;
         }
 
         if ($cmdId === 33) {
-            $this->SendDebug('BAICHUAN', 'AlarmEvent-XML', $bodyXml, 0);
+            $this->dbg('BAICHUAN', 'AlarmEvent-XML', $bodyXml);
             $this->HandleAlarmEventXml($bodyXml);
             return;
         }
 
-        $this->SendDebug('BAICHUAN', 'Unhandled Baichuan cmdId', $cmdId);
+        $this->dbg('BAICHUAN', 'Unhandled Baichuan cmdId', $cmdId);
     }
 
     private function HandleLoginResponse(string $xml): void
     {
-        $this->SendDebug('BAICHUAN', 'Login-Response-XML (raw): ' . $xml, 0);
+        $this->dbg('BAICHUAN', 'Login-Response-XML (raw)', $xml);
 
         $sx = @simplexml_load_string($xml);
         if ($sx === false) {
-            $this->SendDebug('BAICHUAN', 'Login-Response: ungültiges XML', 0);
+            $this->dbg('BAICHUAN', 'Login-Response: ungültiges XML');
             return;
         }
 
@@ -977,11 +977,13 @@ class Reolink extends IPSModule
             $serial = (string)($deviceInfo->secretCode ?? '');
             $lang   = (string)($deviceInfo->language ?? '');
 
-            $this->SendDebug(
-                'BAICHUAN',
-                "DeviceInfo: Model=$model, FW=$fw, HW=$hw, Serial=$serial, Lang=$lang",
-                0
-            );
+        $this->dbg('BAICHUAN', 'DeviceInfo', [
+            'Model'  => $model,
+            'FW'     => $fw,
+            'HW'     => $hw,
+            'Serial' => $serial,
+            'Lang'   => $lang,
+        ]);
 
             // In IP-Symcon-Variablen ablegen
             $this->SetValueStringSafe('Model', $model);
@@ -990,7 +992,7 @@ class Reolink extends IPSModule
             $this->SetValueStringSafe('Serial', $serial);
             $this->SetValueStringSafe('Language', $lang);
         } else {
-            $this->SendDebug('BAICHUAN', 'Login-Response: kein <DeviceInfo> gefunden', 0);
+            $this->dbg('BAICHUAN', 'Login-Response: kein <DeviceInfo> gefunden');
         }
 
         // ---------- StreamInfoList / Auflösungen ----------
@@ -1023,7 +1025,7 @@ class Reolink extends IPSModule
             // Optional: komplette StreamInfoList als JSON/String merken
             $this->SetValueStringSafe('StreamInfoXml', $streamInfo->asXML() ?: '');
         } else {
-            $this->SendDebug('BAICHUAN', 'Login-Response: keine <StreamInfoList> gefunden', 0);
+            $this->dbg('BAICHUAN', 'Login-Response: keine <StreamInfoList> gefunden');
         }
 
         // ---------- State / Events / Keepalive ----------
@@ -1047,7 +1049,7 @@ class Reolink extends IPSModule
         $xml .= '</body>';
 
         // 3. Parameter = Format (0 = Text)
-        $this->SendDebug('BAICHUAN', 'GetDevInfo-XML: ' . $xml, 0);
+        $this->dbg('BAICHUAN', 'GetDevInfo-XML', $xml);
 
         return $xml;
     }
@@ -1061,7 +1063,7 @@ class Reolink extends IPSModule
         $xml .= '</GetStreamInfo>';
         $xml .= '</body>';
 
-        $this->SendDebug('BAICHUAN', 'GetStreamInfo-XML: ' . $xml, 0);
+        $this->dbg('BAICHUAN', 'GetStreamInfo-XML', $xml);
 
         return $xml;
     }
@@ -1074,18 +1076,16 @@ class Reolink extends IPSModule
         $messIdDev    = $this->NextMessId();
         $messIdStream = $this->NextMessId();
 
-        // DeviceInfo anfragen (UNVERSCHLÜSSELT: encType = 0x00)
-        $this->SendDebug(
+        $this->dbg(
             'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdDev),
-            0
+            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdDev)
         );
-        // DeviceInfo anfragen (AES: encType = 0x02)
-        $this->SendDebug(
+        ...
+        $this->dbg(
             'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02)', $messIdDev),
-            0
+            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdStream)
         );
+
         $this->BaichuanSendFrame(
             1,          // cmd_id
             0x1464,     // class
@@ -1182,7 +1182,7 @@ class Reolink extends IPSModule
         // Versuchen, das XML strukturiert zu lesen
         $sx = @simplexml_load_string($xml);
         if ($sx === false) {
-            $this->SendDebug('BAICHUAN', 'AlarmEvent-XML ungueltig', 0);
+            $this->dbg('BAICHUAN', 'AlarmEvent-XML ungueltig');
             return;
         }
 
@@ -1251,11 +1251,11 @@ class Reolink extends IPSModule
         }
 
         if ($typeUpper === '') {
-            $this->SendDebug('BAICHUAN', 'AlarmEvent: kein bekannter Typ gefunden', 0);
+            $this->dbg('BAICHUAN', 'AlarmEvent: kein bekannter Typ gefunden');
             return;
         }
 
-        $this->SendDebug('BAICHUAN', 'AlarmEvent-Typ erkannt: ' . $typeUpper, 0);
+        $this->dbg('BAICHUAN', 'AlarmEvent-Typ erkannt', $typeUpper);
 
         // Mapping auf unsere Bewegungs-Logik
         $this->HandleAlarmType($typeUpper);
@@ -1309,7 +1309,7 @@ class Reolink extends IPSModule
                 break;
 
             default:
-                $this->SendDebug('BAICHUAN', 'HandleAlarmType: unbekannter Typ ' . $typeUpper, 0);
+                $this->dbg('BAICHUAN', 'HandleAlarmType: unbekannter Typ', $typeUpper);
                 break;
         }
     }
@@ -1397,14 +1397,14 @@ class Reolink extends IPSModule
         return $this->ReadPropertyBoolean("InstanceStatus") && ($this->GetStatus() === 102);
     }
 
-    private function dbg(string $tag, string $msg, $data = null): void
+ private function dbg(string $channel, string $message, $data = null): void
     {
-        if ($data !== null) {
-            // hier NUR Arrays mit Zahlen/Strings übergeben
-            $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            $this->SendDebug($tag, $msg . ' | ' . $json, 0);
+        if ($data === null) {
+            $this->SendDebug($channel . ' ' . $message, '', 0);
+        } elseif (is_scalar($data)) {
+            $this->SendDebug($channel . ' ' . $message, (string)$data, 0);
         } else {
-            $this->SendDebug($tag, $msg, 0);
+            $this->SendDebug($channel . ' ' . $message, json_encode($data), 0);
         }
     }
 
