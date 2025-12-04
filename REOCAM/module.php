@@ -1080,7 +1080,6 @@ class Reolink extends IPSModule
             'BAICHUAN',
             sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdDev)
         );
-        ...
         $this->dbg(
             'BAICHUAN',
             sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdStream)
