@@ -324,30 +324,44 @@ class Reolink extends IPSModule
     private function BaichuanBuildFrame(
         int $cmdId,
         string $body,
-        string $messageClass,  // '1465', '1464', '0000'
-        string $encMode,       // 'BC', 'AES', 'NONE'
+        string $messageClass,
+        string $encMode,
         int $messId,
-        int $payloadOffset = 0
+        int $payloadOffset
     ): string {
-        $magic = pack('H*', 'f0debc0a');
+        $magic = pack('V', self::BAICHUAN_MAGIC); // 'f0debc0a'
 
         $bodyLen      = strlen($body);
         $cmdIdBytes   = pack('V', $cmdId);
         $bodyLenBytes = pack('V', $bodyLen);
         $messIdBytes  = pack('V', $messId);
 
+        // 🔹 20-Byte-Header (Class 1465: Nonce + Login)
         if ($messageClass === '1465') {
-            // 20-Byte-Header (Handshake/Nonce)
-            $encryptHex = '12dc';
+            switch ($encMode) {
+                case 'BC':
+                    // „modernes“ BC-Flag (Server-Antworten kommen mit 0x12DD)
+                    $encryptHex = '12dd';
+                    break;
+                case 'AES':
+                    $encryptHex = '02dd';
+                    break;
+                case 'NONE':
+                default:
+                    $encryptHex = '00dd';
+                    break;
+            }
+
             $header = $magic
                     . $cmdIdBytes
                     . $bodyLenBytes
                     . $messIdBytes
                     . pack('H*', $encryptHex . $messageClass);
+
             return $header . $body;
         }
 
-        // 24-Byte-Header (1464 / 0000)
+        // 🔹 24-Byte-Header (1464 / 0000)
         switch ($encMode) {
             case 'BC':
                 $encryptHex = '01dd';
@@ -557,15 +571,15 @@ class Reolink extends IPSModule
 
         $this->dbg(
             'BAICHUAN',
-            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d)', $messId)
+            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d, encType=0x02/AES)', $messId)
         );
 
-
+        // 👉 Login jetzt AES-verschlüsselt
         $this->BaichuanSendFrame(
             1,
             0x1465,
             $messId,
-            0x01,   // enc_type = BC
+            0x02,   // enc_type = AES
             $xml
         );
     }
@@ -1076,34 +1090,29 @@ class Reolink extends IPSModule
         $messIdDev    = $this->NextMessId();
         $messIdStream = $this->NextMessId();
 
+        // DeviceInfo anfragen (AES: encType = 0x02)
         $this->dbg(
             'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdDev)
+            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02/AES)', $messIdDev)
         );
-        $this->dbg(
-            'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdStream)
-        );
-
         $this->BaichuanSendFrame(
             1,          // cmd_id
             0x1464,     // class
             $messIdDev,
-            0x02,       // <-- jetzt AES
+            0x02,       // AES
             $devXml
         );
 
         // StreamInfo anfragen (AES: encType = 0x02)
-        $this->SendDebug(
+        $this->dbg(
             'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02)', $messIdStream),
-            0
+            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02/AES)', $messIdStream)
         );
         $this->BaichuanSendFrame(
             1,
             0x1464,
             $messIdStream,
-            0x02,       // <-- jetzt AES
+            0x02,       // AES
             $streamXml
         );
     }
