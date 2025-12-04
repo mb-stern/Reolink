@@ -383,13 +383,41 @@ class Reolink extends IPSModule
         $messageClass = strtolower(sprintf('%04x', $class));
 
         if ($encType === 0x01) {
-            // BC-"Verschlüsselung"
-            $body    = $this->BaichuanDecryptBC($xmlBody, $offset);
+            // BC-"Verschlüsselung" (XOR)
+            $body    = $this->BaichuanDecryptBC($xmlBody, $offset); // XOR ist symmetrisch
             $encMode = 'BC';
         } elseif ($encType === 0x02) {
-            // später AES
-            $body    = $xmlBody;
-            $encMode = 'AES';
+            // AES
+            if ($this->BaichuanAesKey === '') {
+                // Fallback, wenn AES-Key noch nicht da ist
+                $this->dbg('BAICHUAN', 'Sende Frame mit encType=0x02, aber kein AES-Key gesetzt – sende unverschlüsselt', [
+                    'cmd'    => $cmdId,
+                    'class'  => $messageClass,
+                    'messId' => $messId
+                ]);
+                $body    = $xmlBody;
+                $encMode = 'NONE';
+            } else {
+                $enc = openssl_encrypt(
+                    $xmlBody,
+                    'AES-128-ECB',
+                    $this->BaichuanAesKey,
+                    OPENSSL_RAW_DATA          // PKCS#7 Padding automatisch
+                );
+
+                if ($enc === false) {
+                    $this->dbg('BAICHUAN', 'AES-Encrypt fehlgeschlagen, sende Body unverschlüsselt', [
+                        'cmd'    => $cmdId,
+                        'class'  => $messageClass,
+                        'messId' => $messId
+                    ]);
+                    $body    = $xmlBody;
+                    $encMode = 'NONE';
+                } else {
+                    $body    = $enc;
+                    $encMode = 'AES';
+                }
+            }
         } else {
             // 0x00 = unverschlüsselt
             $body    = $xmlBody;
@@ -828,7 +856,39 @@ class Reolink extends IPSModule
             return $body;
         }
 
-        // Andere Typen → nur loggen (später AES)
+        // 0x02DD → AES (modern)
+        if ($encTypeHex === '02dd') {
+            if ($this->BaichuanAesKey === '') {
+                $this->dbg('BAICHUAN', 'BaichuanDecrypt: AES aber kein AES-Key gesetzt', [
+                    'encrypt'    => sprintf('0x%04X', $encrypt),
+                    'encTypeHex' => $encTypeHex,
+                    'messId'     => $messId,
+                ]);
+                return '';
+            }
+
+            $plain = openssl_decrypt(
+                $body,
+                'AES-128-ECB',
+                $this->BaichuanAesKey,      // 16-Byte-Key (wie in HandleHandshakeXml berechnet)
+                OPENSSL_RAW_DATA            // PKCS#7 Padding wird automatisch gehandhabt
+            );
+
+            if ($plain === false) {
+                $this->dbg('BAICHUAN', 'BaichuanDecrypt: AES decrypt fehlgeschlagen', [
+                    'encrypt'    => sprintf('0x%04X', $encrypt),
+                    'encTypeHex' => $encTypeHex,
+                    'messId'     => $messId,
+                    'body_hex'   => bin2hex(substr($body, 0, 32)),
+                ]);
+                return '';
+            }
+
+            // Zur Sicherheit Nullbytes am Ende wegschneiden
+            return rtrim($plain, "\0");
+        }
+
+        // Andere Typen → nur loggen
         $this->dbg('BAICHUAN', 'BaichuanDecrypt: unbekannter encrypt-Typ', [
             'encrypt'    => sprintf('0x%04X', $encrypt),
             'encTypeHex' => $encTypeHex,
@@ -1020,25 +1080,31 @@ class Reolink extends IPSModule
             sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdDev),
             0
         );
+        // DeviceInfo anfragen (AES: encType = 0x02)
+        $this->SendDebug(
+            'BAICHUAN',
+            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02)', $messIdDev),
+            0
+        );
         $this->BaichuanSendFrame(
             1,          // cmd_id
             0x1464,     // class
             $messIdDev,
-            0x00,       // <-- HIER: unverschlüsselt
+            0x02,       // <-- jetzt AES
             $devXml
         );
 
-        // StreamInfo anfragen (UNVERSCHLÜSSELT: encType = 0x00)
+        // StreamInfo anfragen (AES: encType = 0x02)
         $this->SendDebug(
             'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x00)', $messIdStream),
+            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02)', $messIdStream),
             0
         );
         $this->BaichuanSendFrame(
             1,
             0x1464,
             $messIdStream,
-            0x00,       // <-- HIER: unverschlüsselt
+            0x02,       // <-- jetzt AES
             $streamXml
         );
     }
