@@ -569,17 +569,23 @@ class Reolink extends IPSModule
         $xml    = $this->BuildBaichuanLoginXml();
         $messId = $this->NextMessId();
 
+        // Wenn kein AES-Key gesetzt ist -> Legacy/BC-Modus (encType=0x01)
+        $encType = ($this->BaichuanAesKey === '') ? 0x01 : 0x02;
+
         $this->dbg(
             'BAICHUAN',
-            sprintf('Sende Login (cmd_id=1, class=0x1465, messId=%d, encType=0x02/AES)', $messId)
+            sprintf(
+                'Sende Login (cmd_id=1, class=0x1465, messId=%d, encType=0x%02X)',
+                $messId,
+                $encType
+            )
         );
 
-        // 👉 Login jetzt AES-verschlüsselt
         $this->BaichuanSendFrame(
             1,
             0x1465,
             $messId,
-            0x02,   // enc_type = AES
+            $encType,
             $xml
         );
     }
@@ -1090,53 +1096,73 @@ class Reolink extends IPSModule
         $messIdDev    = $this->NextMessId();
         $messIdStream = $this->NextMessId();
 
-        // DeviceInfo anfragen (AES: encType = 0x02)
+        // Auch hier: wenn kein AES-Key -> BC
+        $encType = ($this->BaichuanAesKey === '') ? 0x01 : 0x02;
+
+        // DeviceInfo
         $this->dbg(
             'BAICHUAN',
-            sprintf('Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02/AES)', $messIdDev)
+            sprintf(
+                'Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x%02X)',
+                $messIdDev,
+                $encType
+            )
         );
         $this->BaichuanSendFrame(
-            1,          // cmd_id
-            0x1464,     // class
+            1,
+            0x1464,
             $messIdDev,
-            0x02,       // AES
+            $encType,
             $devXml
         );
 
-        // StreamInfo anfragen (AES: encType = 0x02)
+        // StreamInfo
         $this->dbg(
             'BAICHUAN',
-            sprintf('Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x02/AES)', $messIdStream)
+            sprintf(
+                'Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x%02X)',
+                $messIdStream,
+                $encType
+            )
         );
         $this->BaichuanSendFrame(
             1,
             0x1464,
             $messIdStream,
-            0x02,       // AES
+            $encType,
             $streamXml
         );
     }
 
-    private function BaichuanSubscribeEvents(): void
+    private function BaichuanSubscribeEvents(int $messId): void
     {
-        // cmd_id = 31, mess_id = 251 (Push), Header-Only, moderner Header (1464)
-        $cmdId        = 31;
-        $body         = '';
-        $messageClass = '1464';
-        $encMode      = 'AES';
-        $messId       = 251;
+        $this->dbg('BAICHUAN', sprintf('Subscribe Events (cmd=31, messId=%d)', $messId));
 
-        $frame = $this->BaichuanBuildFrame(
-            $cmdId,
-            $body,
-            $messageClass,
-            $encMode,
-            $messId,
-            0
-        );
+        // Header manuell bauen, weil SubscribeEvents bodylos ist
+        $magic       = pack('V', self::BAICHUAN_MAGIC);   // f0debc0a
+        $cmdIdBytes  = pack('V', 31);
+        $bodyLen     = 0;
+        $bodyLenBytes= pack('V', $bodyLen);
+        $messIdBytes = pack('V', $messId);
 
-        $this->dbg('BAICHUAN', 'Subscribe Events (cmd=31, messId=251)');
-        $this->BaichuanSendRaw($frame);
+        // Encryption nach Modus wählen
+        if ($this->BaichuanAesKey === '') {
+            // Legacy/BC-Modus
+            $encryptHex = '01dd';
+        } else {
+            // AES-Modus
+            $encryptHex = '02dd';
+        }
+
+        $classHex = '1464';
+        $header   = $magic
+                . $cmdIdBytes
+                . $bodyLenBytes
+                . $messIdBytes
+                . pack('H*', $encryptHex . $classHex)
+                . pack('V', 0); // payloadOffset = 0
+
+        $this->BaichuanSendRaw($header);
     }
 
     public function BaichuanKeepalive(): void
