@@ -1357,50 +1357,84 @@ class Reolink extends IPSModule
         SetValueString($vid, $value);
     }
 
-    private function EnsureParentIOOnline(): bool
-    {
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
+private function EnsureParentIOOnline(): bool
+{
+    $inst     = IPS_GetInstance($this->InstanceID);
+    $parentId = $inst['ConnectionID'] ?? 0;
+    if ($parentId <= 0) {
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Kein Parent-IO verbunden');
+        return false;
+    }
 
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: kein Parent-IO verknüpft');
-            return false;
-        }
+    $parent  = IPS_GetInstance($parentId);
+    $status  = $parent['InstanceStatus'] ?? 0;
 
-        $parent  = IPS_GetInstance($parentId);
-        $pStatus = $parent['InstanceStatus'] ?? 0;
+    // Wenn aktiv → alles gut
+    if ($status === 102) {
+        // Reset Fehlerzähler
+        $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
+        return true;
+    }
 
-        // 102 = IS_ACTIVE → alles gut
-        if ($pStatus === 102) {
+    // 1) Normaler Versuch: einfach öffnen
+    $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nicht aktiv, versuche zu öffnen', [
+        'ParentID' => $parentId,
+        'Status'   => $status
+    ]);
+    @IPS_RequestAction($parentId, 'Open', true);
+
+    IPS_Sleep(200); // 200 ms warten, damit Symcon den Status aktualisieren kann
+
+    $parent = IPS_GetInstance($parentId);
+    $status = $parent['InstanceStatus'] ?? 0;
+
+    if ($status === 102) {
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO erfolgreich geöffnet', [
+            'ParentID' => $parentId
+        ]);
+        $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
+        return true;
+    }
+
+    // 2) Wenn das mehrfach nicht klappt → hartes Reconnect, so wie du es manuell machst
+    $fails = $this->ReadAttributeInteger('BaichuanReconnectFails') + 1;
+    $this->WriteAttributeInteger('BaichuanReconnectFails', $fails);
+
+    if ($fails >= 3) {
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: wiederholt fehlgeschlagen, mache hartes Reconnect', [
+            'ParentID' => $parentId,
+            'Status'   => $status,
+            'Fails'    => $fails
+        ]);
+
+        // wie dein manuelles "Socket neu verbinden"
+        @IPS_RequestAction($parentId, 'Open', false);
+        IPS_Sleep(500);
+        @IPS_RequestAction($parentId, 'Open', true);
+
+        IPS_Sleep(300);
+        $parent = IPS_GetInstance($parentId);
+        $status = $parent['InstanceStatus'] ?? 0;
+
+        if ($status === 102) {
+            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: hartes Reconnect erfolgreich', [
+                'ParentID' => $parentId
+            ]);
+            $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
             return true;
         }
 
-        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nicht aktiv, versuche zu öffnen', [
-            'ParentID' => $parentId,
-            'Status'   => $pStatus
-        ]);
-
-        // Versuche, den I/O zu öffnen (für Client Socket/IOs mit "Open"-Action)
-        @IPS_RequestAction($parentId, 'Open', true);
-
-        // Kurz danach nochmal Status prüfen
-        $parent  = IPS_GetInstance($parentId);
-        $pStatus = $parent['InstanceStatus'] ?? 0;
-
-        if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO weiterhin nicht aktiv', [
-                'ParentID' => $parentId,
-                'Status'   => $pStatus
-            ]);
-            return false;
-        }
-
-        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nun aktiv', [
-            'ParentID' => $parentId,
-            'Status'   => $pStatus
-        ]);
-        return true;
+        // auch das hat nicht geklappt → Zähler zurück, aber false
+        $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
     }
+
+    $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO weiterhin nicht aktiv', [
+        'ParentID' => $parentId,
+        'Status'   => $status
+    ]);
+    return false;
+}
+
 
 
 
