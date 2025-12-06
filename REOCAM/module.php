@@ -1136,20 +1136,20 @@ class Reolink extends IPSModule
 
     private function BaichuanSubscribeEvents(?int $messId = null): void
     {
+        // Falls keine messId übergeben wurde, nimm eine neue
         if ($messId === null) {
             $messId = $this->NextMessId();
         }
 
         $this->dbg('BAICHUAN', sprintf('Subscribe Events (cmd=31, messId=%d)', $messId));
 
-        // Header manuell bauen, weil SubscribeEvents bodylos ist
         $magic        = pack('V', self::BAICHUAN_MAGIC);   // f0debc0a
-        $cmdIdBytes   = pack('V', 31);
+        $cmdIdBytes   = pack('V', 31);                     // cmd = 31
         $bodyLen      = 0;
         $bodyLenBytes = pack('V', $bodyLen);
         $messIdBytes  = pack('V', $messId);
 
-        // Encryption nach Modus wählen
+        // Encryption nach Modus wählen (wie bei GetDevInfo/StreamInfo)
         if ($this->BaichuanAesKey === '') {
             // Legacy/BC-Modus
             $encryptHex = '01dd';
@@ -1158,8 +1158,10 @@ class Reolink extends IPSModule
             $encryptHex = '02dd';
         }
 
+        // moderne Klassen-ID wie deine anderen Baichuan-Kommandos
         $classHex = '1464';
-        $header   = $magic
+
+        $header = $magic
             . $cmdIdBytes
             . $bodyLenBytes
             . $messIdBytes
@@ -1197,17 +1199,21 @@ class Reolink extends IPSModule
                 'Status'   => $pStatus
             ]);
 
+            // Verbindung ist tot → Baichuan-State zurücksetzen und Init neu starten
             $this->WriteAttributeString('BaichuanState', 'idle');
             $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
             return;
         }
 
+        // Encryption-Modus passend zu deinem AES-Key wählen
+        $encMode = ($this->BaichuanAesKey === '') ? 'BC' : 'AES';
+
         $frame = $this->BaichuanBuildFrame(
-            93,      // cmdId = PING
-            '',      // body leer
-            '1464',  // moderner Header
-            'AES',
-            250,
+            93,                 // cmdId = PING
+            '',                 // body leer
+            '1464',             // moderne Class-ID
+            $encMode,           // BC oder AES
+            $this->NextMessId(),// frische messId
             0
         );
 
