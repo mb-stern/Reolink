@@ -543,8 +543,8 @@ class Reolink extends IPSModule
         $password = $this->ReadPropertyString('Password');
         $nonce    = $this->BaichuanNonce;
 
-        $userHash     = $this->BaichuanMd5Modern($username . $nonce);
-        $passwordHash = $this->BaichuanMd5Modern($password . $nonce);
+        $userHash     = $this->BaichuanMd5Modern($nonce . '-' . $username);
+        $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
 
         $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
         $xml .= '<body>';
