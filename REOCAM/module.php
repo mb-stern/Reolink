@@ -817,7 +817,7 @@ class Reolink extends IPSModule
                 $this->BaichuanRequestDevAndStreamInfo();
 
                 // 3) Keepalive
-                $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
+                $this->SetTimerInterval('BaichuanKeepaliveTimer', 5 * 1000);
 
                 return;
             }
@@ -1198,22 +1198,20 @@ class Reolink extends IPSModule
                 'ParentID' => $parentId,
                 'Status'   => $pStatus
             ]);
-
-            // Verbindung ist tot → Baichuan-State zurücksetzen und Init neu starten
             $this->WriteAttributeString('BaichuanState', 'idle');
             $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
             return;
         }
 
-        // Encryption-Modus passend zu deinem AES-Key wählen
+        // encMode passend wählen
         $encMode = ($this->BaichuanAesKey === '') ? 'BC' : 'AES';
 
         $frame = $this->BaichuanBuildFrame(
             93,                 // cmdId = PING
-            '',                 // body leer
-            '1464',             // moderne Class-ID
-            $encMode,           // BC oder AES
-            $this->NextMessId(),// frische messId
+            '',                 // kein Body
+            '1464',
+            $encMode,
+            $this->NextMessId(),// <<< WICHTIG: frische messId
             0
         );
 
