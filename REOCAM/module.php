@@ -817,7 +817,7 @@ class Reolink extends IPSModule
                 $this->BaichuanRequestDevAndStreamInfo();
 
                 // 3) Keepalive
-                $this->SetTimerInterval('BaichuanKeepaliveTimer', 5 * 1000);
+                $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
 
                 return;
             }
@@ -1136,37 +1136,27 @@ class Reolink extends IPSModule
 
     private function BaichuanSubscribeEvents(?int $messId = null): void
     {
-        // Falls keine messId übergeben wurde, nimm eine neue
         if ($messId === null) {
             $messId = $this->NextMessId();
         }
 
         $this->dbg('BAICHUAN', sprintf('Subscribe Events (cmd=31, messId=%d)', $messId));
 
-        $magic        = pack('V', self::BAICHUAN_MAGIC);   // f0debc0a
-        $cmdIdBytes   = pack('V', 31);                     // cmd = 31
+        $magic        = pack('V', self::BAICHUAN_MAGIC);
+        $cmdIdBytes   = pack('V', 31);
         $bodyLen      = 0;
         $bodyLenBytes = pack('V', $bodyLen);
         $messIdBytes  = pack('V', $messId);
 
-        // Encryption nach Modus wählen (wie bei GetDevInfo/StreamInfo)
-        if ($this->BaichuanAesKey === '') {
-            // Legacy/BC-Modus
-            $encryptHex = '01dd';
-        } else {
-            // AES-Modus
-            $encryptHex = '02dd';
-        }
-
-        // moderne Klassen-ID wie deine anderen Baichuan-Kommandos
-        $classHex = '1464';
+        $encryptHex = ($this->BaichuanAesKey === '') ? '01dd' : '02dd';
+        $classHex   = '1464';
 
         $header = $magic
             . $cmdIdBytes
             . $bodyLenBytes
             . $messIdBytes
             . pack('H*', $encryptHex . $classHex)
-            . pack('V', 0); // payloadOffset = 0
+            . pack('V', 0);
 
         $this->BaichuanSendRaw($header);
     }
@@ -1203,15 +1193,14 @@ class Reolink extends IPSModule
             return;
         }
 
-        // encMode passend wählen
         $encMode = ($this->BaichuanAesKey === '') ? 'BC' : 'AES';
 
         $frame = $this->BaichuanBuildFrame(
-            93,                 // cmdId = PING
-            '',                 // kein Body
+            93,
+            '',
             '1464',
             $encMode,
-            $this->NextMessId(),// <<< WICHTIG: frische messId
+            $this->NextMessId(),
             0
         );
 
