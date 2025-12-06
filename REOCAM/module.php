@@ -1134,24 +1134,25 @@ class Reolink extends IPSModule
         );
     }
 
-    private function BaichuanSubscribeEvents(int $messId): void
+    private function BaichuanSubscribeEvents(?int $messId = null): void
     {
+        // Wenn kein MessId übergeben wird, generieren wir eine neue
+        if ($messId === null) {
+            $messId = $this->NextMessId();
+        }
+
         $this->dbg('BAICHUAN', sprintf('Subscribe Events (cmd=31, messId=%d)', $messId));
 
-        // Header manuell bauen, weil SubscribeEvents bodylos ist
         $magic       = pack('V', self::BAICHUAN_MAGIC);   // f0debc0a
         $cmdIdBytes  = pack('V', 31);
         $bodyLen     = 0;
         $bodyLenBytes= pack('V', $bodyLen);
         $messIdBytes = pack('V', $messId);
 
-        // Encryption nach Modus wählen
         if ($this->BaichuanAesKey === '') {
-            // Legacy/BC-Modus
-            $encryptHex = '01dd';
+            $encryptHex = '01dd';     // BC
         } else {
-            // AES-Modus
-            $encryptHex = '02dd';
+            $encryptHex = '02dd';     // AES
         }
 
         $classHex = '1464';
