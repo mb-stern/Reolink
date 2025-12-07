@@ -580,28 +580,21 @@ class Reolink extends IPSModule
 
     private function BaichuanSendLogin(): void
     {
-        $xml    = $this->BuildBaichuanLoginXml();
-        $messId = $this->NextMessId();
+        $messId = $this->BaichuanNextMessId();
 
-        // Wenn kein AES-Key gesetzt ist -> Legacy/BC-Modus (encType=0x01)
-        $encType = ($this->BaichuanAesKey === '') ? 0x01 : 0x02;
+        $loginXml = $this->BuildBaichuanLoginXml();
 
-        $this->dbg(
-            'BAICHUAN',
-            sprintf(
-                'Sende Login (cmd_id=1, class=0x1465, messId=%d, encType=0x%02X)',
-                $messId,
-                $encType
-            )
-        );
+        // Nur zur Kontrolle ins Debug
+        $this->dbg('BAICHUAN', '  BAICHUAN Login-XML', $loginXml);
 
-        $this->BaichuanSendFrame(
-            1,
-            0x1465,
-            $messId,
-            $encType,
-            $xml
-        );
+        // ❗ WICHTIG: keine BC-Verschlüsselung für den Body
+        $encType = 0; // oder der gleiche Wert wie beim Nonce-Request
+
+        // Body bleibt das reine XML
+        $body = $loginXml;
+
+        // Falls du bei Login auch class 0x1465 verwendest:
+        $this->BaichuanSendFrame(1, '1465', $encType, $messId, $body);
     }
 
     private function BaichuanSendLoginRequest(): void
