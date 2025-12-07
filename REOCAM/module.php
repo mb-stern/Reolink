@@ -417,13 +417,46 @@ class Reolink extends IPSModule
         int $encType,
         string $xmlBody
     ): void {
-        // MessId → Offset wie beim Empfang
         $offset       = $messId % 256;
         $messageClass = strtolower(sprintf('%04x', $class));
 
-        // Wenn AES-Key existiert → alles AES, egal was encType gefordert hat
+        // ✅ Sobald AES-Key vorhanden → IMMER AES
         if ($this->BaichuanAesKey !== '') {
             $encType = 0x02;
+        }
+
+        // ✅ Encryption auswählen
+        if ($encType === 0x01) {
+            // BC XOR
+            $body    = $this->BaichuanDecryptBC($xmlBody, $offset);
+            $encMode = 'BC';
+        } elseif ($encType === 0x02) {
+            // AES
+            if ($this->BaichuanAesKey === '') {
+                $this->dbg('BAICHUAN', 'AES gefordert, aber kein Key – sende unverschlüsselt');
+                $body    = $xmlBody;
+                $encMode = 'NONE';
+            } else {
+                $enc = openssl_encrypt(
+                    $xmlBody,
+                    'AES-128-ECB',
+                    $this->BaichuanAesKey,
+                    OPENSSL_RAW_DATA
+                );
+
+                if ($enc === false) {
+                    $this->dbg('BAICHUAN', 'AES-Encrypt fehlgeschlagen – sende unencrypted');
+                    $body    = $xmlBody;
+                    $encMode = 'NONE';
+                } else {
+                    $body    = $enc;
+                    $encMode = 'AES';
+                }
+            }
+        } else {
+            // NONE
+            $body    = $xmlBody;
+            $encMode = 'NONE';
         }
 
         $frame = $this->BaichuanBuildFrame(
@@ -436,11 +469,12 @@ class Reolink extends IPSModule
         );
 
         $this->dbg('BAICHUAN', 'Sende Frame', [
-            'cmd'      => $cmdId,
-            'class'    => $messageClass,
-            'encType'  => $encType,
-            'messId'   => $messId,
-            'body_hex' => bin2hex(substr($body, 0, 64)),
+            'cmd'     => $cmdId,
+            'class'   => $messageClass,
+            'encMode' => $encMode,
+            'messId'  => $messId,
+            'len'     => strlen($body),
+            'hex'     => bin2hex(substr($body, 0, 32))
         ]);
 
         $this->BaichuanSendRaw($frame);
