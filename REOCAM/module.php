@@ -310,7 +310,7 @@ class Reolink extends IPSModule
             'hex' => bin2hex(substr($data, 0, 64))
         ]);
 
-        // GAR KEIN EnsureParentIOOnline hier drin – einfach senden.
+        // Parent-IO (Client Socket) ermitteln
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -318,6 +318,20 @@ class Reolink extends IPSModule
             return;
         }
 
+        // Prüfen, ob der Socket wirklich verbunden ist
+        $parent  = IPS_GetInstance($parentId);
+        $status  = $parent['InstanceStatus'] ?? 0;
+
+        // 102 = IS_ACTIVE – nur dann senden
+        if ($status !== 102) {
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Socket ist nicht verbunden, sende nicht', [
+                'ParentID' => $parentId,
+                'Status'   => $status
+            ]);
+            return;
+        }
+
+        // jetzt ist der Socket aktiv, jetzt darf gesendet werden
         CSCK_SendText($parentId, $data);
     }
 
