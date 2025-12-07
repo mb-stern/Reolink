@@ -361,12 +361,13 @@ class Reolink extends IPSModule
         $bodyLenBytes = pack('V', $bodyLen);
         $messIdBytes  = pack('V', $messId);
 
-        // 🔹 20-Byte-Header (Class 1465: Nonce + Login)
+        // 🔹 20-Byte-Header (Class 1465: Nonce-Request)
         if ($messageClass === '1465') {
+            // WICHTIG: exakt wie in reolink_aio → 0x12DC
+            // Requests: Encrypt-Feld = 0xDC12, Class = 0x1465
             switch ($encMode) {
                 case 'BC':
-                    // „modernes“ BC-Flag (Server-Antworten kommen mit 0x12DD)
-                    $encryptHex = '12dd';
+                    $encryptHex = '12dc';  // <-- hier der entscheidende Fix
                     break;
                 case 'AES':
                     $encryptHex = '02dd';
@@ -480,7 +481,7 @@ class Reolink extends IPSModule
         $this->BaichuanSendRaw($frame);
     }
 
-    public function BaichuanHandleHandshake(
+        public function BaichuanHandleHandshake(
         int $cmdId,
         string $body,
         string $classHex,
@@ -499,25 +500,25 @@ class Reolink extends IPSModule
             ]
         );
 
+        // Wenn die Kamera (wie bisher) ohne Body bestätigt, können wir hier erst mal raus.
+        if ($body === '' || strlen($body) === 0) {
+            $this->dbg('BAICHUAN', 'Handshake: kein Body erhalten, bleibe im State "handshake"', []);
+            return;
+        }
+
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
         $this->dbg('BAICHUAN', 'Handshake-decrypted-xml', [
             'xml' => $xml
         ]);
 
-        // Dummy:
-        $this->WriteAttributeString('BaichuanState', 'ready');
-    }
+        if ($xml === '') {
+            $this->dbg('BAICHUAN', 'Handshake: Entschlüsselung ergab leeres XML, bleibe im State "handshake"', []);
+            return;
+        }
 
-    private string $BaichuanNonce  = '';
-    private string $BaichuanAesKey = '';
-    private int    $BaichuanMessId = 250;
-
-    private function BaichuanMd5Modern(string $input): string
-    {
-        $md5 = md5($input, true);
-        $hex = strtoupper(bin2hex($md5));
-        return substr($hex, 0, 31);
+        // 👉 Hier wird jetzt wirklich Nonce + AES-Key gesetzt
+        $this->HandleHandshakeXml($xml);
     }
 
     private function NextMessId(): int
@@ -967,6 +968,12 @@ class Reolink extends IPSModule
         // ---------------- MIT BODY ----------------
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
         if ($xml === '') {
+            return;
+        }
+
+        // Handshake-XML?
+        if ($cmdId === 1 && $classHex === '1466') {
+            $this->BaichuanHandleHandshake($cmdId, $body, $classHex, $encrypt, $messId);
             return;
         }
 
