@@ -83,8 +83,12 @@ class Reolink extends IPSModule
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
 
         $this->RegisterTimer('BaichuanInitTimer',     0, 'REOCAM_InitBaichuan($_IPS[\'TARGET\']);');
+       
         // NEU: separater Timer nur für Keepalive (cmd=93)
         $this->RegisterTimer('BaichuanKeepaliveTimer', 0, 'REOCAM_BaichuanKeepalive($_IPS[\'TARGET\']);');
+
+        // NEU: Reconnect-Zähler
+        $this->RegisterAttributeInteger('BaichuanReconnectFails', 0);
     }
 
     public function ApplyChanges()
