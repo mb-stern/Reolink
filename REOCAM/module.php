@@ -894,13 +894,31 @@ class Reolink extends IPSModule
             if ($cmdId === 1 && $classHex === '0000') {
                 $state = $this->ReadAttributeString('BaichuanState');
 
-                // Nur wenn wir wirklich noch im Login sind
+                // ✅ Login-ACK NUR EINMAL behandeln
                 if ($state === 'waiting_login') {
-                    $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
-                        'encrypt' => sprintf('0x%04X', $encrypt),
-                        'messId'  => $messId
+
+                    // 🔐 AES-Key jetzt erzeugen (REOLINK STANDARD)
+                    $pwdMd5 = strtolower(md5($this->ReadPropertyString('Password')));
+                    $this->BaichuanAesKey = substr(
+                        strtolower(md5($pwdMd5 . $this->BaichuanNonce)),
+                        0,
+                        16
+                    );
+
+                    $this->dbg('BAICHUAN', 'AES-Key gesetzt', [
+                        'aesKey' => $this->BaichuanAesKey
                     ]);
 
+                    $this->dbg(
+                        'BAICHUAN',
+                        'Login-Response (Header-only) empfangen – setze State=ready',
+                        [
+                            'encrypt' => sprintf('0x%04X', $encrypt),
+                            'messId'  => $messId
+                        ]
+                    );
+
+                    // ✅ Ab hier ist die Session offen
                     $this->WriteAttributeString('BaichuanState', 'ready');
 
                     // Init-Timer stoppen
@@ -909,14 +927,14 @@ class Reolink extends IPSModule
                     // Events abonnieren
                     $this->BaichuanSubscribeEvents();
 
-                    // Device/Stream-Info anfragen
+                    // Device / Stream Info abrufen (JETZT schon mit AES!)
                     $this->BaichuanRequestDevAndStreamInfo();
 
-                    // Keepalive alle 25 Sekunden
+                    // Keepalive starten
                     $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
                 } else {
-                    // normales ACK auf irgendein Kommando
-                    $this->dbg('BAICHUAN', 'ACK ohne Body (cmd=1,class=0000) empfangen', [
+                    // Normales ACK auf andere Requests
+                    $this->dbg('BAICHUAN', 'ACK ohne Body empfangen', [
                         'state'  => $state,
                         'messId' => $messId
                     ]);
