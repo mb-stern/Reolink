@@ -89,6 +89,12 @@ class Reolink extends IPSModule
 
         // NEU: Reconnect-Zähler
         $this->RegisterAttributeInteger('BaichuanReconnectFails', 0);
+
+        // Letzte Aktivität (Senden/Empfangen)
+        $this->RegisterAttributeInteger('BaichuanLastActivity', 0);
+
+        // Watchdog-Timer (z.B. alle 10 Sekunden)
+        $this->RegisterTimer('BaichuanWatchdogTimer', 0, 'REOLINK_BaichuanWatchdog($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges()
@@ -134,10 +140,12 @@ class Reolink extends IPSModule
 
             // Init nach kurzer Verzögerung starten (2s)
             $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
+            $this->SetTimerInterval('BaichuanWatchdogTimer', 10 * 1000);
         } else {
             $this->dbg('BAICHUAN', 'Baichuan deaktiviert, stoppe Init-/Keepalive-Timer');
             $this->SetTimerInterval('BaichuanInitTimer', 0);
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
+            $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
         }
 
         // -----------------------
@@ -303,6 +311,9 @@ class Reolink extends IPSModule
 
     private function BaichuanSendRaw(string $data): void
     {
+
+        $this->BaichuanMarkActivity();
+
         $len = strlen($data);
 
         $this->dbg('BAICHUAN', 'Sende Rohdaten', [
@@ -735,14 +746,49 @@ class Reolink extends IPSModule
 
     private function BaichuanSendKeepalive(): void
     {
-        $this->dbg('BAICHUAN', 'Sende Keepalive (cmd=93)');
+        $state = $this->ReadAttributeString('BaichuanState');
+        if ($state !== 'ready') {
+            $this->dbg('BAICHUAN', 'Keepalive: State != ready, sende nicht', ['state' => $state]);
+            return;
+        }
 
-        $frame = $this->BaichuanBuildHeaderOnly(93, 0x0000);
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'Keepalive: kein Parent-IO verbunden');
+            return;
+        }
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online, tue nichts', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus
+            ]);
+            return;
+        }
+
+        $encMode = ($this->BaichuanAesKey === '') ? 'BC' : 'AES';
+        $messId  = $this->NextMessId();
+
+        $frame = $this->BaichuanBuildFrame(
+            93,       // cmdId = PING
+            '',
+            '1464',
+            $encMode,
+            $messId,
+            0
+        );
+
+        $this->dbg('BAICHUAN', 'Keepalive: sende PING (cmd=93)', ['messId' => $messId]);
         $this->BaichuanSendRaw($frame);
     }
 
     public function ReceiveData($JSONString)
     {
+        $this->BaichuanMarkActivity();
+
         $data = json_decode($JSONString);
         if (!isset($data->Buffer)) {
             return;
@@ -1447,8 +1493,98 @@ class Reolink extends IPSModule
         SetValueString($vid, $value);
     }
 
+    private function BaichuanMarkActivity(): void
+    {
+        $this->WriteAttributeInteger('BaichuanLastActivity', time());
+    }
 
+    public function BaichuanWatchdog(): void
+    {
+        if (!$this->ReadPropertyBoolean('UseBaichuan')) {
+            $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
+            return;
+        }
 
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'Watchdog: kein Parent-IO verbunden');
+            return;
+        }
+
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+        $state   = $this->ReadAttributeString('BaichuanState');
+        $now     = time();
+        $last    = $this->ReadAttributeInteger('BaichuanLastActivity');
+
+        $this->dbg('BAICHUAN', 'Watchdog: Status', [
+            'ParentID'      => $parentId,
+            'ParentStatus'  => $pStatus,
+            'State'         => $state,
+            'LastActivity'  => $last,
+            'SinceLastSecs' => ($last > 0) ? ($now - $last) : -1
+        ]);
+
+        // 1) IO in Fehler (Status 200) -> aktiv reconnecten
+        if ($pStatus === 200) {
+            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO Status 200, starte Reconnect', []);
+
+            // Client Socket GUID: {3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}
+            if ($parent['ModuleInfo']['ModuleID'] === '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}') {
+                // kurz schließen und wieder öffnen
+                CSCK_SetOpen($parentId, false);
+                IPS_ApplyChanges($parentId);
+                IPS_Sleep(200);
+
+                CSCK_SetOpen($parentId, true);
+                IPS_ApplyChanges($parentId);
+            }
+
+            // Baichuan-Status zurücksetzen und Init neu starten
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+
+            return;
+        }
+
+        // 2) IO nicht aktiv (z.B. 104) -> nichts machen, IPS/Benutzer soll entscheiden
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', []);
+            return;
+        }
+
+        // Ab hier: IO = 102 (Socket offen)
+
+        // noch gar keine Aktivität? -> Initialisieren
+        if ($last === 0) {
+            $this->dbg('BAICHUAN', 'Watchdog: noch keine Aktivität, starte InitBaichuan');
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 1000);
+            return;
+        }
+
+        $since = $now - $last;
+
+        // 3) Wenn länger als 30s keine Aktivität: Keepalive schicken (nur wenn schon ready)
+        if ($since > 30 && $state === 'ready') {
+            $this->dbg('BAICHUAN', 'Watchdog: >30s keine Aktivität, sende Keepalive');
+            $this->BaichuanSendKeepalive(); // kleine Wrapper-Funktion s.u.
+            return;
+        }
+
+        // 4) Wenn länger als 90s absolut nichts passiert: Verbindung vermutlich tot -> neu starten
+        if ($since > 90) {
+            $this->dbg('BAICHUAN', 'Watchdog: >90s keine Aktivität, reset und neues Handshake', []);
+
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+
+            return;
+        }
+
+        // ansonsten: alles gut
+    }
 
 
 
