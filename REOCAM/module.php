@@ -634,17 +634,30 @@ class Reolink extends IPSModule
         switch ($state) {
             case '':
             case 'idle':
+                // erster Start → Nonce-Request
                 $this->BaichuanSendLoginRequest();
                 $this->WriteAttributeString('BaichuanState', 'handshake');
                 $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
                 break;
 
             case 'handshake':
+                // wir warten noch auf Handshake-ACK
+                $this->BaichuanCheckHandshake();
+                break;
+
+            case 'waiting_login':
+                // Handshake-ACK ist da, Login wurde gesendet.
+                // Hier NICHT nochmal Nonce schicken, nur prüfen und etwas warten.
                 $this->BaichuanCheckHandshake();
                 break;
 
             case 'ready':
-                // nichts
+                // alles gut, Timer könnte theoretisch auch deaktiviert werden
+                $this->SetTimerInterval('BaichuanInitTimer', 0);
+                break;
+
+            default:
+                $this->dbg('BAICHUAN', 'InitBaichuan: unbekannter State', ['state' => $state]);
                 break;
         }
     }
@@ -657,35 +670,47 @@ class Reolink extends IPSModule
             return;
         }
 
-        // Ab hier ist IO aktiv
+        $state = $this->ReadAttributeString('BaichuanState');
+
+        // Buffer ansehen
         $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
         $bufLen = strlen($buf);
 
         $this->dbg('BAICHUAN', 'CheckHandshake: Buffer-Status', [
-            'len' => $bufLen,
-            'hex' => bin2hex(substr($buf, 0, 32))
+            'state' => $state,
+            'len'   => $bufLen,
+            'hex'   => bin2hex(substr($buf, 0, 32))
         ]);
 
-        if ($bufLen === 0) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: noch keine Antwort, sende Login erneut');
-            $this->BaichuanSendLoginRequest();
-            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
-            return;
-        }
-
-        $state = $this->ReadAttributeString('BaichuanState');
+        // Solange wir noch kein Handshake-ACK haben (state=handshake)
         if ($state === 'handshake') {
+            if ($bufLen === 0) {
+                // wirklich noch keine Antwort → Nonce-Request nochmal probieren
+                $this->dbg('BAICHUAN', 'CheckHandshake: noch keine Antwort, sende Nonce-Request erneut');
+                $this->BaichuanSendLoginRequest();
+                $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+                return;
+            }
+
+            // Buffer ist nicht leer, aber State noch "handshake" → Parser verarbeitet gerade
             $this->dbg('BAICHUAN', 'CheckHandshake: Buffer nicht leer, warte auf Verarbeitung', [
-                'state' => $state,
-                'len'   => $bufLen
+                'len' => $bufLen
             ]);
-        } elseif ($state === 'ready') {
-            $this->dbg('BAICHUAN', 'CheckHandshake: Handshake abgeschlossen (ready)');
-            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
+            // Timer lassen wir weiterlaufen
             return;
         }
 
-        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+        // Im State "waiting_login" wurde das Handshake-ACK schon gesehen,
+        // wir warten nur noch auf das Login-OK (class=0000).
+        if ($state === 'waiting_login') {
+            // Hier NICHT erneut Nonce/Handshake senden, das würde nur doppeln.
+            $this->dbg('BAICHUAN', 'CheckHandshake: warte auf Login-OK, kein erneuter Nonce-Request');
+            // Timer darf weiterlaufen, falls etwas hängen bleibt.
+            return;
+        }
+
+        // In allen anderen States (ready, idle, …) macht CheckHandshake nichts mehr
+        $this->dbg('BAICHUAN', 'CheckHandshake: State ' . $state . ' – tue nichts mehr');
     }
 
     private function BaichuanSendKeepalive(): void
@@ -798,16 +823,13 @@ class Reolink extends IPSModule
                 $encrypt,
                 $messId
             ),
-            [
-                'body_hex' => bin2hex(substr($body, 0, 64)),
-            ]
+            ['body_hex' => bin2hex(substr($body, 0, 128))]
         );
 
-        // ---------------- HEADER-ONLY ----------------
-        if ($bodyLen === 0 || $body === '') {
-
-            // Login-ACK (Header-only)
-            if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
+        // ---------------- HEADER ONLY ----------------
+        if ($bodyLen === 0) {
+            // 🔹 Login-OK (Status-Response, class=0000)
+            if ($cmdId === 1 && $classHex === '0000') {
                 $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
                     'encrypt' => sprintf('0x%04X', $encrypt),
                     'messId'  => $messId
@@ -824,18 +846,28 @@ class Reolink extends IPSModule
                 // Device/Stream-Info anfragen (optional)
                 $this->BaichuanRequestDevAndStreamInfo();
 
-                // Keepalive alle 20–25 Sekunden
+                // Keepalive alle 25 Sekunden
                 $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
 
                 return;
             }
 
-            // 🔹 Handshake-ACK
+            // 🔹 Handshake-ACK (class=1466)
             if ($cmdId === 1 && $classHex === '1466') {
-                $this->dbg('BAICHUAN', 'Handshake-ACK (Header-only, class=1466) empfangen – sende jetzt Login', [
-                    'encrypt' => sprintf('0x%04X', $encrypt),
-                    'messId'  => $messId
-                ]);
+                $this->dbg(
+                    'BAICHUAN',
+                    'Handshake-ACK (Header-only, class=1466) empfangen – sende jetzt Login',
+                    [
+                        'encrypt' => sprintf('0x%04X', $encrypt),
+                        'messId'  => $messId
+                    ]
+                );
+
+                // ab jetzt nicht mehr Nonce neu senden
+                $this->WriteAttributeString('BaichuanState', 'waiting_login');
+
+                // wir geben dem Login etwas Zeit
+                $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
                 $this->BaichuanSendLogin();
                 return;
