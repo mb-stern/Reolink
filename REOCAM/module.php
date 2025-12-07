@@ -502,12 +502,18 @@ class Reolink extends IPSModule
             ]
         );
 
-        // Wenn die Kamera (wie bisher) ohne Body bestätigt, können wir hier erst mal raus.
+        // -------------------------
+        // 1) Handshake ohne Body → wir bleiben im State "handshake"
+        // -------------------------
         if ($body === '' || strlen($body) === 0) {
             $this->dbg('BAICHUAN', 'Handshake: kein Body erhalten, bleibe im State "handshake"', []);
             return;
         }
 
+        // -------------------------
+        // 2) Body entschlüsseln
+        //    encrypt/messId -> BaichuanDecrypt kümmert sich um BC/AES
+        // -------------------------
         $xml = $this->BaichuanDecrypt($encrypt, $messId, $body);
 
         $this->dbg('BAICHUAN', 'Handshake-decrypted-xml', [
@@ -519,7 +525,9 @@ class Reolink extends IPSModule
             return;
         }
 
-        // 👉 Hier wird jetzt wirklich Nonce + AES-Key gesetzt
+        // -------------------------
+        // 3) Nonce + AES-Key aus dem XML ziehen
+        // -------------------------
         $this->HandleHandshakeXml($xml);
     }
 
@@ -546,20 +554,19 @@ class Reolink extends IPSModule
 
         $password = $this->ReadPropertyString('Password');
 
-        // AES-Key: einfach MD5(nonce-password), erste 16 Zeichen (wie in deinen Logs "AES-Key berechnet") :contentReference[oaicite:2]{index=2}
-        $this->BaichuanAesKey = substr(md5($nonce . '-' . $password), 0, 16);
+        // AES-Key: MD5(nonce-password), erste 16 Zeichen
+        $aesHex = md5($nonce . '-' . $password);
+        $this->BaichuanAesKey = substr($aesHex, 0, 16);
 
         $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
 
-        // Auf Login warten
+        // State setzen & Login anstoßen
         $this->WriteAttributeString('BaichuanState', 'waiting_login');
         $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
         $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
         $this->BaichuanSendLogin();
     }
-
-
 
     private function ExtractXmlTag(string $xml, string $tag): string
     {
@@ -572,14 +579,35 @@ class Reolink extends IPSModule
 
     private function BuildBaichuanLoginXml(): string
     {
-        $username = $this->ReadPropertyString('Username');
-        $password = $this->ReadPropertyString('Password');
+        // Rohwerte holen
+        $rawUsername = $this->ReadPropertyString('Username');
+        $rawPassword = $this->ReadPropertyString('Password');
+
+        // Sicherstellen, dass keine unsichtbaren Spaces/Zeilenumbrüche drin sind
+        $username = trim($rawUsername);
+        $password = trim($rawPassword);
         $nonce    = $this->BaichuanNonce;
+
+        // Debug: Längen + Hex anzeigen
+        $this->dbg('BAICHUAN', 'Login-Credentials (roh)', [
+            'rawUsername'      => $rawUsername,
+            'rawPassword_len'  => strlen($rawPassword),
+            'username'         => $username,
+            'password_len'     => strlen($password),
+            'username_hex'     => bin2hex($username),
+            'password_hex'     => bin2hex($password),
+        ]);
+
+        // Optionale Schutzmaßnahme: Passwort zu lang → Info loggen
+        if (strlen($password) > 31) {
+            $this->dbg('BAICHUAN', 'Warnung: Passwort ist länger als 31 Zeichen, Baichuan-Firmware mag das evtl. nicht', [
+                'password_len' => strlen($password),
+            ]);
+        }
 
         $userHash     = $this->BaichuanMd5Modern($nonce . '-' . $username);
         $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
 
-        // Zusatz: zum Vergleich sauber loggen
         $this->dbg('BAICHUAN', 'Login-Hashes', [
             'nonce'        => $nonce,
             'userHash'     => $userHash,
