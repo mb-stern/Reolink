@@ -525,7 +525,7 @@ class Reolink extends IPSModule
     {
         $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'Kein Nonce im Handshake-XML gefunden');
+            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
             return;
         }
 
@@ -537,8 +537,12 @@ class Reolink extends IPSModule
         $this->BaichuanAesKey = substr($tmp, 0, 16);
 
         $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
-        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
 
+        // 👉 Ab hier warten wir auf Login-OK
+        $this->WriteAttributeString('BaichuanState', 'waiting_login');
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+
+        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
         $this->BaichuanSendLogin();
     }
 
@@ -604,11 +608,11 @@ class Reolink extends IPSModule
 
     private function BaichuanSendLoginRequest(): void
     {
-        // Nonce-Request: cmd_id=1, class=1465, Header-only
+        // Nonce-Request: cmd_id=1, class=1465, Header-only, UNVERSCHLÜSSELT
         $cmdId        = 1;
         $body         = '';
         $messageClass = '1465';
-        $encMode      = 'BC';
+        $encMode      = 'NONE';   // <- statt 'BC'
         $messId       = 250;
 
         $frame = $this->BaichuanBuildFrame(
@@ -620,7 +624,8 @@ class Reolink extends IPSModule
             0
         );
 
-        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465, messId=250)');
+        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465, messId=250, encMode=NONE)');
+
         $this->BaichuanSendRaw($frame);
     }
 
@@ -859,20 +864,14 @@ class Reolink extends IPSModule
             if ($cmdId === 1 && $classHex === '1466') {
                 $this->dbg(
                     'BAICHUAN',
-                    'Handshake-ACK (Header-only, class=1466) empfangen – sende jetzt Login',
+                    'Handshake-ACK (Header-only, class=1466) empfangen',
                     [
                         'encrypt' => sprintf('0x%04X', $encrypt),
                         'messId'  => $messId
                     ]
                 );
 
-                // ab jetzt nicht mehr Nonce neu senden
-                $this->WriteAttributeString('BaichuanState', 'waiting_login');
-
-                // wir geben dem Login etwas Zeit
-                $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
-
-                $this->BaichuanSendLogin();
+                // State bleibt "handshake" – wir warten jetzt auf das Encryption-XML (cmd=1 mit Body)
                 return;
             }
 
