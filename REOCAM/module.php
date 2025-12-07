@@ -1626,9 +1626,11 @@ class Reolink extends IPSModule
 
     private function BaichuanMd5Modern(string $input): string
     {
-        // wie in reolink_aio: normale MD5 als 32-stellige HEX in Großbuchstaben
-        return strtoupper(md5($input));
+        // MD5 als 32-stellige HEX in Kleinbuchstaben,
+        // entspricht Python: hashlib.md5(...).hexdigest()
+        return md5($input); // gibt bereits lowercase zurück
     }
+
 
 
 
