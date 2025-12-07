@@ -1509,13 +1509,13 @@ class Reolink extends IPSModule
 
     public function BaichuanWatchdog(): void
     {
-        // Wenn Baichuan gar nicht verwendet werden soll → Watchdog aus
+        // Baichuan überhaupt aktiv?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
             return;
         }
 
-        // Instanz & Parent-IO ermitteln
+        // Parent-IO (Client Socket) holen
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1523,99 +1523,57 @@ class Reolink extends IPSModule
             return;
         }
 
-        $parent   = IPS_GetInstance($parentId);
-        $pStatus  = $parent['InstanceStatus'] ?? 0;
-        $moduleID = $parent['ModuleInfo']['ModuleID'] ?? '';
-
-        $state = $this->ReadAttributeString('BaichuanState');
-
-        $last  = (int)$this->ReadAttributeInteger('BaichuanLastActivity');
-        $now   = time();
-        $delta = ($last > 0) ? ($now - $last) : -1;
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+        $state   = $this->ReadAttributeString('BaichuanState');
 
         $this->dbg('BAICHUAN', 'Watchdog: Status', [
             'ParentID'     => $parentId,
             'ParentStatus' => $pStatus,
-            'ModuleID'     => $moduleID,
             'State'        => $state,
-            'LastActivity' => $last,
-            'Delta'        => $delta,
+            'LastActivity' => $this->ReadAttributeInteger('BaichuanLastActivity'),
         ]);
 
-        // 1) Fehlerzustand 200 -> IO reconnecten und Baichuan neu initialisieren
+        // 1) Fehlerzustand 200 -> aktiv reconnecten
         if ($pStatus === 200) {
-            $this->dbg('BAICHUAN', 'Watchdog: Parent-Status 200 (Fehler) → IO reconnecten und Baichuan neu initialisieren');
+            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO Status 200, starte Reconnect', []);
 
-            // Keepalive stoppen, solange wir im Fehlerzustand sind
-            $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
+            // Client Socket GUID: {3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}
+            if (($parent['ModuleInfo']['ModuleID'] ?? '') === '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}') {
+                // kurz schließen und wieder öffnen
+                CSCK_SetOpen($parentId, false);
+                IPS_ApplyChanges($parentId);
+                IPS_Sleep(200);
 
-            try {
-                // Spezieller Fall: Client Socket → CSCK_SetOpen benutzen
-                if ($moduleID === '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}' && function_exists('CSCK_SetOpen')) {
-                    $this->dbg('BAICHUAN', 'Watchdog: ClientSocket-Reconnect via CSCK_SetOpen()', []);
-                    @CSCK_SetOpen($parentId, false);
-                    IPS_Sleep(250);
-                    @CSCK_SetOpen($parentId, true);
-                } else {
-                    // Generischer Fallback: IO einmal „hart“ trennen
-                    $this->dbg('BAICHUAN', 'Watchdog: generischer Reconnect via IPS_DisconnectInstance()', []);
-                    @IPS_DisconnectInstance($parentId);
-                    // Viele IOs verbinden bei aktivierter „Open“-Property selbst wieder neu
-                }
-            } catch (Throwable $e) {
-                $this->dbg('BAICHUAN', 'Watchdog: Fehler beim IO-Reconnect', [
-                    'Exception' => $e->getMessage()
-                ]);
+                CSCK_SetOpen($parentId, true);
+                IPS_ApplyChanges($parentId);
             }
 
-            // internen Baichuan-State zurücksetzen
+            // Baichuan-Status zurücksetzen und Init neu starten
             $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->WriteAttributeString('BaichuanBuffer', '');
             $this->WriteAttributeInteger('BaichuanLastActivity', 0);
+            $this->WriteAttributeString('BaichuanBuffer', '');
 
-            // Neu-Init in Kürze anstoßen
+            // InitBaichuan in 5 Sekunden erneut anstoßen
             $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
 
             return;
         }
 
-        // 2) IO nicht aktiv → nichts machen, Watchdog läuft weiter und prüft später erneut
+        // 2) IO noch nicht aktiv -> nichts tun
         if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', [
-                'ParentStatus' => $pStatus
-            ]);
+            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', []);
             return;
         }
 
-        // 3) IO ist aktiv (102). Wenn wir zu lange keine Aktivität hatten,
-        //    lieber VOR einem 200er-Fehler sauber neu initialisieren.
-        if ($state === 'ready' && $delta >= 0 && $delta > 40) {
-            $this->dbg('BAICHUAN', 'Watchdog: >40s keine Aktivität → Baichuan neu initialisieren', [
-                'Delta' => $delta
-            ]);
-
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->WriteAttributeString('BaichuanBuffer', '');
-            $this->WriteAttributeInteger('BaichuanLastActivity', 0);
-
-            // neue Initialisierung starten
-            $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
-            return;
-        }
-
-        // 4) Normalfall: IO aktiv & State ready → aktives KeepAlive senden
+        // 3) IO ist aktiv und Baichuan im "ready"-State -> KeepAlive schicken
         if ($state === 'ready') {
-            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive', [
-                'Delta' => $delta
-            ]);
+            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive vor Timeout', []);
             $this->BaichuanKeepalive();
         } else {
-            $this->dbg('BAICHUAN', 'Watchdog: State != ready, kein KeepAlive', [
-                'State' => $state
-            ]);
+            $this->dbg('BAICHUAN', 'Watchdog: State != ready, kein KeepAlive', ['state' => $state]);
         }
     }
-
 
 
 
