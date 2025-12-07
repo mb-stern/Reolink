@@ -657,14 +657,6 @@ class Reolink extends IPSModule
             return;
         }
 
-        // Versuche Parent-IO zu öffnen
-        if (!$this->EnsureParentIOOnline()) {
-            $this->dbg('BAICHUAN', 'CheckHandshake: Parent-IO nicht online, versuche es später erneut');
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
-            return;
-        }
-
         // Ab hier ist IO aktiv
         $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
         $bufLen = strlen($buf);
