@@ -1500,14 +1500,13 @@ class Reolink extends IPSModule
 
     public function BaichuanWatchdog(): void
     {
-
-        $this->dbg('BAICHUAN', 'BaichuanWatchdog aufgerufen');
-        
+        // Baichuan überhaupt aktiv?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
             return;
         }
 
+        // Parent-IO (Client Socket) holen
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1518,23 +1517,21 @@ class Reolink extends IPSModule
         $parent  = IPS_GetInstance($parentId);
         $pStatus = $parent['InstanceStatus'] ?? 0;
         $state   = $this->ReadAttributeString('BaichuanState');
-        $now     = time();
-        $last    = $this->ReadAttributeInteger('BaichuanLastActivity');
 
         $this->dbg('BAICHUAN', 'Watchdog: Status', [
-            'ParentID'      => $parentId,
-            'ParentStatus'  => $pStatus,
-            'State'         => $state,
-            'LastActivity'  => $last,
-            'SinceLastSecs' => ($last > 0) ? ($now - $last) : -1
+            'ParentID'     => $parentId,
+            'ParentStatus' => $pStatus,
+            'State'        => $state,
+            // optional: LastActivity lassen wir drin, falls du es noch nutzt
+            'LastActivity' => $this->ReadAttributeInteger('BaichuanLastActivity'),
         ]);
 
-        // 1) IO in Fehler (Status 200) -> aktiv reconnecten
+        // 1) Fehlerzustand 200 -> aktiv reconnecten
         if ($pStatus === 200) {
             $this->dbg('BAICHUAN', 'Watchdog: Parent-IO Status 200, starte Reconnect', []);
 
             // Client Socket GUID: {3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}
-            if ($parent['ModuleInfo']['ModuleID'] === '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}') {
+            if (($parent['ModuleInfo']['ModuleID'] ?? '') === '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}') {
                 // kurz schließen und wieder öffnen
                 CSCK_SetOpen($parentId, false);
                 IPS_ApplyChanges($parentId);
@@ -1551,43 +1548,21 @@ class Reolink extends IPSModule
             return;
         }
 
-        // 2) IO nicht aktiv (z.B. 104) -> nichts machen, IPS/Benutzer soll entscheiden
+        // 2) IO noch nicht aktiv -> nichts tun, IPS/Benutzer soll das klären
         if ($pStatus !== 102) {
             $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', []);
             return;
         }
 
-        // Ab hier: IO = 102 (Socket offen)
-
-        // noch gar keine Aktivität? -> Initialisieren
-        if ($last === 0) {
-            $this->dbg('BAICHUAN', 'Watchdog: noch keine Aktivität, starte InitBaichuan');
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 1000);
-            return;
+        // 3) IO ist aktiv und Baichuan im "ready"-State -> IMMER KeepAlive senden
+        if ($state === 'ready') {
+            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive vor Timeout', []);
+            $this->BaichuanKeepalive();
+        } else {
+            $this->dbg('BAICHUAN', 'Watchdog: State != ready, kein KeepAlive', ['state' => $state]);
         }
-
-        $since = $now - $last;
-
-        // 3) Wenn länger als 30s keine Aktivität: Keepalive schicken (nur wenn schon ready)
-        if ($since > 30 && $state === 'ready') {
-            $this->dbg('BAICHUAN', 'Watchdog: >30s keine Aktivität, sende Keepalive');
-            $this->BaichuanSendKeepalive(); // kleine Wrapper-Funktion s.u.
-            return;
-        }
-
-        // 4) Wenn länger als 90s absolut nichts passiert: Verbindung vermutlich tot -> neu starten
-        if ($since > 90) {
-            $this->dbg('BAICHUAN', 'Watchdog: >90s keine Aktivität, reset und neues Handshake', []);
-
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-
-            return;
-        }
-
-        // ansonsten: alles gut
     }
+
 
 
 
