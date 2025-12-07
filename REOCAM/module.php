@@ -1509,13 +1509,11 @@ class Reolink extends IPSModule
 
     public function BaichuanWatchdog(): void
     {
-        // Baichuan überhaupt aktiv?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
             return;
         }
 
-        // Parent-IO (Client Socket) holen
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1526,51 +1524,50 @@ class Reolink extends IPSModule
         $parent  = IPS_GetInstance($parentId);
         $pStatus = $parent['InstanceStatus'] ?? 0;
         $state   = $this->ReadAttributeString('BaichuanState');
+        $last    = (int)$this->ReadAttributeInteger('BaichuanLastActivity');
+        $now     = time();
+        $delta   = ($last > 0) ? ($now - $last) : -1;
 
         $this->dbg('BAICHUAN', 'Watchdog: Status', [
             'ParentID'     => $parentId,
             'ParentStatus' => $pStatus,
             'State'        => $state,
-            // optional: LastActivity lassen wir drin, falls du es noch nutzt
-            'LastActivity' => $this->ReadAttributeInteger('BaichuanLastActivity'),
+            'LastActivity' => $last,
+            'Delta'        => $delta,
         ]);
 
-        // 1) Fehlerzustand 200 -> aktiv reconnecten
+        // 1) Fehlerzustand 200 -> harter Reconnect (wie bisher)
         if ($pStatus === 200) {
-            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO Status 200, starte Reconnect', []);
-
-            // Client Socket GUID: {3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}
-            if (($parent['ModuleInfo']['ModuleID'] ?? '') === '{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}') {
-                // kurz schließen und wieder öffnen
-                CSCK_SetOpen($parentId, false);
-                IPS_ApplyChanges($parentId);
-                IPS_Sleep(200);
-
-                CSCK_SetOpen($parentId, true);
-                IPS_ApplyChanges($parentId);
-            }
-
-            // Baichuan-Status zurücksetzen und Init neu starten
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
-
+            ...
             return;
         }
 
-        // 2) IO noch nicht aktiv -> nichts tun, IPS/Benutzer soll das klären
         if ($pStatus !== 102) {
             $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', []);
             return;
         }
 
-        // 3) IO ist aktiv und Baichuan im "ready"-State -> IMMER KeepAlive senden
+        // 2) IO aktiv: vor dem 200er neu initialisieren, wenn zu lange keine Aktivität
+        if ($state === 'ready' && $delta >= 0 && $delta > 40) {
+            $this->dbg('BAICHUAN', 'Watchdog: >40s keine Aktivität -> Baichuan neu initialisieren', [
+                'Delta' => $delta
+            ]);
+
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->WriteAttributeString('BaichuanBuffer', '');
+            $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
+            return;
+        }
+
+        // 3) Normalfall: wir sind ready, IO ist 102 -> aktives KeepAlive
         if ($state === 'ready') {
-            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive vor Timeout', []);
+            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive', ['Delta' => $delta]);
             $this->BaichuanKeepalive();
         } else {
             $this->dbg('BAICHUAN', 'Watchdog: State != ready, kein KeepAlive', ['state' => $state]);
         }
     }
+
 
 
 
