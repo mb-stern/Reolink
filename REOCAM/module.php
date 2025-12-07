@@ -540,29 +540,25 @@ class Reolink extends IPSModule
             return;
         }
 
+        // Nonce merken
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
         $password = $this->ReadPropertyString('Password');
 
-        // 1. Passwort-Hash wie beim Login
-        $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
-
-        // 2. AES-Key aus (passwordHash + nonce)
-        $aesHex = $this->BaichuanMd5Modern($passwordHash . $nonce);
-
-        // Reolink nutzt hier einen 16-Byte-Key → wir nehmen 16 Zeichen
-        $this->BaichuanAesKey = substr($aesHex, 0, 16);
+        // AES-Key: einfach MD5(nonce-password), erste 16 Zeichen (wie in deinen Logs "AES-Key berechnet") :contentReference[oaicite:2]{index=2}
+        $this->BaichuanAesKey = substr(md5($nonce . '-' . $password), 0, 16);
 
         $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
 
-        // ab hier auf Login warten
+        // Auf Login warten
         $this->WriteAttributeString('BaichuanState', 'waiting_login');
         $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
-        // Login abschicken
+        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
         $this->BaichuanSendLogin();
     }
+
 
 
     private function ExtractXmlTag(string $xml, string $tag): string
@@ -583,6 +579,13 @@ class Reolink extends IPSModule
         $userHash     = $this->BaichuanMd5Modern($nonce . '-' . $username);
         $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
 
+        // Zusatz: zum Vergleich sauber loggen
+        $this->dbg('BAICHUAN', 'Login-Hashes', [
+            'nonce'        => $nonce,
+            'userHash'     => $userHash,
+            'passwordHash' => $passwordHash,
+        ]);
+
         $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
         $xml .= '<body>';
         $xml .= '<LoginUser version="1.1">';
@@ -596,11 +599,7 @@ class Reolink extends IPSModule
         $xml .= '</LoginNet>';
         $xml .= '</body>';
 
-        $this->dbg('BAICHUAN', 'Login-XML gebaut', [
-            'nonce'        => $nonce,
-            'userHash'     => $userHash,
-            'passwordHash' => $passwordHash
-        ]);
+        $this->dbg('BAICHUAN', 'Login-XML', $xml);
 
         return $xml;
     }
@@ -1593,10 +1592,10 @@ class Reolink extends IPSModule
 
     private function BaichuanMd5Modern(string $input): string
     {
-        // Entspricht dem "modernen" MD5 aus reolink_aio:
-        // md5 des UTF-8-Strings, als lowercase Hex-String
-        return strtolower(md5($input));
+        // wie in reolink_aio: normale MD5 als 32-stellige HEX in Großbuchstaben
+        return strtoupper(md5($input));
     }
+
 
 
 
