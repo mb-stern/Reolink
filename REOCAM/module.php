@@ -94,7 +94,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeInteger('BaichuanLastActivity', 0);
 
         // Watchdog-Timer (z.B. alle 10 Sekunden)
-        $this->RegisterTimer('BaichuanWatchdogTimer', 0, 'REOLINK_BaichuanWatchdog($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('BaichuanWatchdogTimer', 0, 'REOCAM_BaichuanWatchdog($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges()
@@ -1500,6 +1500,9 @@ class Reolink extends IPSModule
 
     public function BaichuanWatchdog(): void
     {
+
+        $this->dbg('BAICHUAN', 'BaichuanWatchdog aufgerufen');
+        
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
             return;
