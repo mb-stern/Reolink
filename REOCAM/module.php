@@ -580,27 +580,25 @@ class Reolink extends IPSModule
 
     private function BaichuanSendLogin(): void
     {
-        $xml    = $this->BuildBaichuanLoginXml();
         $messId = $this->NextMessId();
+        $xml    = $this->BuildBaichuanLoginXml();
 
-        $this->dbg(
-            'BAICHUAN',
-            sprintf(
-                'Sende Login (cmd_id=1, class=0x1465, messId=%d)',
-                $messId
-            )
-        );
+        $this->dbg('BAICHUAN', sprintf(
+            'Sende Login (cmd_id=1, class=0x1465, messId=%d)',
+            $messId
+        ));
         $this->dbg('BAICHUAN', '  BAICHUAN Login-XML', $xml);
 
-        // Login IMMER im BC-Modus schicken (wie im Dump, der funktioniert hat)
-        $encType = 0x01;
+        // ❗ Hier ist der Trick:
+        // Login UNVERSCHLÜSSELT schicken (nur MD5 im XML, keine zusätzliche BC/AES-Schicht)
+        $encType = 0x00;
 
         $this->BaichuanSendFrame(
-            1,
-            0x1465,
+            1,        // cmdId
+            0x1465,   // class
             $messId,
-            $encType,
-            $xml
+            $encType, // -> landet im ELSE-Zweig deiner SendFrame-Funktion
+            $xml      // das reine XML
         );
     }
 
