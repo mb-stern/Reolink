@@ -584,36 +584,39 @@ class Reolink extends IPSModule
 
     private function BaichuanSendLogin(): void
     {
-        $messId = $this->NextMessId();
         $xml    = $this->BuildBaichuanLoginXml();
+        $messId = $this->NextMessId(); // oder fix 250, beides ok solange Header+BC-Offset zusammenpassen
 
-        $this->dbg('BAICHUAN', sprintf(
-            'Sende Login (cmd_id=1, class=0x1465, messId=%d)',
-            $messId
-        ));
-        $this->dbg('BAICHUAN', '  BAICHUAN Login-XML', $xml);
+        // Fürs Erste: Login immer im BC-Modus (XOR), AES kommt später
+        $encType = 0x01; // BC
 
-        // ❗ Hier ist der Trick:
-        // Login UNVERSCHLÜSSELT schicken (nur MD5 im XML, keine zusätzliche BC/AES-Schicht)
-        $encType = 0x00;
+        $this->dbg(
+            'BAICHUAN',
+            sprintf(
+                'Sende Login (cmd_id=1, class=0x1464, messId=%d, encType=0x%02X)',
+                $messId,
+                $encType
+            )
+        );
 
+        // WICHTIG: Class = MODERN / 1464, nicht 1465
         $this->BaichuanSendFrame(
-            1,        // cmdId
-            0x1465,   // class
+            1,
+            self::BAICHUAN_CLASS_MODERN, // 0x1464
             $messId,
-            $encType, // -> landet im ELSE-Zweig deiner SendFrame-Funktion
-            $xml      // das reine XML
+            $encType,
+            $xml
         );
     }
 
     private function BaichuanSendLoginRequest(): void
     {
-        // Nonce-Request: cmd_id=1, class=1465, Header-only, UNVERSCHLÜSSELT
+        // Nonce-Request: cmd_id=1, class=1465, Header-only
         $cmdId        = 1;
         $body         = '';
         $messageClass = '1465';
-        $encMode      = 'NONE';   // <- statt 'BC'
-        $messId       = 250;
+        $encMode      = 'BC';  // WICHTIG: BC, damit encrypt=12dd im Header
+        $messId       = 250;   // Host-MessId (wie reolink_aio)
 
         $frame = $this->BaichuanBuildFrame(
             $cmdId,
@@ -624,8 +627,7 @@ class Reolink extends IPSModule
             0
         );
 
-        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465, messId=250, encMode=NONE)');
-
+        $this->dbg('BAICHUAN', 'Sende Login-Nonce-Request (Header-Only, 1465, messId=250, encMode=BC)');
         $this->BaichuanSendRaw($frame);
     }
 
