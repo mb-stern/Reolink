@@ -1072,34 +1072,36 @@ class Reolink extends IPSModule
 
     private function HandleBaichuanMessage(int $cmdId, string $bodyXml): void
     {
-        if ($cmdId === 1) {
-            // Handshake (Nonce + Encryption-Info)
-            if (strpos($bodyXml, '<Encryption') !== false && strpos($bodyXml, '<nonce>') !== false) {
-                $this->dbg('BAICHUAN', 'Handshake-XML', $bodyXml);
-                $this->HandleHandshakeXml($bodyXml);
-                return;
-            }
+        // 1) Handshake-XML (Nonce)
+        if ($cmdId === 1 &&
+            strpos($bodyXml, '<Encryption') !== false &&
+            strpos($bodyXml, '<nonce>') !== false) {
 
-            // Device-/Stream-Infos
-            if (strpos($bodyXml, '<DeviceInfo') !== false ||
-                strpos($bodyXml, '<StreamInfoList') !== false) {
-                $this->dbg('BAICHUAN', 'Dev/Stream-Info-XML', $bodyXml);
-                $this->HandleLoginResponse($bodyXml);
-                return;
-            }
-
-            // Login-Response (falls Kamera tatsächlich XML mitliefert)
-            if (strpos($bodyXml, '<LoginUserResponse') !== false ||
-                strpos($bodyXml, '<LoginUser ') !== false) {
-                $this->dbg('BAICHUAN', 'Login-Response-XML', $bodyXml);
-                $this->HandleLoginResponse($bodyXml);
-                return;
-            }
-
-            $this->dbg('BAICHUAN', 'Unbekanntes cmd=1-XML', $bodyXml);
+            $this->dbg('BAICHUAN', 'Handshake-XML', $bodyXml);
+            $this->HandleHandshakeXml($bodyXml);
             return;
         }
 
+        // 2) Device-/Stream-Infos (egal ob Antwort auf cmd=1 oder cmd=318)
+        if (strpos($bodyXml, '<DeviceInfo') !== false ||
+            strpos($bodyXml, '<StreamInfoList') !== false) {
+
+            $this->dbg('BAICHUAN', 'Dev/Stream-Info-XML', $bodyXml);
+            $this->HandleLoginResponse($bodyXml);   // nutzt ja schon DeviceInfo/StreamInfo
+            return;
+        }
+
+        // 3) Login-Response (falls Kamera XML statt leerem Header schickt)
+        if ($cmdId === 1 &&
+            (strpos($bodyXml, '<LoginUserResponse') !== false ||
+            strpos($bodyXml, '<LoginUser ') !== false)) {
+
+            $this->dbg('BAICHUAN', 'Login-Response-XML', $bodyXml);
+            $this->HandleLoginResponse($bodyXml);
+            return;
+        }
+
+        // 4) AlarmEvents
         if ($cmdId === 33) {
             $this->dbg('BAICHUAN', 'AlarmEvent-XML', $bodyXml);
             $this->HandleAlarmEventXml($bodyXml);
@@ -1222,58 +1224,50 @@ class Reolink extends IPSModule
 
     private function BaichuanRequestDevAndStreamInfo(): void
     {
-        // Wenn AES-Key vorhanden -> AES, sonst fallback BC
+        $devXml    = $this->BuildBaichuanGetDevInfoXml();
+        $streamXml = $this->BuildBaichuanGetStreamInfoXml();
+
+        $messIdDev    = $this->NextMessId();
+        $messIdStream = $this->NextMessId();
+
+        // In reolink_aio: cmd_id = 318 (0x13E) für GetDevInfo/GetStreamInfo
+        $cmdId  = 318;
+        $class  = 0x1464;
         $encType = ($this->BaichuanAesKey === '') ? 0x01 : 0x02;
 
-        // ---------- DeviceInfo ----------
-        $devXml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-        $devXml .= '<body>';
-        $devXml .= '<GetDevInfo version="1.0"><channel>0</channel></GetDevInfo>';
-        $devXml .= '</body>';
-
-        $this->dbg('BAICHUAN', 'GetDevInfo-XML', $devXml);
-
-        $messIdDev = $this->NextMessId();
-
+        // DeviceInfo
         $this->dbg(
             'BAICHUAN',
             sprintf(
-                'Sende GetDevInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x%02X)',
+                'Sende GetDevInfo (cmd_id=%d, class=0x%04X, messId=%d, encType=0x%02X)',
+                $cmdId,
+                $class,
                 $messIdDev,
                 $encType
             )
         );
-
         $this->BaichuanSendFrame(
-            1,
-            0x1464,
+            $cmdId,
+            $class,
             $messIdDev,
             $encType,
             $devXml
         );
 
-        // ---------- StreamInfo ----------
-        $streamXml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-        $streamXml .= '<body>';
-        $streamXml .= '<GetStreamInfo version="1.0"><channel>0</channel></GetStreamInfo>';
-        $streamXml .= '</body>';
-
-        $this->dbg('BAICHUAN', 'GetStreamInfo-XML', $streamXml);
-
-        $messIdStream = $this->NextMessId();
-
+        // StreamInfo
         $this->dbg(
             'BAICHUAN',
             sprintf(
-                'Sende GetStreamInfo (cmd_id=1, class=0x1464, messId=%d, encType=0x%02X)',
+                'Sende GetStreamInfo (cmd_id=%d, class=0x%04X, messId=%d, encType=0x%02X)',
+                $cmdId,
+                $class,
                 $messIdStream,
                 $encType
             )
         );
-
         $this->BaichuanSendFrame(
-            1,
-            0x1464,
+            $cmdId,
+            $class,
             $messIdStream,
             $encType,
             $streamXml
