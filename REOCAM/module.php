@@ -1167,17 +1167,20 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
+        // 1) Baichuan überhaupt aktiviert?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
             return;
         }
 
+        // 2) Nur im "ready"-State Keepalive senden
         $state = $this->ReadAttributeString('BaichuanState');
         if ($state !== 'ready') {
             $this->dbg('BAICHUAN', 'Keepalive: State != ready, tue nichts', ['state' => $state]);
             return;
         }
 
+        // 3) Parent-IO muss aktiv sein
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1188,27 +1191,30 @@ class Reolink extends IPSModule
         $pStatus = $parent['InstanceStatus'] ?? 0;
 
         if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online', [
+            // **WICHTIG**: hier NICHT State umwerfen, nur loggen
+            $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online, tue nichts', [
                 'ParentID' => $parentId,
                 'Status'   => $pStatus
             ]);
-            $this->WriteAttributeString('BaichuanState', 'idle');
-            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
             return;
         }
 
+        // 4) encMode passend zum AES-Key wählen
         $encMode = ($this->BaichuanAesKey === '') ? 'BC' : 'AES';
 
+        // 5) frische messId benutzen
+        $messId = $this->NextMessId();
+
         $frame = $this->BaichuanBuildFrame(
-            93,
-            '',
-            '1464',
-            $encMode,
-            $this->NextMessId(),
+            93,          // cmdId = PING
+            '',          // body leer
+            '1464',      // Class
+            $encMode,    // 'BC' oder 'AES'
+            $messId,
             0
         );
 
-        $this->dbg('BAICHUAN', 'Sende Keepalive (cmd=93)');
+        $this->dbg('BAICHUAN', 'Sende Keepalive (cmd=93)', ['messId' => $messId]);
         $this->BaichuanSendRaw($frame);
     }
 
