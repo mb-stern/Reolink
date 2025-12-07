@@ -1152,16 +1152,19 @@ class Reolink extends IPSModule
 
     private function BaichuanRequestDevAndStreamInfo(): void
     {
-        $devXml    = $this->BuildBaichuanGetDevInfoXml();
-        $streamXml = $this->BuildBaichuanGetStreamInfoXml();
-
-        $messIdDev    = $this->NextMessId();
-        $messIdStream = $this->NextMessId();
-
-        // Auch hier: wenn kein AES-Key -> BC
+        // Enc-Typ: nach Handshake müssen moderne 1464-Kommandos AES benutzen
         $encType = ($this->BaichuanAesKey === '') ? 0x01 : 0x02;
 
-        // DeviceInfo
+        // ---------- DeviceInfo ----------
+        $devXml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $devXml .= '<body>';
+        $devXml .= '<GetDevInfo version="1.0"><channel>0</channel></GetDevInfo>';
+        $devXml .= '</body>';
+
+        $this->dbg('BAICHUAN', 'GetDevInfo-XML', $devXml);
+
+        $messIdDev = $this->NextMessId();
+
         $this->dbg(
             'BAICHUAN',
             sprintf(
@@ -1170,15 +1173,25 @@ class Reolink extends IPSModule
                 $encType
             )
         );
+
         $this->BaichuanSendFrame(
-            1,
-            0x1464,
+            1,        // cmdId
+            0x1464,   // class
             $messIdDev,
             $encType,
             $devXml
         );
 
-        // StreamInfo
+        // ---------- StreamInfo ----------
+        $streamXml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $streamXml .= '<body>';
+        $streamXml .= '<GetStreamInfo version="1.0"><channel>0</channel></GetStreamInfo>';
+        $streamXml .= '</body>';
+
+        $this->dbg('BAICHUAN', 'GetStreamInfo-XML', $streamXml);
+
+        $messIdStream = $this->NextMessId();
+
         $this->dbg(
             'BAICHUAN',
             sprintf(
@@ -1187,9 +1200,10 @@ class Reolink extends IPSModule
                 $encType
             )
         );
+
         $this->BaichuanSendFrame(
-            1,
-            0x1464,
+            1,        // cmdId
+            0x1464,   // class
             $messIdStream,
             $encType,
             $streamXml
