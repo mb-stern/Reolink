@@ -421,46 +421,9 @@ class Reolink extends IPSModule
         $offset       = $messId % 256;
         $messageClass = strtolower(sprintf('%04x', $class));
 
-        if ($encType === 0x01) {
-            // BC-"Verschlüsselung" (XOR)
-            $body    = $this->BaichuanDecryptBC($xmlBody, $offset); // XOR ist symmetrisch
-            $encMode = 'BC';
-        } elseif ($encType === 0x02) {
-            // AES
-            if ($this->BaichuanAesKey === '') {
-                // Fallback, wenn AES-Key noch nicht da ist
-                $this->dbg('BAICHUAN', 'Sende Frame mit encType=0x02, aber kein AES-Key gesetzt – sende unverschlüsselt', [
-                    'cmd'    => $cmdId,
-                    'class'  => $messageClass,
-                    'messId' => $messId
-                ]);
-                $body    = $xmlBody;
-                $encMode = 'NONE';
-            } else {
-                $enc = openssl_encrypt(
-                    $xmlBody,
-                    'AES-128-ECB',
-                    $this->BaichuanAesKey,
-                    OPENSSL_RAW_DATA          // PKCS#7 Padding automatisch
-                );
-
-                if ($enc === false) {
-                    $this->dbg('BAICHUAN', 'AES-Encrypt fehlgeschlagen, sende Body unverschlüsselt', [
-                        'cmd'    => $cmdId,
-                        'class'  => $messageClass,
-                        'messId' => $messId
-                    ]);
-                    $body    = $xmlBody;
-                    $encMode = 'NONE';
-                } else {
-                    $body    = $enc;
-                    $encMode = 'AES';
-                }
-            }
-        } else {
-            // 0x00 = unverschlüsselt
-            $body    = $xmlBody;
-            $encMode = 'NONE';
+        // Wenn AES-Key existiert → alles AES, egal was encType gefordert hat
+        if ($this->BaichuanAesKey !== '') {
+            $encType = 0x02;
         }
 
         $frame = $this->BaichuanBuildFrame(
