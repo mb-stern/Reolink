@@ -532,45 +532,36 @@ class Reolink extends IPSModule
 
     private function HandleHandshakeXml(string $xml): void
     {
-        try {
-            $sx = new SimpleXMLElement($xml);
-        } catch (Throwable $e) {
-            $this->dbg('BAICHUAN', 'Handshake-XML ungültig', ['error' => $e->getMessage()]);
-            return;
-        }
-
-        $nonce = (string)($sx->Encryption->nonce ?? '');
+        $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'Handshake ohne Nonce, breche ab');
+            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
             return;
         }
 
-        // ✅ Nonce speichern
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
-        // ✅ AES-Key BERECHNEN (modern, wie reolink_aio)
         $password = $this->ReadPropertyString('Password');
-        $this->BaichuanAesKey = substr(
-            md5($nonce . '-' . $password),
-            0,
-            16
-        );
 
-        $this->dbg('BAICHUAN', 'AES-Key berechnet', [
-            'aesKey' => $this->BaichuanAesKey
-        ]);
+        // 1. Passwort-Hash wie beim Login
+        $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
 
-        // ✅ GANZ WICHTIG: State wechseln
+        // 2. AES-Key aus (passwordHash + nonce)
+        $aesHex = $this->BaichuanMd5Modern($passwordHash . $nonce);
+
+        // Reolink nutzt hier einen 16-Byte-Key → wir nehmen 16 Zeichen
+        $this->BaichuanAesKey = substr($aesHex, 0, 16);
+
+        $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
+
+        // ab hier auf Login warten
         $this->WriteAttributeString('BaichuanState', 'waiting_login');
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
-        // ✅ Handshake-Timer stoppen
-        $this->SetTimerInterval('BaichuanInitTimer', 0);
-
-        // ✅ JETZT Login senden
-        $this->dbg('BAICHUAN', 'Sende Login nach erfolgreichem Handshake');
+        // Login abschicken
         $this->BaichuanSendLogin();
     }
+
 
     private function ExtractXmlTag(string $xml, string $tag): string
     {
@@ -603,7 +594,11 @@ class Reolink extends IPSModule
         $xml .= '</LoginNet>';
         $xml .= '</body>';
 
-        $this->dbg('BAICHUAN', 'Login-XML', $xml);
+        $this->dbg('BAICHUAN', 'Login-XML gebaut', [
+            'nonce'        => $nonce,
+            'userHash'     => $userHash,
+            'passwordHash' => $passwordHash
+        ]);
 
         return $xml;
     }
@@ -913,44 +908,44 @@ class Reolink extends IPSModule
             if ($cmdId === 1 && $classHex === '0000') {
                 $state = $this->ReadAttributeString('BaichuanState');
 
-                // Login-ACK nur im erwarteten Zustand auswerten
-                if ($state === 'waiting_login') {
-
-                    // ⚠️ WICHTIG:
-                    // AES-Key NICHT noch einmal überschreiben!
-                    // Er wurde bereits in HandleHandshakeXml() mit der modernen
-                    // Variante aus nonce + Passwort berechnet und ist korrekt.
+                // Statuscode auswerten (encrypt-Feld: 0x00C8=OK, 0x012C=300=auch OK)
+                if ($encrypt !== 0x00C8 && $encrypt !== 0x012C) {
                     $this->dbg(
                         'BAICHUAN',
-                        'Login-Response (Header-only) empfangen – setze State=ready',
+                        'Login-Response FEHLERSTATUS, Login nicht akzeptiert',
                         [
                             'encrypt' => sprintf('0x%04X', $encrypt),
                             'messId'  => $messId,
-                            'aesKey'  => $this->BaichuanAesKey,
+                            'state'   => $state
                         ]
                     );
 
-                    // ✅ Ab hier ist die Session offen
+                    // Zurück auf idle, damit InitBaichuan später neu versuchen kann
+                    $this->WriteAttributeString('BaichuanState', 'idle');
+
+                    // Init-Timer z.B. in 30 Sekunden nochmal anwerfen
+                    $this->SetTimerInterval('BaichuanInitTimer', 30 * 1000);
+                    return;
+                }
+
+                // ✅ Ab hier NUR noch Status 200/300
+                if ($state === 'waiting_login') {
+                    // Hier KEIN neuer AES-Key, der ist bereits in HandleHandshakeXml gesetzt
+                    $this->dbg(
+                        'BAICHUAN',
+                        'Login-Response (Header-only) OK – State=ready',
+                        [
+                            'encrypt' => sprintf('0x%04X', $encrypt),
+                            'messId'  => $messId,
+                            'aesKey'  => $this->BaichuanAesKey
+                        ]
+                    );
+
                     $this->WriteAttributeString('BaichuanState', 'ready');
-
-                    // Init-Timer stoppen
                     $this->SetTimerInterval('BaichuanInitTimer', 0);
-
-                    // Events abonnieren
                     $this->BaichuanSubscribeEvents();
-
-                    // Device / Stream Info abrufen (jetzt mit dem bereits
-                    // gesetzten AES-Key aus dem Handshake)
                     $this->BaichuanRequestDevAndStreamInfo();
-
-                    // Keepalive starten
                     $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
-                } else {
-                    // Normales ACK auf andere Requests
-                    $this->dbg('BAICHUAN', 'ACK ohne Body empfangen', [
-                        'state'  => $state,
-                        'messId' => $messId
-                    ]);
                 }
 
                 return;
