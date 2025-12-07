@@ -610,31 +610,9 @@ class Reolink extends IPSModule
 
     private function BuildBaichuanLoginXml(): string
     {
-        // Rohwerte holen
-        $rawUsername = $this->ReadPropertyString('Username');
-        $rawPassword = $this->ReadPropertyString('Password');
-
-        // Sicherstellen, dass keine unsichtbaren Spaces/Zeilenumbrüche drin sind
-        $username = trim($rawUsername);
-        $password = trim($rawPassword);
         $nonce    = $this->BaichuanNonce;
-
-        // Debug: Längen + Hex anzeigen
-        $this->dbg('BAICHUAN', 'Login-Credentials (roh)', [
-            'rawUsername'      => $rawUsername,
-            'rawPassword_len'  => strlen($rawPassword),
-            'username'         => $username,
-            'password_len'     => strlen($password),
-            'username_hex'     => bin2hex($username),
-            'password_hex'     => bin2hex($password),
-        ]);
-
-        // Optionale Schutzmaßnahme: Passwort zu lang → Info loggen
-        if (strlen($password) > 31) {
-            $this->dbg('BAICHUAN', 'Warnung: Passwort ist länger als 31 Zeichen, Baichuan-Firmware mag das evtl. nicht', [
-                'password_len' => strlen($password),
-            ]);
-        }
+        $username = trim($this->ReadPropertyString('Username'));
+        $password = trim($this->ReadPropertyString('Password'));
 
         $userHash     = $this->BaichuanMd5Modern($nonce . '-' . $username);
         $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
@@ -642,25 +620,22 @@ class Reolink extends IPSModule
         $this->dbg('BAICHUAN', 'Login-Hashes', [
             'nonce'        => $nonce,
             'userHash'     => $userHash,
-            'passwordHash' => $passwordHash,
+            'passwordHash' => $passwordHash
         ]);
 
-        $xml  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-        $xml .= '<body>';
-        $xml .= '<LoginUser version="1.1">';
-        $xml .= '<userName>' . $userHash . '</userName>';
-        $xml .= '<password>' . $passwordHash . '</password>';
-        $xml .= '<userVer>1</userVer>';
-        $xml .= '</LoginUser>';
-        $xml .= '<LoginNet version="1.1">';
-        $xml .= '<type>LAN</type>';
-        $xml .= '<udpPort>0</udpPort>';
-        $xml .= '</LoginNet>';
-        $xml .= '</body>';
-
-        $this->dbg('BAICHUAN', 'Login-XML', $xml);
-
-        return $xml;
+        return
+            '<?xml version="1.0" encoding="UTF-8" ?>' .
+            '<body>' .
+                '<LoginUser version="1.1">' .
+                    '<userName>' . $userHash . '</userName>' .
+                    '<password>' . $passwordHash . '</password>' .
+                    '<userVer>1</userVer>' .
+                '</LoginUser>' .
+                '<LoginNet version="1.1">' .
+                    '<type>LAN</type>' .
+                    '<udpPort>0</udpPort>' .
+                '</LoginNet>' .
+            '</body>';
     }
 
     private function BaichuanSendLogin(): void
