@@ -66,10 +66,6 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
 
-        // NEU: Buffer für Baichuan
-        $this->RegisterAttributeString("BaichuanBuffer", "");
-        $this->RegisterAttributeString('BaichuanState', 'idle');
-
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
         $this->RegisterTimer("Tier_Reset",     0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Tier");');
@@ -81,6 +77,10 @@ class Reolink extends IPSModule
         $this->RegisterTimer("PollingTimer",      0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer",   0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\'], false);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
+
+        // NEU: Buffer für Baichuan
+        $this->RegisterAttributeString("BaichuanBuffer", "");
+        $this->RegisterAttributeString('BaichuanState', 'idle');
 
         $this->RegisterTimer('BaichuanInitTimer',     0, 'REOCAM_InitBaichuan($_IPS[\'TARGET\']);');
        
@@ -125,14 +125,14 @@ class Reolink extends IPSModule
         // -----------------------
         // Baichuan aktivieren/deaktivieren
         // -----------------------
-        if ($this->ReadPropertyBoolean("UseBaichuan")) {
+        if ($this->ReadPropertyBoolean('UseBaichuan')) {
             $this->dbg('BAICHUAN', 'Baichuan aktiviert, starte Init-Timer');
 
-            // Beim (Re-)Aktivieren sauber neu anfangen
-            $this->WriteAttributeString("BaichuanState", "idle");
-            $this->WriteAttributeString("BaichuanBuffer", "");
+            // sauberer Startzustand
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->WriteAttributeString('BaichuanBuffer', '');
 
-            // kurzer Delay, damit Parent-IO Zeit hat zum Verbinden
+            // Init nach kurzer Verzögerung starten (2s)
             $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
         } else {
             $this->dbg('BAICHUAN', 'Baichuan deaktiviert, stoppe Init-/Keepalive-Timer');
@@ -303,26 +303,12 @@ class Reolink extends IPSModule
 
     private function BaichuanSendRaw(string $data): void
     {
-        $len = strlen($data);
-
-        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
-            'len' => $len,
-            'hex' => bin2hex(substr($data, 0, 64))
-        ]);
-
         if (!$this->EnsureParentIOOnline()) {
             $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht');
             return;
         }
 
-        $inst     = IPS_GetInstance($this->InstanceID);
-        $parentId = $inst['ConnectionID'] ?? 0;
-        if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden (nach EnsureParentIOOnline)');
-            return;
-        }
-
-        CSCK_SendText($parentId, $data);
+        $this->SendDataToParent(json_encode(['DataID' => '{C8792760-65CF-4C53-B5C7-A30FCC84FEFE}', 'Buffer' => $data]));
     }
 
     private function BaichuanBuildFrame(
@@ -804,24 +790,26 @@ class Reolink extends IPSModule
         // ---------------- HEADER-ONLY ----------------
         if ($bodyLen === 0 || $body === '') {
 
-            // 🔹 Login-ACK
-            if ($cmdId === 1 && $classHex === '0000') {
+            // Login-ACK (Header-only)
+            if ($cmdId === 1 && $classHex === '0000' && $bodyLen === 0) {
                 $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
                     'encrypt' => sprintf('0x%04X', $encrypt),
                     'messId'  => $messId
                 ]);
 
                 $this->WriteAttributeString('BaichuanState', 'ready');
+
+                // Init-Timer stoppen
                 $this->SetTimerInterval('BaichuanInitTimer', 0);
 
-                // 1) Events abonnieren
+                // Events abonnieren
                 $this->BaichuanSubscribeEvents();
 
-                // ⚠️ GANZ WICHTIG: 2) DevInfo & StreamInfo anfordern
+                // Device/Stream-Info anfragen (optional)
                 $this->BaichuanRequestDevAndStreamInfo();
 
-                // 3) Keepalive
-                $this->SetTimerInterval('BaichuanKeepaliveTimer', 10 * 1000);
+                // Keepalive alle 20–25 Sekunden
+                $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
 
                 return;
             }
@@ -1167,20 +1155,20 @@ class Reolink extends IPSModule
 
     public function BaichuanKeepalive(): void
     {
-        // 1) Baichuan überhaupt aktiviert?
+        // Baichuan überhaupt aktiv?
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanKeepaliveTimer', 0);
             return;
         }
 
-        // 2) Nur im "ready"-State Keepalive senden
+        // Nur im "ready"-State Keepalive senden
         $state = $this->ReadAttributeString('BaichuanState');
         if ($state !== 'ready') {
             $this->dbg('BAICHUAN', 'Keepalive: State != ready, tue nichts', ['state' => $state]);
             return;
         }
 
-        // 3) Parent-IO muss aktiv sein
+        // Parent-IO muss aktiv sein, aber hier NICHT reconnecten, nur prüfen
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1191,7 +1179,6 @@ class Reolink extends IPSModule
         $pStatus = $parent['InstanceStatus'] ?? 0;
 
         if ($pStatus !== 102) {
-            // **WICHTIG**: hier NICHT State umwerfen, nur loggen
             $this->dbg('BAICHUAN', 'Keepalive: Parent-IO nicht online, tue nichts', [
                 'ParentID' => $parentId,
                 'Status'   => $pStatus
@@ -1199,16 +1186,16 @@ class Reolink extends IPSModule
             return;
         }
 
-        // 4) encMode passend zum AES-Key wählen
+        // encMode passend zum AES-Key
         $encMode = ($this->BaichuanAesKey === '') ? 'BC' : 'AES';
 
-        // 5) frische messId benutzen
+        // frische messId für jedes Keepalive
         $messId = $this->NextMessId();
 
         $frame = $this->BaichuanBuildFrame(
             93,          // cmdId = PING
             '',          // body leer
-            '1464',      // Class
+            '1464',      // class
             $encMode,    // 'BC' oder 'AES'
             $messId,
             0
@@ -1371,34 +1358,34 @@ private function EnsureParentIOOnline(): bool
 {
     $inst     = IPS_GetInstance($this->InstanceID);
     $parentId = $inst['ConnectionID'] ?? 0;
+
     if ($parentId <= 0) {
-        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Kein Parent-IO verbunden');
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: kein Parent-IO verknüpft');
         return false;
     }
 
     $parent  = IPS_GetInstance($parentId);
-    $status  = $parent['InstanceStatus'] ?? 0;
+    $pStatus = $parent['InstanceStatus'] ?? 0;
 
-    // Wenn aktiv → alles gut
-    if ($status === 102) {
-        // Reset Fehlerzähler
+    // 102 = IS_ACTIVE → alles gut
+    if ($pStatus === 102) {
+        // Fehlerzähler zurücksetzen
         $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
         return true;
     }
 
-    // 1) Normaler Versuch: einfach öffnen
     $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nicht aktiv, versuche zu öffnen', [
         'ParentID' => $parentId,
-        'Status'   => $status
+        'Status'   => $pStatus
     ]);
+
     @IPS_RequestAction($parentId, 'Open', true);
+    IPS_Sleep(200);
 
-    IPS_Sleep(200); // 200 ms warten, damit Symcon den Status aktualisieren kann
+    $parent  = IPS_GetInstance($parentId);
+    $pStatus = $parent['InstanceStatus'] ?? 0;
 
-    $parent = IPS_GetInstance($parentId);
-    $status = $parent['InstanceStatus'] ?? 0;
-
-    if ($status === 102) {
+    if ($pStatus === 102) {
         $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO erfolgreich geöffnet', [
             'ParentID' => $parentId
         ]);
@@ -1406,27 +1393,27 @@ private function EnsureParentIOOnline(): bool
         return true;
     }
 
-    // 2) Wenn das mehrfach nicht klappt → hartes Reconnect, so wie du es manuell machst
+    // normaler Open-Versuch hat nicht gereicht → Fehlerzähler erhöhen
     $fails = $this->ReadAttributeInteger('BaichuanReconnectFails') + 1;
     $this->WriteAttributeInteger('BaichuanReconnectFails', $fails);
 
+    // nach ein paar Fehlschlägen hart neu verbinden (wie du manuell)
     if ($fails >= 3) {
         $this->dbg('BAICHUAN', 'EnsureParentIOOnline: wiederholt fehlgeschlagen, mache hartes Reconnect', [
             'ParentID' => $parentId,
-            'Status'   => $status,
+            'Status'   => $pStatus,
             'Fails'    => $fails
         ]);
 
-        // wie dein manuelles "Socket neu verbinden"
         @IPS_RequestAction($parentId, 'Open', false);
         IPS_Sleep(500);
         @IPS_RequestAction($parentId, 'Open', true);
-
         IPS_Sleep(300);
-        $parent = IPS_GetInstance($parentId);
-        $status = $parent['InstanceStatus'] ?? 0;
 
-        if ($status === 102) {
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus === 102) {
             $this->dbg('BAICHUAN', 'EnsureParentIOOnline: hartes Reconnect erfolgreich', [
                 'ParentID' => $parentId
             ]);
@@ -1434,13 +1421,13 @@ private function EnsureParentIOOnline(): bool
             return true;
         }
 
-        // auch das hat nicht geklappt → Zähler zurück, aber false
+        // hartes Reconnect hat auch nicht geklappt → Zähler zurücksetzen
         $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
     }
 
     $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO weiterhin nicht aktiv', [
         'ParentID' => $parentId,
-        'Status'   => $status
+        'Status'   => $pStatus
     ]);
     return false;
 }
