@@ -310,15 +310,11 @@ class Reolink extends IPSModule
             'hex' => bin2hex(substr($data, 0, 64))
         ]);
 
-        if (!$this->EnsureParentIOOnline()) {
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht');
-            return;
-        }
-
+        // GAR KEIN EnsureParentIOOnline hier drin – einfach senden.
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
-            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden (nach EnsureParentIOOnline)');
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden');
             return;
         }
 
@@ -1367,14 +1363,6 @@ class Reolink extends IPSModule
 
         SetValueString($vid, $value);
     }
-
-    private function EnsureParentIOOnline(): bool
-    {
-        // TEMPORÄR zum Testen:
-        // Wir vertrauen dem Client-Socket und lassen Symcon/Autoreconnect den Rest machen.
-        return true;
-    }
-
 
 
 
