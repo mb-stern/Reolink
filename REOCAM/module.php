@@ -580,21 +580,28 @@ class Reolink extends IPSModule
 
     private function BaichuanSendLogin(): void
     {
-        $messId = $this->BaichuanNextMessId();
+        $xml    = $this->BuildBaichuanLoginXml();
+        $messId = $this->NextMessId();
 
-        $loginXml = $this->BuildBaichuanLoginXml();
+        $this->dbg(
+            'BAICHUAN',
+            sprintf(
+                'Sende Login (cmd_id=1, class=0x1465, messId=%d)',
+                $messId
+            )
+        );
+        $this->dbg('BAICHUAN', '  BAICHUAN Login-XML', $xml);
 
-        // Nur zur Kontrolle ins Debug
-        $this->dbg('BAICHUAN', '  BAICHUAN Login-XML', $loginXml);
+        // Login IMMER im BC-Modus schicken (wie im Dump, der funktioniert hat)
+        $encType = 0x01;
 
-        // ❗ WICHTIG: keine BC-Verschlüsselung für den Body
-        $encType = 0; // oder der gleiche Wert wie beim Nonce-Request
-
-        // Body bleibt das reine XML
-        $body = $loginXml;
-
-        // Falls du bei Login auch class 0x1465 verwendest:
-        $this->BaichuanSendFrame(1, '1465', $encType, $messId, $body);
+        $this->BaichuanSendFrame(
+            1,
+            0x1465,
+            $messId,
+            $encType,
+            $xml
+        );
     }
 
     private function BaichuanSendLoginRequest(): void
@@ -621,36 +628,41 @@ class Reolink extends IPSModule
 
     public function InitBaichuan(): void
     {
+        // Parent-IO prüfen
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'InitBaichuan: kein Parent-IO verbunden, breche ab');
+            return;
+        }
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+        if ($pStatus !== 102) {
+            $this->dbg('BAICHUAN', 'InitBaichuan: Parent-IO nicht aktiv, breche ab', [
+                'ParentID' => $parentId,
+                'Status'   => $pStatus,
+            ]);
+            return;
+        }
+
         $state = $this->ReadAttributeString('BaichuanState');
         $this->dbg('BAICHUAN', 'InitBaichuan-State | ' . json_encode(['state' => $state]));
 
         switch ($state) {
             case '':
             case 'idle':
-                // erster Start → Nonce-Request
                 $this->BaichuanSendLoginRequest();
                 $this->WriteAttributeString('BaichuanState', 'handshake');
                 $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
                 break;
 
             case 'handshake':
-                // wir warten noch auf Handshake-ACK
-                $this->BaichuanCheckHandshake();
-                break;
-
             case 'waiting_login':
-                // Handshake-ACK ist da, Login wurde gesendet.
-                // Hier NICHT nochmal Nonce schicken, nur prüfen und etwas warten.
                 $this->BaichuanCheckHandshake();
                 break;
 
             case 'ready':
-                // alles gut, Timer könnte theoretisch auch deaktiviert werden
-                $this->SetTimerInterval('BaichuanInitTimer', 0);
-                break;
-
-            default:
-                $this->dbg('BAICHUAN', 'InitBaichuan: unbekannter State', ['state' => $state]);
+                // nichts
                 break;
         }
     }
