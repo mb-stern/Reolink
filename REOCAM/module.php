@@ -678,11 +678,9 @@ class Reolink extends IPSModule
             return;
         }
 
-        $state = $this->ReadAttributeString('BaichuanState');
-
-        // Buffer ansehen
         $buf    = $this->ReadAttributeString('BaichuanBuffer') ?? '';
         $bufLen = strlen($buf);
+        $state  = $this->ReadAttributeString('BaichuanState');
 
         $this->dbg('BAICHUAN', 'CheckHandshake: Buffer-Status', [
             'state' => $state,
@@ -690,35 +688,47 @@ class Reolink extends IPSModule
             'hex'   => bin2hex(substr($buf, 0, 32))
         ]);
 
-        // Solange wir noch kein Handshake-ACK haben (state=handshake)
+        // 1) Start: Nonce holen
+        if ($state === 'idle') {
+            $this->dbg('BAICHUAN', 'CheckHandshake: starte Handshake, sende Nonce-Request');
+            $this->WriteAttributeString('BaichuanState', 'handshake');
+            $this->BaichuanSendLoginRequest();
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
+            return;
+        }
+
+        // 2) Wir warten noch auf Handshake-ACK (1466)
         if ($state === 'handshake') {
             if ($bufLen === 0) {
-                // wirklich noch keine Antwort → Nonce-Request nochmal probieren
                 $this->dbg('BAICHUAN', 'CheckHandshake: noch keine Antwort, sende Nonce-Request erneut');
                 $this->BaichuanSendLoginRequest();
-                $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
-                return;
+            } else {
+                $this->dbg('BAICHUAN', 'CheckHandshake: Buffer nicht leer, warte auf Verarbeitung');
             }
-
-            // Buffer ist nicht leer, aber State noch "handshake" → Parser verarbeitet gerade
-            $this->dbg('BAICHUAN', 'CheckHandshake: Buffer nicht leer, warte auf Verarbeitung', [
-                'len' => $bufLen
-            ]);
-            // Timer lassen wir weiterlaufen
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
             return;
         }
 
-        // Im State "waiting_login" wurde das Handshake-ACK schon gesehen,
-        // wir warten nur noch auf das Login-OK (class=0000).
+        // 3) Handshake-ACK ist da, Login wurde gesendet
         if ($state === 'waiting_login') {
-            // Hier NICHT erneut Nonce/Handshake senden, das würde nur doppeln.
-            $this->dbg('BAICHUAN', 'CheckHandshake: warte auf Login-OK, kein erneuter Nonce-Request');
-            // Timer darf weiterlaufen, falls etwas hängen bleibt.
+            if ($bufLen === 0) {
+                $this->dbg('BAICHUAN', 'CheckHandshake: warte auf Login-Response...');
+            } else {
+                $this->dbg('BAICHUAN', 'CheckHandshake: Buffer != 0, lasse BaichuanReceive arbeiten');
+            }
+            $this->SetTimerInterval('BaichuanInitTimer', 5 * 1000);
             return;
         }
 
-        // In allen anderen States (ready, idle, …) macht CheckHandshake nichts mehr
-        $this->dbg('BAICHUAN', 'CheckHandshake: State ' . $state . ' – tue nichts mehr');
+        // 4) Fertig
+        if ($state === 'ready') {
+            $this->dbg('BAICHUAN', 'CheckHandshake: Handshake abgeschlossen (ready), Timer auf 60s');
+            $this->SetTimerInterval('BaichuanInitTimer', 60 * 1000);
+            return;
+        }
+
+        // Fallback
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
     }
 
     private function BaichuanSendKeepalive(): void
@@ -834,9 +844,10 @@ class Reolink extends IPSModule
             ['body_hex' => bin2hex(substr($body, 0, 128))]
         );
 
-        // ---------------- HEADER ONLY ----------------
-        if ($bodyLen === 0) {
-            // 🔹 Login-OK (Status-Response, class=0000)
+        // ---------------- HEADER-ONLY ----------------
+        if ($bodyLen === 0 || $body === '') {
+
+            // Login-ACK (Header-only)
             if ($cmdId === 1 && $classHex === '0000') {
                 $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
                     'encrypt' => sprintf('0x%04X', $encrypt),
@@ -851,7 +862,7 @@ class Reolink extends IPSModule
                 // Events abonnieren
                 $this->BaichuanSubscribeEvents();
 
-                // Device/Stream-Info anfragen (optional)
+                // Device/Stream-Info anfragen
                 $this->BaichuanRequestDevAndStreamInfo();
 
                 // Keepalive alle 25 Sekunden
@@ -864,14 +875,21 @@ class Reolink extends IPSModule
             if ($cmdId === 1 && $classHex === '1466') {
                 $this->dbg(
                     'BAICHUAN',
-                    'Handshake-ACK (Header-only, class=1466) empfangen',
+                    'Handshake-ACK (Header-only, class=1466) empfangen – sende jetzt Login',
                     [
                         'encrypt' => sprintf('0x%04X', $encrypt),
                         'messId'  => $messId
                     ]
                 );
 
-                // State bleibt "handshake" – wir warten jetzt auf das Encryption-XML (cmd=1 mit Body)
+                // ab jetzt nicht mehr Nonce neu senden
+                $this->WriteAttributeString('BaichuanState', 'waiting_login');
+
+                // ein bisschen Zeit geben, bis Login-Response kommt
+                $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+
+                // **jetzt wirklich den Login schicken**
+                $this->BaichuanSendLogin();
                 return;
             }
 
