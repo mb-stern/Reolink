@@ -308,7 +308,11 @@ class Reolink extends IPSModule
             return;
         }
 
-        $this->SendDataToParent(json_encode(['DataID' => '{C8792760-65CF-4C53-B5C7-A30FCC84FEFE}', 'Buffer' => $data]));
+        $this->SendDataToParent(json_encode([
+        'DataID' => '{C8792760-65CF-4C53-B5C7-A30FCC84FEFE}',
+        'Buffer' => base64_encode($data)
+    ]));
+
     }
 
     private function BaichuanBuildFrame(
