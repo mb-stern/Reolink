@@ -418,18 +418,19 @@ class Reolink extends IPSModule
         int $messId,
         int $encType,
         string $xmlBody
-    ): void {
+    ): void
+    {
         $offset       = $messId % 256;
         $messageClass = strtolower(sprintf('%04x', $class));
 
-        // ✅ Sobald AES-Key vorhanden → IMMER AES
-        if ($this->BaichuanAesKey !== '') {
-            $encType = 0x02;
-        }
+        // ❌ NICHT mehr automatisch auf AES umschalten
+        // if ($this->BaichuanAesKey !== '') {
+        //     $encType = 0x02;
+        // }
 
         // ✅ Encryption auswählen
         if ($encType === 0x01) {
-            // BC XOR
+            // BC XOR – genau das nutzt reolink_aio für den Login
             $body    = $this->BaichuanDecryptBC($xmlBody, $offset);
             $encMode = 'BC';
         } elseif ($encType === 0x02) {
@@ -482,7 +483,7 @@ class Reolink extends IPSModule
         $this->BaichuanSendRaw($frame);
     }
 
-        public function BaichuanHandleHandshake(
+    public function BaichuanHandleHandshake(
         int $cmdId,
         string $body,
         string $classHex,
