@@ -10,6 +10,7 @@ class Reolink extends IPSModule
     private const BAICHUAN_CLASS_MODERN    = 0x6414;      // -> Bytes 14 64 -> "1464"
     private const BAICHUAN_CLASS_NONCE     = 0x6514;      // -> "1465"
     private const BAICHUAN_CLASS_HEADER20  = 0x6614;      // -> "1466"
+    private $BaichuanMessId = 1; // notfalls ungetypt lassen, das ist Symcon egal
 
     public function Create()
     {
