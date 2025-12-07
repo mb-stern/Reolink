@@ -891,30 +891,24 @@ class Reolink extends IPSModule
 
         // ---------------- HEADER-ONLY ----------------
         if ($bodyLen === 0 || $body === '') {
+            // 🔹 Login-ACK (class=0000)
             if ($cmdId === 1 && $classHex === '0000') {
                 $state = $this->ReadAttributeString('BaichuanState');
 
-                // ✅ Login-ACK NUR EINMAL behandeln
+                // Login-ACK nur im erwarteten Zustand auswerten
                 if ($state === 'waiting_login') {
 
-                    // 🔐 AES-Key jetzt erzeugen (REOLINK STANDARD)
-                    $pwdMd5 = strtolower(md5($this->ReadPropertyString('Password')));
-                    $this->BaichuanAesKey = substr(
-                        strtolower(md5($pwdMd5 . $this->BaichuanNonce)),
-                        0,
-                        16
-                    );
-
-                    $this->dbg('BAICHUAN', 'AES-Key gesetzt', [
-                        'aesKey' => $this->BaichuanAesKey
-                    ]);
-
+                    // ⚠️ WICHTIG:
+                    // AES-Key NICHT noch einmal überschreiben!
+                    // Er wurde bereits in HandleHandshakeXml() mit der modernen
+                    // Variante aus nonce + Passwort berechnet und ist korrekt.
                     $this->dbg(
                         'BAICHUAN',
                         'Login-Response (Header-only) empfangen – setze State=ready',
                         [
                             'encrypt' => sprintf('0x%04X', $encrypt),
-                            'messId'  => $messId
+                            'messId'  => $messId,
+                            'aesKey'  => $this->BaichuanAesKey,
                         ]
                     );
 
@@ -927,7 +921,8 @@ class Reolink extends IPSModule
                     // Events abonnieren
                     $this->BaichuanSubscribeEvents();
 
-                    // Device / Stream Info abrufen (JETZT schon mit AES!)
+                    // Device / Stream Info abrufen (jetzt mit dem bereits
+                    // gesetzten AES-Key aus dem Handshake)
                     $this->BaichuanRequestDevAndStreamInfo();
 
                     // Keepalive starten
