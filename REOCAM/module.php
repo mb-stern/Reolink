@@ -420,6 +420,7 @@ class Reolink extends IPSModule
         string $xmlBody
     ): void
     {
+        // Offset für BC-XOR und Headerfeld
         $offset       = $messId % 256;
         $messageClass = strtolower(sprintf('%04x', $class));
 
@@ -462,13 +463,14 @@ class Reolink extends IPSModule
             $encMode = 'NONE';
         }
 
+        // WICHTIG: den gleichen Offset wie beim BC-Encrypt in den Header schreiben
         $frame = $this->BaichuanBuildFrame(
             $cmdId,
             $body,
             $messageClass,
             $encMode,
             $messId,
-            0
+            $offset           // <-- vorher 0, jetzt korrekt
         );
 
         $this->dbg('BAICHUAN', 'Sende Frame', [
@@ -476,6 +478,7 @@ class Reolink extends IPSModule
             'class'   => $messageClass,
             'encMode' => $encMode,
             'messId'  => $messId,
+            'offset'  => $offset,
             'len'     => strlen($body),
             'hex'     => bin2hex(substr($body, 0, 32))
         ]);
@@ -542,30 +545,37 @@ class Reolink extends IPSModule
 
     private function HandleHandshakeXml(string $xml): void
     {
+        // 1. Nonce aus dem XML holen
         $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
+            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden', $xml);
             return;
         }
 
-        // Nonce merken
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
+        // 2. Passwort lesen
         $password = $this->ReadPropertyString('Password');
 
-        // AES-Key: MD5(nonce-password), erste 16 Zeichen
-        $aesHex = md5($nonce . '-' . $password);
-        $this->BaichuanAesKey = substr($aesHex, 0, 16);
+        // 3. AES-Key wie in reolink_aio:
+        //    aes_key_str = md5_str_modern(f"{nonce}-{password}")[0:16]
+        $aesHex = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        $aesKey = substr($aesHex, 0, 16);
 
-        $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
+        // WICHTIG:
+        // - NICHT noch einmal md5() drüberjagen
+        // - NICHT hexdec() / pack('H*') verwenden
+        //   -> der Key sind direkt diese 16 ASCII-Zeichen.
+        $this->BaichuanAesKey = $aesKey;
 
-        // State setzen & Login anstoßen
-        $this->WriteAttributeString('BaichuanState', 'waiting_login');
-        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
+        $this->dbg('BAICHUAN', 'AES-Key (16 Zeichen)', $this->BaichuanAesKey);
 
-        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
-        $this->BaichuanSendLogin();
+        // 4. State umstellen, damit als nächstes der Login geschickt wird
+        $this->BaichuanState = self::BC_STATE_WAITING_LOGIN;
+
+        // Wenn du direkt losloggen willst:
+        // $this->BaichuanSendLogin();
     }
 
     private function ExtractXmlTag(string $xml, string $tag): string
