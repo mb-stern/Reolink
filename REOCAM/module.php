@@ -303,16 +303,26 @@ class Reolink extends IPSModule
 
     private function BaichuanSendRaw(string $data): void
     {
+        $len = strlen($data);
+
+        $this->dbg('BAICHUAN', 'Sende Rohdaten', [
+            'len' => $len,
+            'hex' => bin2hex(substr($data, 0, 64))
+        ]);
+
         if (!$this->EnsureParentIOOnline()) {
             $this->dbg('BAICHUAN', 'BaichuanSendRaw: Parent-IO nicht online, sende nicht');
             return;
         }
 
-        $this->SendDataToParent(json_encode([
-        'DataID' => '{C8792760-65CF-4C53-B5C7-A30FCC84FEFE}',
-        'Buffer' => base64_encode($data)
-    ]));
+        $inst     = IPS_GetInstance($this->InstanceID);
+        $parentId = $inst['ConnectionID'] ?? 0;
+        if ($parentId <= 0) {
+            $this->dbg('BAICHUAN', 'BaichuanSendRaw: kein Parent-IO verbunden (nach EnsureParentIOOnline)');
+            return;
+        }
 
+        CSCK_SendText($parentId, $data);
     }
 
     private function BaichuanBuildFrame(
