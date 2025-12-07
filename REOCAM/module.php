@@ -545,9 +545,10 @@ class Reolink extends IPSModule
 
     private function HandleHandshakeXml(string $xml): void
     {
+        // 1. Nonce aus dem XML holen
         $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
+            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden', $xml);
             return;
         }
 
@@ -555,20 +556,31 @@ class Reolink extends IPSModule
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
+        // 2. Passwort lesen
         $password = $this->ReadPropertyString('Password');
 
-        // AES-Key: md5(nonce-password), erste 16 Zeichen
-        $this->BaichuanAesKey = substr(md5($nonce . '-' . $password), 0, 16);
+        // 3. AES-Key wie in reolink_aio:
+        //    aes_key_str = md5_str_modern(f"{nonce}-{password}")[0:16]
+        $aesHex = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        $this->BaichuanAesKey = substr($aesHex, 0, 16);
 
-        $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
+        $this->dbg('BAICHUAN', 'AES-Key (16 Zeichen)', $this->BaichuanAesKey);
 
-        // State & Timer setzen
+        // 4. State & Timer setzen, Login anstoßen
         $this->WriteAttributeString('BaichuanState', 'waiting_login');
         $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
-        // **jetzt wirklich den Login schicken**
         $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
         $this->BaichuanSendLogin();
+    }
+
+    private function ExtractXmlTag(string $xml, string $tag): string
+    {
+        $pattern = sprintf('/<%1$s>(.*?)<\/%1$s>/s', preg_quote($tag, '/'));
+        if (preg_match($pattern, $xml, $m)) {
+            return trim($m[1]);
+        }
+        return '';
     }
 
     private function BuildBaichuanLoginXml(): string
