@@ -1594,8 +1594,12 @@ class Reolink extends IPSModule
         }
     }
 
-
-
+    private function BaichuanMd5Modern(string $input): string
+    {
+        // Entspricht dem "modernen" MD5 aus reolink_aio:
+        // md5 des UTF-8-Strings, als lowercase Hex-String
+        return strtolower(md5($input));
+    }
 
 
 
