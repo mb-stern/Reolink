@@ -545,46 +545,30 @@ class Reolink extends IPSModule
 
     private function HandleHandshakeXml(string $xml): void
     {
-        // 1. Nonce aus dem XML holen
         $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden', $xml);
+            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
             return;
         }
 
+        // Nonce merken
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
-        // 2. Passwort lesen
         $password = $this->ReadPropertyString('Password');
 
-        // 3. AES-Key wie in reolink_aio:
-        //    aes_key_str = md5_str_modern(f"{nonce}-{password}")[0:16]
-        $aesHex = $this->BaichuanMd5Modern($nonce . '-' . $password);
-        $aesKey = substr($aesHex, 0, 16);
+        // AES-Key: md5(nonce-password), erste 16 Zeichen
+        $this->BaichuanAesKey = substr(md5($nonce . '-' . $password), 0, 16);
 
-        // WICHTIG:
-        // - NICHT noch einmal md5() drüberjagen
-        // - NICHT hexdec() / pack('H*') verwenden
-        //   -> der Key sind direkt diese 16 ASCII-Zeichen.
-        $this->BaichuanAesKey = $aesKey;
+        $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
 
-        $this->dbg('BAICHUAN', 'AES-Key (16 Zeichen)', $this->BaichuanAesKey);
+        // State & Timer setzen
+        $this->WriteAttributeString('BaichuanState', 'waiting_login');
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
-        // 4. State umstellen, damit als nächstes der Login geschickt wird
-        $this->BaichuanState = self::BC_STATE_WAITING_LOGIN;
-
-        // Wenn du direkt losloggen willst:
-        // $this->BaichuanSendLogin();
-    }
-
-    private function ExtractXmlTag(string $xml, string $tag): string
-    {
-        $pattern = sprintf('/<%1$s>(.*?)<\/%1$s>/s', preg_quote($tag, '/'));
-        if (preg_match($pattern, $xml, $m)) {
-            return trim($m[1]);
-        }
-        return '';
+        // **jetzt wirklich den Login schicken**
+        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
+        $this->BaichuanSendLogin();
     }
 
     private function BuildBaichuanLoginXml(): string
