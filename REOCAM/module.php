@@ -1509,11 +1509,13 @@ class Reolink extends IPSModule
 
     public function BaichuanWatchdog(): void
     {
+        // Wenn Baichuan gar nicht verwendet werden soll → Watchdog aus
         if (!$this->ReadPropertyBoolean('UseBaichuan')) {
             $this->SetTimerInterval('BaichuanWatchdogTimer', 0);
             return;
         }
 
+        // Instanz & Parent-IO ermitteln
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
         if ($parentId <= 0) {
@@ -1523,10 +1525,12 @@ class Reolink extends IPSModule
 
         $parent  = IPS_GetInstance($parentId);
         $pStatus = $parent['InstanceStatus'] ?? 0;
-        $state   = $this->ReadAttributeString('BaichuanState');
-        $last    = (int)$this->ReadAttributeInteger('BaichuanLastActivity');
-        $now     = time();
-        $delta   = ($last > 0) ? ($now - $last) : -1;
+
+        $state = $this->ReadAttributeString('BaichuanState');
+
+        $last  = (int)$this->ReadAttributeInteger('BaichuanLastActivity');
+        $now   = time();
+        $delta = ($last > 0) ? ($now - $last) : -1;
 
         $this->dbg('BAICHUAN', 'Watchdog: Status', [
             'ParentID'     => $parentId,
@@ -1536,35 +1540,68 @@ class Reolink extends IPSModule
             'Delta'        => $delta,
         ]);
 
-        // 1) Fehlerzustand 200 -> harter Reconnect (wie bisher)
+        // 1) Fehlerzustand 200 -> harter Reconnect über IO + Neuinitialisierung
         if ($pStatus === 200) {
-            ...
+            $this->dbg('BAICHUAN', 'Watchdog: Parent-Status 200 (Fehler) → IO neu verbinden und Baichuan neu initialisieren');
+
+            // IO kurz trennen und wieder verbinden
+            try {
+                @IPS_DisconnectInstance($parentId);
+                IPS_Sleep(250);
+                @IPS_ConnectInstance($parentId);
+            } catch (Throwable $e) {
+                $this->dbg('BAICHUAN', 'Watchdog: Fehler beim Reconnect des Parent-IO', [
+                    'Exception' => $e->getMessage()
+                ]);
+            }
+
+            // interner State zurücksetzen
+            $this->WriteAttributeString('BaichuanState', 'idle');
+            $this->WriteAttributeString('BaichuanBuffer', '');
+            $this->WriteAttributeInteger('BaichuanLastActivity', 0);
+
+            // Neu-Init in Kürze anstoßen
+            $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
+
             return;
         }
 
+        // 2) IO nicht aktiv → nichts machen, Watchdog läuft weiter und prüft später erneut
         if ($pStatus !== 102) {
-            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', []);
+            $this->dbg('BAICHUAN', 'Watchdog: Parent-IO nicht aktiv (kein 102), tue nichts', [
+                'ParentStatus' => $pStatus
+            ]);
             return;
         }
 
-        // 2) IO aktiv: vor dem 200er neu initialisieren, wenn zu lange keine Aktivität
+        // 3) IO ist aktiv (102). Wenn wir zu lange keine Aktivität hatten, lieber
+        //    VOR einem 200er-Fehler sauber neu initialisieren.
+        //
+        //    Beispiel: wenn >40 Sekunden nichts gesendet/empfangen wurde.
         if ($state === 'ready' && $delta >= 0 && $delta > 40) {
-            $this->dbg('BAICHUAN', 'Watchdog: >40s keine Aktivität -> Baichuan neu initialisieren', [
+            $this->dbg('BAICHUAN', 'Watchdog: >40s keine Aktivität → Baichuan neu initialisieren', [
                 'Delta' => $delta
             ]);
 
             $this->WriteAttributeString('BaichuanState', 'idle');
             $this->WriteAttributeString('BaichuanBuffer', '');
+            $this->WriteAttributeInteger('BaichuanLastActivity', 0);
+
+            // neue Initialisierung starten
             $this->SetTimerInterval('BaichuanInitTimer', 2 * 1000);
             return;
         }
 
-        // 3) Normalfall: wir sind ready, IO ist 102 -> aktives KeepAlive
+        // 4) Normalfall: IO aktiv & State ready → aktives KeepAlive senden
         if ($state === 'ready') {
-            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive', ['Delta' => $delta]);
+            $this->dbg('BAICHUAN', 'Watchdog: sende aktiven KeepAlive', [
+                'Delta' => $delta
+            ]);
             $this->BaichuanKeepalive();
         } else {
-            $this->dbg('BAICHUAN', 'Watchdog: State != ready, kein KeepAlive', ['state' => $state]);
+            $this->dbg('BAICHUAN', 'Watchdog: State != ready, kein KeepAlive', [
+                'State' => $state
+            ]);
         }
     }
 
