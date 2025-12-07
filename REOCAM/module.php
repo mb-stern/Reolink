@@ -1372,88 +1372,96 @@ class Reolink extends IPSModule
     {
         $inst     = IPS_GetInstance($this->InstanceID);
         $parentId = $inst['ConnectionID'] ?? 0;
+
         if ($parentId <= 0) {
             $this->dbg('BAICHUAN', 'EnsureParentIOOnline: kein Parent-IO verknüpft');
             return false;
         }
 
-        $parent = IPS_GetInstance($parentId);
-        $status = $parent['InstanceStatus'] ?? 0;
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
 
         // 102 = IS_ACTIVE → alles gut
-        if ($status === 102) {
+        if ($pStatus === 102) {
             // Fehlerzähler zurücksetzen
             $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
             return true;
         }
 
-        // 1) Soft-Open versuchen
-        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nicht aktiv, versuche Soft-Open', [
+        $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO nicht aktiv, versuche zu öffnen (soft)', [
             'ParentID' => $parentId,
-            'Status'   => $status
+            'Status'   => $pStatus
         ]);
 
-        // zuerst normal mit RequestAction probieren
-        @IPS_RequestAction($parentId, 'Open', true);
-        IPS_Sleep(200);
+        // ▸ Soft-Open: so, wie du es manuell machen würdest (Open=true)
+        $cfg = json_decode(IPS_GetConfiguration($parentId), true);
+        $isOpen = (bool)($cfg['Open'] ?? false);
 
-        $parent = IPS_GetInstance($parentId);
-        $status = $parent['InstanceStatus'] ?? 0;
+        if (!$isOpen) {
+            IPS_SetProperty($parentId, 'Open', true);
+            IPS_ApplyChanges($parentId);
+            IPS_Sleep(200);
+        }
 
-        if ($status === 102) {
-            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Soft-Open erfolgreich', [
+        // Status nach Soft-Open prüfen
+        $parent  = IPS_GetInstance($parentId);
+        $pStatus = $parent['InstanceStatus'] ?? 0;
+
+        if ($pStatus === 102) {
+            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO erfolgreich geöffnet (soft)', [
                 'ParentID' => $parentId
             ]);
             $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
             return true;
         }
 
-        // Soft-Open hat NICHT geklappt → Fehlerzähler erhöhen
+        // ▸ Soft-Open hat nicht gereicht → Fehlerzähler erhöhen
         $fails = $this->ReadAttributeInteger('BaichuanReconnectFails') + 1;
         $this->WriteAttributeInteger('BaichuanReconnectFails', $fails);
 
         $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Soft-Open fehlgeschlagen', [
             'ParentID' => $parentId,
-            'Status'   => $status,
+            'Status'   => $pStatus,
             'Fails'    => $fails
         ]);
 
-        // 2) Nach ein paar Fehlschlägen → hartes Reconnect mit deinem Muster
+        // ▸ Nach ein paar Fehlschlägen: hartes Reconnect wie in deinem Beispiel
         if ($fails >= 3) {
-            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: wiederholt fehlgeschlagen, mache hartes Reconnect', [
-                'ParentID' => $parentId,
-                'Status'   => $status,
-                'Fails'    => $fails
+            $this->dbg('BAICHUAN', 'EnsureParentIOOnline: mache hartes Reconnect (Open=false/true)', [
+                'ParentID' => $parentId
             ]);
 
-            // genau wie in deinem Beispiel-Script:
-            @IPS_SetProperty($parentId, 'Open', false);
-            @IPS_ApplyChanges($parentId);
+            // erst schließen
+            IPS_SetProperty($parentId, 'Open', false);
+            IPS_ApplyChanges($parentId);
             IPS_Sleep(500);
 
-            @IPS_SetProperty($parentId, 'Open', true);
-            @IPS_ApplyChanges($parentId);
+            // dann wieder öffnen
+            IPS_SetProperty($parentId, 'Open', true);
+            IPS_ApplyChanges($parentId);
             IPS_Sleep(300);
 
-            $parent = IPS_GetInstance($parentId);
-            $status = $parent['InstanceStatus'] ?? 0;
+            $parent  = IPS_GetInstance($parentId);
+            $pStatus = $parent['InstanceStatus'] ?? 0;
 
-            if ($status === 102) {
+            if ($pStatus === 102) {
                 $this->dbg('BAICHUAN', 'EnsureParentIOOnline: hartes Reconnect erfolgreich', [
-                    'ParentID' => $parentId
+                    'ParentID' => $parentId,
+                    'Status'   => $pStatus
                 ]);
                 $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
                 return true;
             }
 
-            // auch hartes Reconnect nicht erfolgreich → Zähler zurücksetzen
+            // hartes Reconnect hat auch nicht geklappt → Zähler zurücksetzen
             $this->WriteAttributeInteger('BaichuanReconnectFails', 0);
         }
 
         $this->dbg('BAICHUAN', 'EnsureParentIOOnline: Parent-IO weiterhin nicht aktiv', [
             'ParentID' => $parentId,
-            'Status'   => $status
+            'Status'   => $pStatus
         ]);
+
         return false;
     }
 
