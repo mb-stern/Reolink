@@ -848,27 +848,36 @@ class Reolink extends IPSModule
 
         // ---------------- HEADER-ONLY ----------------
         if ($bodyLen === 0 || $body === '') {
-
-            // Login-ACK (Header-only)
             if ($cmdId === 1 && $classHex === '0000') {
-                $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
-                    'encrypt' => sprintf('0x%04X', $encrypt),
-                    'messId'  => $messId
-                ]);
+                $state = $this->ReadAttributeString('BaichuanState');
 
-                $this->WriteAttributeString('BaichuanState', 'ready');
+                // Nur wenn wir wirklich noch im Login sind
+                if ($state === 'waiting_login') {
+                    $this->dbg('BAICHUAN', 'Login-Response (Header-only) empfangen – setze State=ready', [
+                        'encrypt' => sprintf('0x%04X', $encrypt),
+                        'messId'  => $messId
+                    ]);
 
-                // Init-Timer stoppen
-                $this->SetTimerInterval('BaichuanInitTimer', 0);
+                    $this->WriteAttributeString('BaichuanState', 'ready');
 
-                // Events abonnieren
-                $this->BaichuanSubscribeEvents();
+                    // Init-Timer stoppen
+                    $this->SetTimerInterval('BaichuanInitTimer', 0);
 
-                // Device/Stream-Info anfragen
-                $this->BaichuanRequestDevAndStreamInfo();
+                    // Events abonnieren
+                    $this->BaichuanSubscribeEvents();
 
-                // Keepalive alle 25 Sekunden
-                $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
+                    // Device/Stream-Info anfragen
+                    $this->BaichuanRequestDevAndStreamInfo();
+
+                    // Keepalive alle 25 Sekunden
+                    $this->SetTimerInterval('BaichuanKeepaliveTimer', 25 * 1000);
+                } else {
+                    // normales ACK auf irgendein Kommando
+                    $this->dbg('BAICHUAN', 'ACK ohne Body (cmd=1,class=0000) empfangen', [
+                        'state'  => $state,
+                        'messId' => $messId
+                    ]);
+                }
 
                 return;
             }
@@ -1152,7 +1161,7 @@ class Reolink extends IPSModule
 
     private function BaichuanRequestDevAndStreamInfo(): void
     {
-        // Enc-Typ: nach Handshake müssen moderne 1464-Kommandos AES benutzen
+        // Wenn AES-Key vorhanden -> AES, sonst fallback BC
         $encType = ($this->BaichuanAesKey === '') ? 0x01 : 0x02;
 
         // ---------- DeviceInfo ----------
@@ -1175,8 +1184,8 @@ class Reolink extends IPSModule
         );
 
         $this->BaichuanSendFrame(
-            1,        // cmdId
-            0x1464,   // class
+            1,
+            0x1464,
             $messIdDev,
             $encType,
             $devXml
@@ -1202,8 +1211,8 @@ class Reolink extends IPSModule
         );
 
         $this->BaichuanSendFrame(
-            1,        // cmdId
-            0x1464,   // class
+            1,
+            0x1464,
             $messIdStream,
             $encType,
             $streamXml
