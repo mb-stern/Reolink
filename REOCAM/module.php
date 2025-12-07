@@ -532,26 +532,43 @@ class Reolink extends IPSModule
 
     private function HandleHandshakeXml(string $xml): void
     {
-        $nonce = $this->ExtractXmlTag($xml, 'nonce');
-        if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
+        try {
+            $sx = new SimpleXMLElement($xml);
+        } catch (Throwable $e) {
+            $this->dbg('BAICHUAN', 'Handshake-XML ungültig', ['error' => $e->getMessage()]);
             return;
         }
 
+        $nonce = (string)($sx->Encryption->nonce ?? '');
+        if ($nonce === '') {
+            $this->dbg('BAICHUAN', 'Handshake ohne Nonce, breche ab');
+            return;
+        }
+
+        // ✅ Nonce speichern
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
+        // ✅ AES-Key BERECHNEN (modern, wie reolink_aio)
         $password = $this->ReadPropertyString('Password');
-        $tmp      = $this->BaichuanMd5Modern($nonce . '-' . $password);
-        $this->BaichuanAesKey = substr($tmp, 0, 16);
+        $this->BaichuanAesKey = substr(
+            md5($nonce . '-' . $password),
+            0,
+            16
+        );
 
-        $this->dbg('BAICHUAN', 'AES-Key (hex, 16 Zeichen)', $this->BaichuanAesKey);
+        $this->dbg('BAICHUAN', 'AES-Key berechnet', [
+            'aesKey' => $this->BaichuanAesKey
+        ]);
 
-        // 👉 Ab hier warten wir auf Login-OK
+        // ✅ GANZ WICHTIG: State wechseln
         $this->WriteAttributeString('BaichuanState', 'waiting_login');
-        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
-        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
+        // ✅ Handshake-Timer stoppen
+        $this->SetTimerInterval('BaichuanInitTimer', 0);
+
+        // ✅ JETZT Login senden
+        $this->dbg('BAICHUAN', 'Sende Login nach erfolgreichem Handshake');
         $this->BaichuanSendLogin();
     }
 
