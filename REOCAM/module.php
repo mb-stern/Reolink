@@ -331,19 +331,50 @@ class Reolink extends IPSModule
         if ($hookPath === '') {
             $hookPath = $this->RegisterHook();
         }
-
         $full = $this->BuildWebhookFullUrl($hookPath);
+
+        $dev = $this->apiGetDevInfoCached();
 
         $head = [
             [
                 "type"    => "Label",
                 "name"    => "WebhookFull",
                 "caption" => "Webhook für Kamerakonfiguration: " . $full
+            ],
+            [
+                "type"    => "Label",
+                "name"    => "DeviceInfo",
+                "caption" => sprintf(
+                    "Gerät: %s (%s) – Firmware: %s – Seriennr.: %s",
+                    $dev['model']    ?? 'unbekannt',
+                    $dev['type']     ?? 'n/a',
+                    $dev['firmVer']  ?? 'n/a',
+                    $dev['serial']   ?? 'n/a'
+                )
             ]
         ];
 
         array_splice($form['elements'], 0, 0, $head);
         return json_encode($form);
+    }
+
+    private function apiGetDevInfoCached(): array
+    {
+        $attr = 'DevInfoCache';
+        $raw  = @$this->ReadAttributeString($attr);
+        $now  = time();
+
+        if (is_string($raw) && $raw !== '') {
+            $obj = @json_decode($raw, true);
+            if (is_array($obj) && isset($obj['ts']) && ($now - (int)$obj['ts'] < 3600)) {
+                return (array)$obj['devInfo'];
+            }
+        }
+
+        $res = $this->apiCall([["cmd"=>"GetDevInfo"]], 'DEVINFO', /*suppress*/ true);
+        $devInfo = is_array($res) ? ($res[0]['value']['DevInfo'] ?? []) : [];
+        $this->WriteAttributeString($attr, json_encode(['ts'=>$now,'devInfo'=>$devInfo]));
+        return $devInfo;
     }
 
     private function RegisterHook(): string
