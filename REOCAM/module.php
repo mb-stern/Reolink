@@ -653,7 +653,6 @@ class Reolink extends IPSModule
             return null;
         }
 
-        // Diese Datei spiegelt die Firmwares aus dem Reolink Download Center
         $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
 
         $ctx = stream_context_create([
@@ -669,10 +668,9 @@ class Reolink extends IPSModule
             return null;
         }
 
-        // Block für die entsprechende Hardware suchen, z.B. "### IPC_566SD85MP"
+        // Block für die entsprechende Hardware suchen, z.B. "### IPC_529B17B8MP"
         $pos = strpos($content, '### ' . $hardwareId);
         if ($pos === false) {
-            // Manche IDs haben evtl. kein "MP" am Ende in der Liste
             $shortId = preg_replace('/MP$/', '', $hardwareId);
             if ($shortId !== $hardwareId) {
                 $pos = strpos($content, '### ' . $shortId);
@@ -686,6 +684,8 @@ class Reolink extends IPSModule
         $segment = substr($content, $pos);
         $lines   = explode("\n", $segment);
 
+        $best = null; // ['version' => ..., 'url' => ...]
+
         foreach ($lines as $line) {
             $trim = trim($line);
 
@@ -694,17 +694,26 @@ class Reolink extends IPSModule
                 break;
             }
 
-            // Typische Zeilen im Markdown:
-            // [v3.1.0.4366_2412021483](https://home-cdn.reolink.us/....)  2024-12-02  ...
+            // Zeilen im Markdown: [v3.0.0.3471_2406116464](https://....)
             if (preg_match('/\[(v[0-9.]+_[0-9]+)\]\((https?:\/\/[^\s)]+)\)/', $line, $m)) {
-                return [
-                    'version' => $m[1],
-                    'url'     => $m[2],
-                ];
+                $version = $m[1];
+                $urlFw   = $m[2];
+
+                if ($best === null || $this->compareFirmwareStrings($best['version'], $version) < 0) {
+                    // neue Version ist "größer" -> übernehmen
+                    $best = [
+                        'version' => $version,
+                        'url'     => $urlFw,
+                    ];
+                }
             }
         }
 
-        return null;
+        if ($best === null) {
+            $this->SendDebug('FirmwareCheck', 'Im Block für ' . $hardwareId . ' keine Firmwarezeilen gefunden.', 0);
+        }
+
+        return $best;
     }
 
     /**
@@ -767,6 +776,35 @@ class Reolink extends IPSModule
 
         // int/bool o.ä.
         return (bool)$flag;
+    }
+
+    /**
+     * Vergleicht zwei reine Firmware-Strings, z.B.
+     *   v3.0.0.3471_2406116464  vs  v3.0.0.3471_2406115760
+     *
+     * @return int  -1 = $a älter, 0 = gleich, 1 = $a neuer
+     */
+    private function compareFirmwareStrings(string $a, string $b): int
+    {
+        $buildA = $this->extractFirmwareBuild($a);
+        $buildB = $this->extractFirmwareBuild($b);
+
+        // 1) Wenn beide Buildnummern haben (z.B. 2406116464), nimm die
+        if ($buildA !== null && $buildB !== null && $buildA !== $buildB) {
+            return $buildA <=> $buildB;
+        }
+
+        // 2) Nur den Teil vor dem "_" vergleichen (v3.0.0.3471 vs v3.0.0.4428)
+        $baseA = explode('_', $a)[0];
+        $baseB = explode('_', $b)[0];
+
+        $cmp = version_compare($baseA, $baseB);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        // 3) Fallback: kompletter Stringvergleich
+        return strcmp($a, $b);
     }
 
     private function apiGetDevInfoFresh(): array
