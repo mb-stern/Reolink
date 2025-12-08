@@ -50,6 +50,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeInteger("ExecLastTs", 0);
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiSupportCache', '{}');
+        $this->RegisterAttributeString('DevInfoCache', '');
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
