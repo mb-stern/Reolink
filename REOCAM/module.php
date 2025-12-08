@@ -334,13 +334,32 @@ class Reolink extends IPSModule
 
         // DevInfo aus Cache / API holen
         $dev = $this->apiGetDevInfoCached();
+
+        // Build-String etwas hübscher machen (ohne "build ")
+        $build = $dev['buildDay'] ?? '';
+        if (is_string($build) && stripos($build, 'build ') === 0) {
+            $build = trim(substr($build, 6)); // "build 2412021483" -> "2412021483"
+        }
+        if ($build === '') {
+            $build = 'n/a';
+        }
+
+        // Hauptzeile: Modell, Typ, Firmware, Hardware, Build, Seriennummer
         $deviceCaption = sprintf(
-            'Gerät: %s (%s) – Firmware: %s – Seriennr.: %s',
+            'Gerät: %s (%s) – Firmware: %s – HW: %s – Build: %s – Seriennr.: %s',
             $dev['model']   ?? 'unbekannt',
             $dev['type']    ?? 'n/a',
             $dev['firmVer'] ?? 'n/a',
-            $dev['hardwareNo'] ?? 'n/a',
+            $dev['hardVer'] ?? 'n/a',
+            $build,
             $dev['serial']  ?? 'n/a'
+        );
+
+        // Zweite Zeile: Detail + ExactType (bis detail, mehr nicht)
+        $detailCaption = sprintf(
+            'Detail: %s – ExactType: %s',
+            $dev['detail']    ?? 'n/a',
+            $dev['exactType'] ?? 'n/a'
         );
 
         // Formular komplett in PHP aufbauen
@@ -352,11 +371,15 @@ class Reolink extends IPSModule
                     'name'    => 'WebhookFull',
                     'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
                 ],
-                [
+                $form['elements'][] = [
                     'type'    => 'Label',
-                    'name'    => 'DeviceInfo',
                     'caption' => $deviceCaption
-                ],
+                ];
+
+                $form['elements'][] = [
+                    'type'    => 'Label',
+                    'caption' => $detailCaption
+                ];
 
                 // Ab hier dein bisheriges form.json 1:1
                 [
@@ -513,11 +536,14 @@ class Reolink extends IPSModule
         // 2) Frische Abfrage
         $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO', /*suppress*/ true);
 
+        $this->SendDebug('DEVINFO', 'RAW: ' . print_r($res, true), 0);
+
         $devInfo = [];
-        $this->SendDebug('DevInfo', print_r($dev, true), 0);
         if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
             $devInfo = $res[0]['value']['DevInfo'] ?? [];
         }
+
+        $this->SendDebug('DevInfo', 'Parsed: ' . print_r($devInfo, true), 0);
 
         // Nur cachen, wenn wirklich etwas drin ist
         if (!empty($devInfo)) {
