@@ -565,8 +565,8 @@ class Reolink extends IPSModule
 
         if ($online === true) {
             // Es gibt eine neuere Version auf den Reolink-Servern
-            return "⚠️ Firmwarecheck (online): Auf dem Reolink-Server ist eine neuere Firmware verfügbar als installiert ({$firm}, Build {$build}). "
-                . "Bitte im Reolink-Client oder über das Download-Center aktualisieren.";
+            return "⚠️ Firmwarecheck (online): Auf dem Reolink-Server ist eine neuere Firmware verfügbar als installiert "
+                . "({$firm}, Build {$build}). Bitte im Reolink-Client oder über das Download-Center aktualisieren.";
         }
 
         if ($online === false) {
@@ -575,7 +575,8 @@ class Reolink extends IPSModule
         }
 
         // Wenn der Onlinecheck nicht möglich war (kein Internet, Feature nicht unterstützt, Fehler etc.)
-        return "ℹ️ Firmware: {$firm} (Build {$build}) – Online-Firmwareprüfung nicht möglich (Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).";
+        return "ℹ️ Firmware: {$firm} (Build {$build}) – Online-Firmwareprüfung nicht möglich "
+            . "(Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).";
     }
 
     /**
@@ -588,61 +589,35 @@ class Reolink extends IPSModule
      */
     private function CheckFirmwareOnline(): ?bool
     {
-        $host  = $this->ReadPropertyString('CameraIP');
-        $token = $this->ReadAttributeString('ApiToken');
-
-
-        if ($host === '' || !$token) {
-            $this->SendDebug('FirmwareCheck', 'Kein Host oder Token vorhanden', 0);
+        // Wenn Instanz deaktiviert ist, gar nichts tun
+        if (!$this->isActive()) {
             return null;
         }
 
-        $url   = sprintf('http://%s/api.cgi?cmd=CheckFirmware&token=%s', $host, $token);
-        // falls du HTTPS nutzt: https:// ... (mit Zertifikat-Handling in den Optionen)
-
-        $body  = json_encode([
+        // Nutzt deine bestehende API-Infrastruktur (Token, apiBase, apiHttpPostJson, etc.)
+        $resp = $this->apiCall([
             [
                 'cmd' => 'CheckFirmware',
             ]
-        ]);
+        ], 'FWCHECK', true);
 
-        $opts = [
-            'http' => [
-                'method'  => 'POST',
-                'header'  => "Content-Type: application/json\r\n",
-                'content' => $body,
-                'timeout' => 5
-            ]
-        ];
-
-        $this->SendDebug('FirmwareCheck', 'Request: ' . $body, 0);
-
-        $result = @Sys_GetURLContentEx($url, $opts);
-        if ($result === false || $result === '') {
-            $this->SendDebug('FirmwareCheck', 'Keine oder fehlerhafte Antwort vom Gerät', 0);
+        // Wenn gar keine sinnvolle Antwort kam → kein Online-Check möglich
+        if (!$resp || !isset($resp[0]['code'])) {
             return null;
         }
 
-        $this->SendDebug('FirmwareCheck', 'Response: ' . $result, 0);
-
-        $json = @json_decode($result, true);
-        if (!is_array($json) || !isset($json[0]['code'])) {
+        // Wenn das Gerät einen Fehlercode liefert (z.B. kein Internet, nicht unterstützt)
+        if ((int)$resp[0]['code'] !== 0) {
             return null;
         }
 
-        if ($json[0]['code'] !== 0) {
-            // Fehlercode vom Gerät, z.B. wenn kein Internet oder Feature nicht unterstützt
+        // Falls das Feld nicht vorhanden ist, können wir nichts sagen
+        if (!isset($resp[0]['value']['newFirmware'])) {
             return null;
         }
 
-        if (!isset($json[0]['value']['newFirmware'])) {
-            return null;
-        }
-
-        $new = $json[0]['value']['newFirmware'];
-
-        // Laut Spec: "newFirmware New firmware" -> üblicherweise 0/1
-        return (bool)$new;
+        // Laut Spec: "newFirmware" ist typischerweise 0 oder 1
+        return (bool)$resp[0]['value']['newFirmware'];
     }
 
     private function getModelImageBase64(array $dev): ?string
