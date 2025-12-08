@@ -588,7 +588,7 @@ class Reolink extends IPSModule
      */
     private function CheckFirmwareOnline(): ?bool
     {
-        $host  = $this->ReadPropertyString('Host'); // oder wie deine IP/Hostname-Property heißt
+        $host  = $this->ReadPropertyString('CameraIP"'); // oder wie deine IP/Hostname-Property heißt
         $token = $this->token; // nehme an, du hast den Token bereits irgendwo gespeichert
 
         if ($host === '' || !$token) {
