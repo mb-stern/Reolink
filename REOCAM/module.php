@@ -238,10 +238,6 @@ class Reolink extends IPSModule
                 $this->ResetApiCache();
                 return;
 
-            case 'RefreshApiCapabilities':
-                $this->RefreshApiCapabilities();
-                break;
-
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -346,8 +342,10 @@ class Reolink extends IPSModule
             $dev['serial']  ?? 'n/a'
         );
 
+        // Formular komplett in PHP aufbauen
         $form = [
             'elements' => [
+                // Dynamische Labels
                 [
                     'type'    => 'Label',
                     'name'    => 'WebhookFull',
@@ -358,6 +356,8 @@ class Reolink extends IPSModule
                     'name'    => 'DeviceInfo',
                     'caption' => $deviceCaption
                 ],
+
+                // Ab hier dein bisheriges form.json 1:1
                 [
                     'type'    => 'CheckBox',
                     'name'    => 'InstanceStatus',
@@ -399,11 +399,6 @@ class Reolink extends IPSModule
                         [ 'type' => 'CheckBox', 'name' => 'EnableApiSiren',       'caption' => 'Sirene' ],
                         [ 'type' => 'CheckBox', 'name' => 'EnableApiRecord',      'caption' => 'Kameraaufzeichnung' ],
                         [ 'type' => 'CheckBox', 'name' => 'EnableApiPTZ',         'caption' => 'PTZ / Presets / Zoom' ],
-                        [
-                            'type'    => 'Button',
-                            'caption' => 'API-Fähigkeiten neu ermitteln',
-                            'onClick' => "IPS_RequestAction(\$id, 'RefreshApiCapabilities', true); echo 'API-Fähigkeiten aktualisiert.';"
-                        ],
                         [
                             'type'    => 'Button',
                             'caption' => 'API-Version Cache zurücksetzen',
@@ -472,7 +467,7 @@ class Reolink extends IPSModule
                         [
                             'type'   => 'Image',
                             'onClick'=> "echo 'https://paypal.me/mbstern';",
-                            'image'  => 'data:image/jpeg;base64,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'
+                            'image'  => 'data:image/jpeg;base64,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'
                         ],
                         [
                             'type'    => 'Label',
@@ -483,33 +478,10 @@ class Reolink extends IPSModule
             ],
         ];
 
-        // HIER: dynamische API-Fähigkeiten einfließen lassen
-        $form = $this->enrichFormWithApiSupport($form);
+        // Optional: hier deine Fähigkeitserkennung einhängen
+        // $form = $this->enrichFormWithApiSupport($form);
 
         return json_encode($form);
-    }
-
-        private function RefreshApiCapabilities(): void
-    {
-        // 1) Ability-Cache leeren (falls du so ein Attribut verwendest)
-        //    Namen ggf. an deinen tatsächlichen Code anpassen:
-        if ($this->ReadAttributeString('AbilityCache') !== '') {
-            $this->WriteAttributeString('AbilityCache', '');
-        }
-
-        // 2) API-Version-Cache leeren
-        $this->WriteAttributeString('ApiVersionCache', json_encode([]));
-
-        // 3) Einmal zentral alle relevanten Features scannen.
-        //    Das ruft intern apiGetAbilityCached() + apiProbe() pro Domain auf
-        //    und füllt ApiVersionCache wieder.
-        $flags = $this->getApiSupportFlags();
-
-        $this->SendDebug(
-            'API',
-            'API-Fähigkeiten neu ermittelt: ' . json_encode($flags),
-            0
-        );
     }
 
     private function apiGetDevInfoCached(): array
@@ -1767,53 +1739,20 @@ class Reolink extends IPSModule
     // E-Mail (V20 / Legacy)
     // ---------------------------
 
-    private function emailGet(): ?array
+    private function emailGet(): ?array 
     {
-        $ver = $this->apiVersionGet('email');
-
-        if ($ver !== 'v20' && $ver !== 'legacy') {
-            $this->SendDebug('EMAIL', 'Keine gültige API-Version im Cache (email). Bitte "API-Fähigkeiten neu ermitteln" ausführen.', 0);
-            return null;
-        }
-
-        $cmd = ($ver === 'v20') ? 'GetEmailV20' : 'GetEmail';
-
-        $res = $this->apiCall([[ 
-            'cmd'    => $cmd,
-            'action' => 0,
-            'param'  => ['channel' => 0]
-        ]], 'EMAIL');
-
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->SendDebug('EMAIL', 'API-Aufruf fehlgeschlagen', 0);
-            return null;
-        }
-
-        return $res;
+    $ver = $this->apiProbe('email', 'GetEmailV20', 'GetEmail', 0);
+    $cmd = ($ver === 'v20') ? 'GetEmailV20' : 'GetEmail';
+    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'EMAIL');
+    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
-
-    private function emailSet(array $payload): bool
+    
+    private function emailSet(array $payload): bool 
     {
-        $ver = $this->apiVersionGet('email');
-
-        if ($ver !== 'v20' && $ver !== 'legacy') {
-            $this->SendDebug('EMAIL-SET', 'Keine gültige API-Version im Cache (email). Bitte "API-Fähigkeiten neu ermitteln" ausführen.', 0);
-            return false;
-        }
-
+        $ver = $this->apiProbe('email', 'SetEmailV20', 'SetEmail', 0);
         $cmd = ($ver === 'v20') ? 'SetEmailV20' : 'SetEmail';
-
-        $res = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 0,
-            'param'  => $payload
-        ]], 'EMAIL-SET');
-
-        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-        if (!$ok) {
-            $this->SendDebug('EMAIL-SET', 'API-Aufruf fehlgeschlagen', 0);
-        }
-        return $ok;
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$payload ]], 'EMAIL-SET');
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
     }
 
     private function IntervalSecondsToString(int $sec): ?string
@@ -2557,118 +2496,48 @@ class Reolink extends IPSModule
         return $this->ptzGotoPreset($id);
     }
 
+
     // ---------------------------
-    // FTP EIN/AUS (V20 / Legacy)
+    // FTP EIN/AUS
     // ---------------------------
 
     private function ftpGet(): ?array
     {
-        $ver = $this->apiVersionGet('ftp');
-
-        if ($ver !== 'v20' && $ver !== 'legacy') {
-            $this->SendDebug('FTP', 'Keine gültige API-Version im Cache (ftp). Bitte "API-Fähigkeiten neu ermitteln" ausführen.', 0);
-            return null;
-        }
+        $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
+        if ($ver === 'unsupported') return null;
 
         $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
 
-        // Manche Kameras nutzen action=0, andere action=1
-        $res = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 0,
-            'param'  => ['channel' => 0]
-        ]], 'FTP', /*suppress*/ true);
-
+        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ true);
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $res = $this->apiCall([[
-                'cmd'    => $cmd,
-                'action' => 1,
-                'param'  => ['channel' => 0]
-            ]], 'FTP');
+            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'FTP');
         }
-
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->SendDebug('FTP', 'API-Aufruf fehlgeschlagen', 0);
-            return null;
-        }
-
-        return $res;
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
     private function ftpSet(bool $on): bool
     {
-        $ver = $this->apiVersionGet('ftp');
-
-        if ($ver !== 'v20' && $ver !== 'legacy') {
-            $this->SendDebug('FTP-SET', 'Keine gültige API-Version im Cache (ftp). Bitte "API-Fähigkeiten neu ermitteln" ausführen.', 0);
-            return false;
-        }
+        $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
+        if ($ver === 'unsupported') return false;
 
         $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
-        $enable = $on ? 1 : 0;
 
-        // Variante 1: enable direkt auf Ftp
-        $p1 = [
-            'Ftp' => [
-                'enable'  => $enable,
-                'channel' => 0
-            ]
-        ];
-
-        $r1 = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 0,
-            'param'  => $p1
-        ]], 'FTP-SET', /*suppress*/ true);
-
+        $p1  = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
+        $r1  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
         $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-        if ($ok1) {
-            return true;
-        }
+        if ($ok1) return true;
 
-        $r1b = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 1,
-            'param'  => $p1
-        ]], 'FTP-SET', /*suppress*/ true);
-
+        $r1b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
         $ok1b = is_array($r1b) && (($r1b[0]['code'] ?? -1) === 0);
-        if ($ok1b) {
-            return true;
-        }
+        if ($ok1b) return true;
 
-        // Variante 2: Schedule-enable (manche Geräte erwarten das)
-        $p2 = [
-            'Ftp' => [
-                'schedule' => [
-                    'enable' => $enable
-                ],
-                'channel' => 0
-            ]
-        ];
-
-        $r2 = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 0,
-            'param'  => $p2
-        ]], 'FTP-SET', /*suppress*/ true);
-
+        $p2  = [ 'Ftp' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ];
+        $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ true);
         $ok2 = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-        if ($ok2) {
-            return true;
-        }
+        if ($ok2) return true;
 
-        $r2b = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 1,
-            'param'  => $p2
-        ]], 'FTP-SET');
-
-        $ok2b = is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
-        if (!$ok2b) {
-            $this->SendDebug('FTP-SET', 'API-Aufruf fehlgeschlagen', 0);
-        }
-        return $ok2b;
+        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET');
+        return is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
     }
 
     private function UpdateFtpStatus(): void
@@ -2960,67 +2829,28 @@ class Reolink extends IPSModule
 
 
     // ---------------------------
-    // Record (V20 / Legacy)
+    // Record Status
     // ---------------------------
 
-    private function recordGet(): ?array
+    private function recordGet(): ?array 
     {
-        $ver = $this->apiVersionGet('record');
-
-        if ($ver !== 'v20' && $ver !== 'legacy') {
-            $this->SendDebug('RECORD', 'Keine gültige API-Version im Cache (record). Bitte "API-Fähigkeiten neu ermitteln" ausführen.', 0);
-            return null;
-        }
-
-        $cmd = ($ver === 'v20') ? 'GetRecV20' : 'GetRec';
-
-        $res = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 1,
-            'param'  => ['channel' => 0]
-        ]], 'RECORD');
-
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->SendDebug('RECORD', 'API-Aufruf fehlgeschlagen', 0);
-            return null;
-        }
-
-        return $res;
+    $ver = $this->apiProbe('record', 'GetRecV20', 'GetRec', 1);
+    $cmd = ($ver === 'v20') ? 'GetRecV20' : 'GetRec';
+    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'RECORD');
+    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
     private function recordSet(array $payload): bool
     {
-        $ver = $this->apiVersionGet('record');
-
-        if ($ver !== 'v20' && $ver !== 'legacy') {
-            $this->SendDebug('RECORD-SET', 'Keine gültige API-Version im Cache (record). Bitte "API-Fähigkeiten neu ermitteln" ausführen.', 0);
-            return false;
-        }
-
+        $ver = $this->apiProbe('record', 'SetRecV20', 'SetRec', 0);
         $cmd = ($ver === 'v20') ? 'SetRecV20' : 'SetRec';
 
-        $r0 = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 0,
-            'param'  => $payload
-        ]], 'RECORD-SET', /*suppress*/ true);
-
+        $r0  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ true);
         $ok0 = is_array($r0) && (($r0[0]['code'] ?? -1) === 0);
-        if ($ok0) {
-            return true;
-        }
+        if ($ok0) return true;
 
-        $r1 = $this->apiCall([[
-            'cmd'    => $cmd,
-            'action' => 1,
-            'param'  => $payload
-        ]], 'RECORD-SET', /*suppress*/ false);
-
-        $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-        if (!$ok1) {
-            $this->SendDebug('RECORD-SET', 'API-Aufruf fehlgeschlagen', 0);
-        }
-        return $ok1;
+        $r1  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 1, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ false);
+        return is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
     }
 
     private function UpdateRecStatus(): void
