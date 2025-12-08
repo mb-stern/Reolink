@@ -610,32 +610,39 @@ class Reolink extends IPSModule
 
     private function BuildBaichuanLoginXml(): string
     {
+        // Nonce & Credentials holen
         $nonce    = $this->BaichuanNonce;
         $username = trim($this->ReadPropertyString('Username'));
         $password = trim($this->ReadPropertyString('Password'));
 
+        // Hashes NUR NOCH mit Nonce berechnen
         $userHash     = $this->BaichuanMd5Modern($nonce . '-' . $username);
         $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
 
+        // Debug – NUR diese Variante behalten
         $this->dbg('BAICHUAN', 'Login-Hashes', [
             'nonce'        => $nonce,
             'userHash'     => $userHash,
             'passwordHash' => $passwordHash
         ]);
 
-        return
-            '<?xml version="1.0" encoding="UTF-8" ?>' .
-            '<body>' .
-                '<LoginUser version="1.1">' .
-                    '<userName>' . $userHash . '</userName>' .
-                    '<password>' . $passwordHash . '</password>' .
-                    '<userVer>1</userVer>' .
-                '</LoginUser>' .
-                '<LoginNet version="1.1">' .
-                    '<type>LAN</type>' .
-                    '<udpPort>0</udpPort>' .
-                '</LoginNet>' .
-            '</body>';
+        // Login-XML mit GENAU diesen Hashes bauen
+        $xml  = '<?xml version="1.0" encoding="UTF-8" ?>';
+        $xml .= '<body>';
+        $xml .= '<LoginUser version="1.1">';
+        $xml .= '<userName>' . $userHash . '</userName>';
+        $xml .= '<password>' . $passwordHash . '</password>';
+        $xml .= '<userVer>1</userVer>';
+        $xml .= '</LoginUser>';
+        $xml .= '<LoginNet version="1.1">';
+        $xml .= '<type>LAN</type>';
+        $xml .= '<udpPort>0</udpPort>';
+        $xml .= '</LoginNet>';
+        $xml .= '</body>';
+
+        $this->dbg('BAICHUAN', 'Login-XML', $xml);
+
+        return $xml;
     }
 
     private function BaichuanSendLogin(): void
