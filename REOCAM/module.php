@@ -326,7 +326,7 @@ class Reolink extends IPSModule
     // Webhook + Formular
     // ---------------------------
 
-    public function GetConfigurationForm()
+   public function GetConfigurationForm()
     {
         // Webhook ermitteln/registrieren
         $hookPath = $this->ReadAttributeString('CurrentHook');
@@ -335,10 +335,10 @@ class Reolink extends IPSModule
         }
         $webhookFull = $this->BuildWebhookFullUrl($hookPath);
 
-        // DevInfo aus Cache / API holen
-        $$dev = $this->apiGetDevInfoCached(true);
+        // DevInfo für das Formular IMMER frisch von der Kamera holen
+        $dev = $this->apiGetDevInfoCached(true);
 
-        // Fallback: wenn irgendwas schiefgeht, mit leerem Array weiterarbeiten
+        // Fallback, falls die Abfrage schiefgeht
         if (!is_array($dev)) {
             $dev = [];
         }
@@ -606,8 +606,18 @@ class Reolink extends IPSModule
      */
     private function CheckFirmwareOnline(): ?bool
     {
-        // Wir nutzen die bestehende API-Infrastruktur (Token, apiBase, apiCall)
-        $resp = $this->apiCall([['cmd' => 'CheckFirmware']], 'FirmwareCheck', /*suppress*/ true);
+        if (!$this->isActive()) {
+            $this->SendDebug('FirmwareCheck', 'Instanz nicht aktiv', 0);
+            return null;
+        }
+
+        if (!$this->apiEnsureToken()) {
+            $this->SendDebug('FirmwareCheck', 'Kein API-Token vorhanden', 0);
+            return null;
+        }
+
+        // CheckFirmware über die vorhandene apiCall()-Logik
+        $resp = $this->apiCall([['cmd' => 'CheckFirmware']], 'FIRMWARE', /*suppress*/ true);
         $this->SendDebug('FirmwareCheck', 'Response: ' . print_r($resp, true), 0);
 
         if (!is_array($resp) || !isset($resp[0]['code'])) {
@@ -623,7 +633,8 @@ class Reolink extends IPSModule
             return null;
         }
 
-        return (bool)$resp[0]['value']['newFirmware'];
+        $new = (bool)$resp[0]['value']['newFirmware'];
+        return $new;
     }
 
     private function getModelImageBase64(array $dev): ?string
@@ -731,7 +742,7 @@ class Reolink extends IPSModule
         $now      = time();
         $cameraIP = $this->ReadPropertyString('CameraIP');
 
-        // 1) Cache lesen (nur wenn NICHT forceFresh)
+        // 1) Cache lesen (nur wenn nicht "forceFresh")
         if (!$forceFresh) {
             $raw = @$this->ReadAttributeString($attr);
             if (is_string($raw) && $raw !== '') {
@@ -769,7 +780,7 @@ class Reolink extends IPSModule
             $this->WriteAttributeString($attr, json_encode([
                 'ts'      => $now,
                 'ip'      => $cameraIP,
-                'devInfo' => $devInfo,
+                'devInfo' => $devInfo
             ]));
         }
 
