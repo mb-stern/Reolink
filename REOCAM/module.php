@@ -407,8 +407,11 @@ class Reolink extends IPSModule
             'elements' => [
                 // Bild + Geräteinfos
                 $deviceHeaderElement,
-
-                // Ab hier dein bisheriges Formular
+                [
+                    'type'    => 'Label',
+                    'caption' => '────────────────────────────────'
+                ],
+                        // Ab hier dein bisheriges Formular
                 [
                     'type'    => 'Label',
                     'name'    => 'WebhookFull',
