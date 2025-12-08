@@ -388,18 +388,14 @@ class Reolink extends IPSModule
                 'type'  => 'RowLayout',
                 'items' => [
                     [
-                        'type'  => 'Image',
-                        'name'  => 'DeviceImage',
-                        // HINWEIS: IP-Symcon muss hier eine URL akzeptieren – wenn nicht,
-                        // müsstest du später auf Base64 umsteigen.
-                        'image' => $imageUrl,
-                        'width' => 7,
-                        'height'=> 4
+                        'type'    => 'Label',
+                        'html'    => true,
+                        'caption' => '<img src="' . $imageUrl . '" style="width:80px; height:auto;">'
                     ],
                     [
                         'type'    => 'Label',
-                        'name'    => 'DeviceInfo',
-                        'caption' => $infoCaption
+                        'caption' => nl2br($infoCaption),
+                        'html'    => true
                     ],
                 ],
             ];
