@@ -606,35 +606,56 @@ class Reolink extends IPSModule
      */
     private function CheckFirmwareOnline(): ?bool
     {
-        if (!$this->isActive()) {
-            $this->SendDebug('FirmwareCheck', 'Instanz nicht aktiv', 0);
-            return null;
-        }
-
-        if (!$this->apiEnsureToken()) {
-            $this->SendDebug('FirmwareCheck', 'Kein API-Token vorhanden', 0);
-            return null;
-        }
-
-        // CheckFirmware über die vorhandene apiCall()-Logik
-        $resp = $this->apiCall([['cmd' => 'CheckFirmware']], 'FIRMWARE', /*suppress*/ true);
-        $this->SendDebug('FirmwareCheck', 'Response: ' . print_r($resp, true), 0);
+        // Wir benutzen die bestehende API-Hilfsfunktion,
+        // damit Token-Handling, HTTPS usw. konsistent sind.
+        $resp = $this->apiCall([
+            [
+                'cmd' => 'CheckFirmware',
+                // meistens sind keine weiteren Parameter nötig
+            ]
+        ], 'FirmwareCheck', true);
 
         if (!is_array($resp) || !isset($resp[0]['code'])) {
+            $this->SendDebug('FirmwareCheck', 'Ungültige Antwortstruktur', 0);
             return null;
         }
 
         if ((int)$resp[0]['code'] !== 0) {
             // Fehlercode vom Gerät, z.B. wenn kein Internet oder Feature nicht unterstützt
+            $this->SendDebug('FirmwareCheck', 'Fehlercode vom Gerät: ' . json_encode($resp[0]), 0);
             return null;
         }
 
-        if (!isset($resp[0]['value']['newFirmware'])) {
+        $value = $resp[0]['value'] ?? [];
+        $this->SendDebug('FirmwareCheck', 'Value: ' . json_encode($value), 0);
+
+        // Mögliches Flag im Value suchen – Reolink-Modelle sind da nicht immer einheitlich
+        $flag = null;
+        foreach (['newFirmware', 'hasNewFirmware', 'needUpgrade'] as $key) {
+            if (array_key_exists($key, $value)) {
+                $flag = $value[$key];
+                break;
+            }
+        }
+
+        if ($flag === null) {
+            // kein sinnvolles Flag gefunden – automatische Bewertung nicht möglich
             return null;
         }
 
-        $new = (bool)$resp[0]['value']['newFirmware'];
-        return $new;
+        // einige Kameras liefern "0"/"1" oder "true"/"false" als String
+        if (is_string($flag)) {
+            $low = strtolower($flag);
+            if (in_array($low, ['1', 'true', 'yes'], true)) {
+                return true;
+            }
+            if (in_array($low, ['0', 'false', 'no'], true)) {
+                return false;
+            }
+        }
+
+        // int/bool o.ä.
+        return (bool)$flag;
     }
 
     private function getModelImageBase64(array $dev): ?string
