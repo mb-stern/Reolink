@@ -514,6 +514,7 @@ class Reolink extends IPSModule
         $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO', /*suppress*/ true);
 
         $devInfo = [];
+        $this->SendDebug('DevInfo', print_r($dev, true), 0);
         if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
             $devInfo = $res[0]['value']['DevInfo'] ?? [];
         }
