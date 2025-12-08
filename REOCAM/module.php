@@ -375,8 +375,8 @@ class Reolink extends IPSModule
                         'name'   => 'DeviceImage',
                         'image'  => $imageData,
                         // HIER: Bild wirklich klein machen
-                        'width'  => 80,
-                        'height' => 45
+                        'width'  => 40,
+                        'height' => 22
                     ],
                     [
                         'type'    => 'Label',
