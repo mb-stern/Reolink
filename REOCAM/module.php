@@ -324,7 +324,7 @@ class Reolink extends IPSModule
     // Webhook + Formular
     // ---------------------------
 
-   public function GetConfigurationForm()
+    public function GetConfigurationForm()
     {
         // Webhook ermitteln/registrieren
         $hookPath = $this->ReadAttributeString('CurrentHook');
@@ -345,80 +345,77 @@ class Reolink extends IPSModule
             $build = 'n/a';
         }
 
-        // Hauptzeile: Modell, Firmware, Hardware, Build, Seriennummer (ohne (IPC))
-        $deviceCaption = sprintf(
-            'Gerät: %s – Firmware: %s – HW: %s – Build: %s – Seriennr.: %s',
-            $dev['model']   ?? 'unbekannt',
-            $dev['firmVer'] ?? 'n/a',
-            $dev['hardVer'] ?? 'n/a',
-            $build,
-            $dev['serial']  ?? 'n/a'
-        );
+        // Zeilenweise Ausgabe vorbereiten
+        $lines = [
+            'Gerät: '     . ($dev['model']   ?? 'unbekannt'),
+            'Firmware: '  . ($dev['firmVer'] ?? 'n/a'),
+            'HW: '        . ($dev['hardVer'] ?? 'n/a'),
+            'Build: '     . $build,
+            'Seriennr.: ' . ($dev['serial']  ?? 'n/a'),
+            'Detail: '    . ($dev['detail']    ?? 'n/a'),
+            'ExactType: ' . ($dev['exactType'] ?? 'n/a'),
+        ];
 
-        // Zweite Zeile: Detail + ExactType
-        $detailCaption = sprintf(
-            'Detail: %s – ExactType: %s',
-            $dev['detail']    ?? 'n/a',
-            $dev['exactType'] ?? 'n/a'
-        );
-
-        // Bild als Base64 holen (oder null, falls Fehler)
+        // Bild holen (Base64, bereits verkleinert)
         $imageData = $this->getModelImageBase64($dev);
 
-        // Header-Element zusammenbauen
+        // Header-Element zusammenbauen: Bild links, Infos rechts (zeilenweise)
         if (!empty($imageData)) {
+            $infoColumn = [
+                'type'  => 'ColumnLayout',
+                'items' => [
+                    ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
+                    ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
+                    ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
+                    ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
+                    ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
+                    ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
+                    ['type' => 'Label', 'name' => 'DevLine7', 'caption' => $lines[6]],
+                ],
+            ];
+
             $deviceHeaderElement = [
                 'type'  => 'RowLayout',
                 'items' => [
                     [
-                        'type'   => 'Image',
-                        'name'   => 'DeviceImage',
-                        'image'  => $imageData
+                        'type'  => 'Image',
+                        'name'  => 'DeviceImage',
+                        'image' => $imageData
+                        // width/height optional, Bild ist physisch verkleinert
                     ],
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'DeviceInfo1',
-                        'caption' => $deviceCaption
-                    ],
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'DeviceInfo2',
-                        'caption' => $detailCaption
-                    ],
+                    $infoColumn,
                 ],
             ];
         } else {
-            // Fallback: nur Text, falls Bild nicht geladen werden konnte
+            // Fallback ohne Bild: nur Infos untereinander
             $deviceHeaderElement = [
                 'type'  => 'ColumnLayout',
                 'items' => [
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'DeviceInfo1',
-                        'caption' => $deviceCaption
-                    ],
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'DeviceInfo2',
-                        'caption' => $detailCaption
-                    ],
+                    ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
+                    ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
+                    ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
+                    ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
+                    ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
+                    ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
+                    ['type' => 'Label', 'name' => 'DevLine7', 'caption' => $lines[6]],
                 ],
             ];
         }
 
-        // Formular weiter aufbauen
+        // Formular komplett in PHP aufbauen
         $form = [
             'elements' => [
+                // Webhook-Info
                 [
                     'type'    => 'Label',
                     'name'    => 'WebhookFull',
                     'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
                 ],
 
-                // Bild + Infos
+                // Bild + Geräteinfos
                 $deviceHeaderElement,
 
-                // Ab hier dein bisheriges form.json 1:1
+                // Ab hier dein bisheriges Formular
                 [
                     'type'    => 'CheckBox',
                     'name'    => 'InstanceStatus',
@@ -563,7 +560,7 @@ class Reolink extends IPSModule
             return $cache[$modelName]['image'];
         }
 
-        // URL nach deinem Muster aufbauen
+        // URL nach Reolink-Muster aufbauen
         $encodedModel = rawurlencode($modelName);
         $url          = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/' .
                         $encodedModel . '/product.png';
@@ -576,7 +573,7 @@ class Reolink extends IPSModule
             return null;
         }
 
-        // ---- HIER: direkt nach dem Download 10x kleiner machen ----
+        // Bild nach Download massiv verkleinern (z.B. 10x kleiner)
         if (function_exists('imagecreatefromstring')) {
             $src = @imagecreatefromstring($imgData);
             if ($src !== false) {
@@ -598,7 +595,7 @@ class Reolink extends IPSModule
 
                     $dst = imagecreatetruecolor($newWidth, $newHeight);
 
-                    // Transparenz erhalten, falls vorhanden
+                    // Transparenz erhalten (PNG)
                     imagealphablending($dst, false);
                     imagesavealpha($dst, true);
 
@@ -629,7 +626,7 @@ class Reolink extends IPSModule
             $this->SendDebug('ModelImage', 'GD/Image-Funktionen nicht verfügbar, kein Resize möglich', 0);
         }
 
-        // jetzt (verkleinertes) Bild in Base64 wandeln
+        // verkleinertes Bild in Base64 wandeln
         $base64 = 'data:image/png;base64,' . base64_encode($imgData);
 
         // im Attribut cachen
