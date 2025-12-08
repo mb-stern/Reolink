@@ -338,6 +338,11 @@ class Reolink extends IPSModule
         // DevInfo aus Cache / API holen
         $$dev = $this->apiGetDevInfoCached(true);
 
+        // Fallback: wenn irgendwas schiefgeht, mit leerem Array weiterarbeiten
+        if (!is_array($dev)) {
+            $dev = [];
+        }
+
         // Build-String etwas hübscher machen (ohne "build ")
         $build = $dev['buildDay'] ?? '';
         if (is_string($build) && stripos($build, 'build ') === 0) {
@@ -601,18 +606,8 @@ class Reolink extends IPSModule
      */
     private function CheckFirmwareOnline(): ?bool
     {
-        if (!$this->isActive()) {
-            $this->SendDebug('FirmwareCheck', 'Instanz nicht aktiv', 0);
-            return null;
-        }
-
-        if (!$this->apiEnsureToken()) {
-            $this->SendDebug('FirmwareCheck', 'Kein API-Token vorhanden', 0);
-            return null;
-        }
-
-        // CheckFirmware über die vorhandene apiCall()-Logik
-        $resp = $this->apiCall([['cmd' => 'CheckFirmware']], 'FIRMWARE', /*suppress*/ true);
+        // Wir nutzen die bestehende API-Infrastruktur (Token, apiBase, apiCall)
+        $resp = $this->apiCall([['cmd' => 'CheckFirmware']], 'FirmwareCheck', /*suppress*/ true);
         $this->SendDebug('FirmwareCheck', 'Response: ' . print_r($resp, true), 0);
 
         if (!is_array($resp) || !isset($resp[0]['code'])) {
@@ -628,8 +623,7 @@ class Reolink extends IPSModule
             return null;
         }
 
-        $new = (bool)$resp[0]['value']['newFirmware'];
-        return $new;
+        return (bool)$resp[0]['value']['newFirmware'];
     }
 
     private function getModelImageBase64(array $dev): ?string
@@ -737,7 +731,7 @@ class Reolink extends IPSModule
         $now      = time();
         $cameraIP = $this->ReadPropertyString('CameraIP');
 
-        // 1) Cache lesen (nur wenn nicht "forceFresh")
+        // 1) Cache lesen (nur wenn NICHT forceFresh)
         if (!$forceFresh) {
             $raw = @$this->ReadAttributeString($attr);
             if (is_string($raw) && $raw !== '') {
@@ -775,7 +769,7 @@ class Reolink extends IPSModule
             $this->WriteAttributeString($attr, json_encode([
                 'ts'      => $now,
                 'ip'      => $cameraIP,
-                'devInfo' => $devInfo
+                'devInfo' => $devInfo,
             ]));
         }
 
