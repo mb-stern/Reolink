@@ -152,6 +152,9 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
+### Version 2.13 (08.12.2025)
+- Kamara-Infos werden im Konfigurationsformular angezeigt.
+
 ### Version 2.12 (09.11.2025)
 - Fehler beim setzen der Sensitivität behoben.
 - Aktivieren/Deaktivieren der Instanz über 'REOCAM_SetInstanceStatus'  hinzugefügt.
