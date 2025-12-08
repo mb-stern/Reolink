@@ -371,15 +371,11 @@ class Reolink extends IPSModule
                     'name'    => 'WebhookFull',
                     'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
                 ],
-                $form['elements'][] = [
+                [
                     'type'    => 'Label',
+                    'name'    => 'DeviceInfo',
                     'caption' => $deviceCaption
-                ];
-
-                $form['elements'][] = [
-                    'type'    => 'Label',
-                    'caption' => $detailCaption
-                ];
+                ],
 
                 // Ab hier dein bisheriges form.json 1:1
                 [
