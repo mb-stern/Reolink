@@ -526,7 +526,7 @@ class Reolink extends IPSModule
                             ],
                             [
                                 'type'    => 'Label',
-                                'caption' => "Sag danke und unterstütze den Modulentwickler:\npaypal.me/mbstern"
+                                'caption' => "Sag danke und unterstütze den Modulentwickler: paypal.me/mbstern"
                             ],
                     ],
                 ],
