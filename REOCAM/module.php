@@ -346,7 +346,7 @@ class Reolink extends IPSModule
                 "type"    => "Label",
                 "name"    => "DeviceInfo",
                 "caption" => sprintf(
-                    "Gerät: %s (%s) – Firmware: %s – Seriennr.: %s",
+                    "Kamera: %s (%s) – Firmware: %s – Seriennr.: %s",
                     $dev['model']    ?? 'unbekannt',
                     $dev['type']     ?? 'n/a',
                     $dev['firmVer']  ?? 'n/a',
