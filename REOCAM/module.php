@@ -545,7 +545,7 @@ class Reolink extends IPSModule
 
     private function buildFirmwareCheckMessage(array $dev): string
     {
-        // Firmware-String
+        // Firmware-String aus DevInfo
         $firm = isset($dev['firmVer']) && is_string($dev['firmVer']) && $dev['firmVer'] !== ''
             ? $dev['firmVer']
             : 'unbekannt';
@@ -560,24 +560,88 @@ class Reolink extends IPSModule
             $build = 'n/a';
         }
 
-        // numerische Auswertung (alle Nicht-Ziffern raus)
-        $buildNumeric = (int)preg_replace('/\D/', '', $build);
+        // Online-Firmwarecheck (Reolink-API CheckFirmware)
+        $online = $this->CheckFirmwareOnline();
 
-        // HINWEIS:
-        // Hier kannst du deinen "Mindest-Build" eintragen, ab dem du alle Funktionen
-        // sauber erwartest. Beispiel: alles ab 2024-01-01:
-        $minBuildForFullSupport = 2401010000; // TODO: auf deine Kameras anpassen
-
-        if ($buildNumeric > 0 && $minBuildForFullSupport > 0) {
-            if ($buildNumeric >= $minBuildForFullSupport) {
-                return "✅ Firmwarecheck: {$firm} (Build {$build}) – OK für dieses Modul.";
-            }
-
-            return "⚠️ Firmwarecheck: {$firm} (Build {$build}) – vermutlich zu alt; empfohlenes Mindest-Build: {$minBuildForFullSupport}.";
+        if ($online === true) {
+            // Es gibt eine neuere Version auf den Reolink-Servern
+            return "⚠️ Firmwarecheck (online): Auf dem Reolink-Server ist eine neuere Firmware verfügbar als installiert ({$firm}, Build {$build}). "
+                . "Bitte im Reolink-Client oder über das Download-Center aktualisieren.";
         }
 
-        // Fallback, wenn wir nichts „sinnvoll“ vergleichen können
-        return "ℹ️ Firmware: {$firm} (Build {$build}) – automatische Bewertung nicht möglich (kein gültiger Build-Wert).";
+        if ($online === false) {
+            // Laut Reolink-Cloud alles aktuell
+            return "✅ Firmwarecheck (online): Firmware scheint aktuell zu sein ({$firm}, Build {$build}).";
+        }
+
+        // Wenn der Onlinecheck nicht möglich war (kein Internet, Feature nicht unterstützt, Fehler etc.)
+        return "ℹ️ Firmware: {$firm} (Build {$build}) – Online-Firmwareprüfung nicht möglich (Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).";
+    }
+
+    /**
+     * Führt einen Online-Firmwarecheck direkt über die Reolink-API aus.
+     *
+     * @return bool|null
+     *   true  = neue Firmware verfügbar
+     *   false = keine neuere Firmware gefunden
+     *   null  = Check nicht möglich / Fehler
+     */
+    private function CheckFirmwareOnline(): ?bool
+    {
+        $host  = $this->ReadPropertyString('Host'); // oder wie deine IP/Hostname-Property heißt
+        $token = $this->token; // nehme an, du hast den Token bereits irgendwo gespeichert
+
+        if ($host === '' || !$token) {
+            $this->SendDebug('FirmwareCheck', 'Kein Host oder Token vorhanden', 0);
+            return null;
+        }
+
+        $url   = sprintf('http://%s/api.cgi?cmd=CheckFirmware&token=%s', $host, $token);
+        // falls du HTTPS nutzt: https:// ... (mit Zertifikat-Handling in den Optionen)
+
+        $body  = json_encode([
+            [
+                'cmd' => 'CheckFirmware',
+            ]
+        ]);
+
+        $opts = [
+            'http' => [
+                'method'  => 'POST',
+                'header'  => "Content-Type: application/json\r\n",
+                'content' => $body,
+                'timeout' => 5
+            ]
+        ];
+
+        $this->SendDebug('FirmwareCheck', 'Request: ' . $body, 0);
+
+        $result = @Sys_GetURLContentEx($url, $opts);
+        if ($result === false || $result === '') {
+            $this->SendDebug('FirmwareCheck', 'Keine oder fehlerhafte Antwort vom Gerät', 0);
+            return null;
+        }
+
+        $this->SendDebug('FirmwareCheck', 'Response: ' . $result, 0);
+
+        $json = @json_decode($result, true);
+        if (!is_array($json) || !isset($json[0]['code'])) {
+            return null;
+        }
+
+        if ($json[0]['code'] !== 0) {
+            // Fehlercode vom Gerät, z.B. wenn kein Internet oder Feature nicht unterstützt
+            return null;
+        }
+
+        if (!isset($json[0]['value']['newFirmware'])) {
+            return null;
+        }
+
+        $new = $json[0]['value']['newFirmware'];
+
+        // Laut Spec: "newFirmware New firmware" -> üblicherweise 0/1
+        return (bool)$new;
     }
 
     private function getModelImageBase64(array $dev): ?string
