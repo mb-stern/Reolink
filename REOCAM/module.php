@@ -362,7 +362,7 @@ class Reolink extends IPSModule
     private function apiGetDevInfoCached(): array
     {
         $attr = 'DevInfoCache';
-        $raw  = @ $this->ReadAttributeString($attr); // @ nur als zusätzliche Sicherheit
+        $raw  = @$this->ReadAttributeString($attr);
         $now  = time();
 
         if (is_string($raw) && $raw !== '') {
@@ -374,12 +374,7 @@ class Reolink extends IPSModule
 
         $res = $this->apiCall([["cmd"=>"GetDevInfo"]], 'DEVINFO', /*suppress*/ true);
         $devInfo = is_array($res) ? ($res[0]['value']['DevInfo'] ?? []) : [];
-
-        $this->WriteAttributeString($attr, json_encode([
-            'ts'      => $now,
-            'devInfo' => $devInfo
-        ]));
-
+        $this->WriteAttributeString($attr, json_encode(['ts'=>$now,'devInfo'=>$devInfo]));
         return $devInfo;
     }
 
