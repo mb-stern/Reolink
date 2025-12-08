@@ -336,7 +336,7 @@ class Reolink extends IPSModule
         $webhookFull = $this->BuildWebhookFullUrl($hookPath);
 
         // DevInfo für das Formular IMMER frisch von der Kamera holen
-        $dev = $this->apiGetDevInfoCached(true);
+        $dev = $this->apiGetDevInfoFresh();
 
         // Fallback, falls die Abfrage schiefgeht
         if (!is_array($dev)) {
@@ -552,48 +552,159 @@ class Reolink extends IPSModule
 
     private function buildFirmwareCheckMessage(array $dev): string
     {
-        // Firmware-String aus DevInfo
-        $firm = isset($dev['firmVer']) && is_string($dev['firmVer']) && $dev['firmVer'] !== ''
-            ? $dev['firmVer']
-            : 'unbekannt';
-
-        // Build aus DevInfo
-        $build = isset($dev['buildDay']) && is_string($dev['buildDay']) ? $dev['buildDay'] : '';
-        if ($build !== '' && stripos($build, 'build ') === 0) {
-            // "build 2412021483" -> "2412021483"
-            $build = trim(substr($build, 6));
-        }
-        if ($build === '') {
-            $build = 'n/a';
+        // Ohne DevInfo können wir nichts prüfen
+        if (empty($dev) || !isset($dev['firmVer'])) {
+            return 'ℹ️ Firmwarecheck (online): Keine Geräteinformationen vorhanden.';
         }
 
-        // Online-Firmwarecheck (Reolink-API CheckFirmware)
-        $online = $this->CheckFirmwareOnline();
+        $localVersion = trim((string)$dev['firmVer']);
+        $localBuild   = $this->extractFirmwareBuild($localVersion)
+                    ?? $this->extractFirmwareBuild((string)($dev['buildDay'] ?? ''));
 
-        if ($online === true) {
-            // Es gibt eine neuere Version auf den Reolink-Servern
+        $model   = (string)($dev['model'] ?? 'unbekannt');
+        $hw      = (string)($dev['hardVer'] ?? ($dev['detail'] ?? ''));
+        $exact   = (string)($dev['exactType'] ?? '');
+        $idForLookup = $hw !== '' ? $hw : $exact;
+
+        // Online-Infos holen (aus der Community-Liste, die Reolink-Firmwares spiegelt)
+        $online = $this->fetchLatestFirmwareFromGithub($idForLookup);
+
+        if ($online === null) {
             return sprintf(
-                "⚠️ Firmwarecheck (online): Auf dem Reolink-Server ist eine neuere Firmware verfügbar als installiert (%s, Build %s). Bitte im Reolink-Client oder über das Download-Center aktualisieren.",
-                $firm,
-                $build
+                'ℹ️ Firmwarecheck (online): Kein Eintrag für Hardware "%s" gefunden.',
+                $idForLookup !== '' ? $idForLookup : 'unbekannt'
             );
         }
 
-        if ($online === false) {
-            // Laut Reolink-Cloud alles aktuell
-            return sprintf(
-                "✅ Firmwarecheck (online): Firmware scheint aktuell zu sein (%s, Build %s).",
-                $firm,
-                $build
-            );
-        }
+        $onlineVersion = $online['version'];
+        $onlineBuild   = $this->extractFirmwareBuild($onlineVersion);
+        $downloadUrl   = $online['url'] ?? '';
 
-        // Wenn der Onlinecheck nicht möglich war (kein Internet, Feature nicht unterstützt, Fehler etc.)
-        return sprintf(
-            "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht möglich (Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).",
-            $firm,
-            $build
+        // Vergleich
+        $cmp = $this->compareFirmwareVersions($localVersion, $onlineVersion, $localBuild, $onlineBuild);
+
+        $baseText = sprintf(
+            'Gerät: %s (%s) – installiert: %s, online: %s',
+            $model !== '' ? $model : 'unbekannt',
+            $idForLookup !== '' ? $idForLookup : 'n/a',
+            $localVersion,
+            $onlineVersion
         );
+
+        if ($cmp < 0) {
+            // online > lokal => Update verfügbar
+            if ($downloadUrl !== '') {
+                return '⚠️ Firmwarecheck (online): Update verfügbar. ' . $baseText .
+                    ' – Download: ' . $downloadUrl;
+            }
+            return '⚠️ Firmwarecheck (online): Update verfügbar. ' . $baseText;
+        }
+
+        if ($cmp > 0) {
+            // Deine Firmware ist neuer als die aus der Liste
+            return 'ℹ️ Firmwarecheck (online): Installierte Version ist neuer als die bekannte Version. ' . $baseText;
+        }
+
+        // Gleich
+        return '✅ Firmwarecheck (online): Firmware scheint aktuell zu sein. ' . $baseText;
+    }
+
+    private function extractFirmwareBuild(string $firmVer): ?int
+{
+    // Typisch: v3.1.0.4366_2412021483  -> wir nehmen 2412021483
+    if (preg_match('/_(\d{6,})$/', $firmVer, $m)) {
+        return (int)$m[1];
+    }
+    // Fallback: irgendwo im String eine längere Ziffernfolge
+    if (preg_match('/(\d{6,})/', $firmVer, $m)) {
+        return (int)$m[1];
+    }
+    return null;
+}
+
+    private function compareFirmwareVersions(
+        string $localVersion,
+        string $onlineVersion,
+        ?int $localBuild,
+        ?int $onlineBuild
+    ): int {
+        // 1) Wenn beide Buildnummern haben, nimm die – die sind bei Reolink gut monoton
+        if ($localBuild !== null && $onlineBuild !== null && $localBuild !== $onlineBuild) {
+            return $localBuild <=> $onlineBuild; // -1: lokal < online => Update verfügbar
+        }
+
+        // 2) Nur den Teil vor dem "_" vergleichen (v3.0.0 vs v3.1.0)
+        $localBase  = explode('_', $localVersion)[0];
+        $onlineBase = explode('_', $onlineVersion)[0];
+
+        $cmp = version_compare($localBase, $onlineBase);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        // 3) Fallback: kompletter Stringvergleich
+        return strcmp($localVersion, $onlineVersion);
+    }
+
+    private function fetchLatestFirmwareFromGithub(string $hardwareId): ?array
+    {
+        $hardwareId = trim($hardwareId);
+        if ($hardwareId === '') {
+            return null;
+        }
+
+        // Diese Datei spiegelt die Firmwares aus dem Reolink Download Center
+        $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
+
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 5,
+                'header'  => "User-Agent: IPS-Reolink-Module\r\n",
+            ],
+        ]);
+
+        $content = @file_get_contents($url, false, $ctx);
+        if ($content === false || $content === '') {
+            $this->SendDebug('FirmwareCheck', 'Fehler beim Abruf der Firmwareliste von GitHub.', 0);
+            return null;
+        }
+
+        // Block für die entsprechende Hardware suchen, z.B. "### IPC_566SD85MP"
+        $pos = strpos($content, '### ' . $hardwareId);
+        if ($pos === false) {
+            // Manche IDs haben evtl. kein "MP" am Ende in der Liste
+            $shortId = preg_replace('/MP$/', '', $hardwareId);
+            if ($shortId !== $hardwareId) {
+                $pos = strpos($content, '### ' . $shortId);
+            }
+            if ($pos === false) {
+                $this->SendDebug('FirmwareCheck', 'Kein Block für Hardware ' . $hardwareId . ' in Firmwareliste gefunden.', 0);
+                return null;
+            }
+        }
+
+        $segment = substr($content, $pos);
+        $lines   = explode("\n", $segment);
+
+        foreach ($lines as $line) {
+            $trim = trim($line);
+
+            // Stop, wenn der nächste Hardware-Block beginnt
+            if (str_starts_with($trim, '### ') && !str_contains($trim, $hardwareId)) {
+                break;
+            }
+
+            // Typische Zeilen im Markdown:
+            // [v3.1.0.4366_2412021483](https://home-cdn.reolink.us/....)  2024-12-02  ...
+            if (preg_match('/\[(v[0-9.]+_[0-9]+)\]\((https?:\/\/[^\s)]+)\)/', $line, $m)) {
+                return [
+                    'version' => $m[1],
+                    'url'     => $m[2],
+                ];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -656,6 +767,31 @@ class Reolink extends IPSModule
 
         // int/bool o.ä.
         return (bool)$flag;
+    }
+
+    private function apiGetDevInfoFresh(): array
+    {
+        $attr     = 'DevInfoCache';
+        $now      = time();
+        $cameraIP = $this->ReadPropertyString('CameraIP');
+
+        // Frische Abfrage
+        $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO(FRESH)', /*suppress*/ true);
+        $this->SendDebug('DEVINFO(FRESH)', 'RAW: ' . print_r($res, true), 0);
+
+        $devInfo = [];
+        if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
+            $devInfo = $res[0]['value']['DevInfo'] ?? [];
+        }
+
+        // Cache aktualisieren
+        $this->WriteAttributeString($attr, json_encode([
+            'ts'      => $now,
+            'ip'      => $cameraIP,
+            'devInfo' => $devInfo,
+        ]));
+
+        return $devInfo;
     }
 
     private function getModelImageBase64(array $dev): ?string
