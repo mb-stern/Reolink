@@ -578,37 +578,32 @@ class Reolink extends IPSModule
         return "ℹ️ Firmware: {$firm} (Build {$build}) – Online-Firmwareprüfung nicht möglich (Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).";
     }
 
+    /**
+     * Führt einen Online-Firmwarecheck direkt über die Reolink-API aus.
+     *
+     * @return bool|null
+     *   true  = neue Firmware verfügbar
+     *   false = keine neuere Firmware gefunden
+     *   null  = Check nicht möglich / Fehler
+     */
     private function CheckFirmwareOnline(): ?bool
     {
-        // Konfiguration sicher lesen, ohne ReadProperty-Warnung
-        $config = json_decode(IPS_GetConfiguration($this->InstanceID), true);
-        $host   = $config['CameraIP'] ?? '';
+        $host  = $this->ReadPropertyString('CameraIP');
+        $this->RegisterAttributeString("ApiToken", "");
 
-        if ($host === '') {
-            $this->SendDebug('FirmwareCheck', 'CameraIP noch nicht konfiguriert', 0);
+
+        if ($host === '' || !$token) {
+            $this->SendDebug('FirmwareCheck', 'Kein Host oder Token vorhanden', 0);
             return null;
         }
 
-        // Token holen – HIER an deine Implementierung anpassen!
-        $token = '';
-        // Beispiel: als Attribut gespeichert
-        if ($this->ReadAttributeString('Token') !== '') {
-            $token = $this->ReadAttributeString('Token');
-        }
+        $url   = sprintf('http://%s/api.cgi?cmd=CheckFirmware&token=%s', $host, $token);
+        // falls du HTTPS nutzt: https:// ... (mit Zertifikat-Handling in den Optionen)
 
-        // oder falls du wirklich eine Klassenvariable hast/baust:
-        // if (property_exists($this, 'token') && !empty($this->token)) {
-        //     $token = $this->token;
-        // }
-
-        if ($token === '') {
-            $this->SendDebug('FirmwareCheck', 'Kein Token vorhanden, Onlinecheck übersprungen', 0);
-            return null;
-        }
-
-        $url  = sprintf('http://%s/api.cgi?cmd=CheckFirmware&token=%s', $host, $token);
-        $body = json_encode([
-            ['cmd' => 'CheckFirmware']
+        $body  = json_encode([
+            [
+                'cmd' => 'CheckFirmware',
+            ]
         ]);
 
         $opts = [
@@ -636,6 +631,7 @@ class Reolink extends IPSModule
         }
 
         if ($json[0]['code'] !== 0) {
+            // Fehlercode vom Gerät, z.B. wenn kein Internet oder Feature nicht unterstützt
             return null;
         }
 
@@ -643,7 +639,10 @@ class Reolink extends IPSModule
             return null;
         }
 
-        return (bool)$json[0]['value']['newFirmware'];
+        $new = $json[0]['value']['newFirmware'];
+
+        // Laut Spec: "newFirmware New firmware" -> üblicherweise 0/1
+        return (bool)$new;
     }
 
     private function getModelImageBase64(array $dev): ?string
