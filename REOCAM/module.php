@@ -349,67 +349,62 @@ class Reolink extends IPSModule
 
     private function BaichuanBuildFrame(
         int $cmdId,
-        string $body,
-        string $messageClass,
-        string $encMode,
+        int $class,
         int $messId,
-        int $payloadOffset
+        string $encMode,
+        string $body
     ): string {
-        $magic = pack('V', self::BAICHUAN_MAGIC); // 'f0debc0a'
+        $magic       = hex2bin('f0debc0a');
+        $cmdBytes    = pack('V', $cmdId);
+        $lenBytes    = pack('V', strlen($body));
+        $messIdBytes = pack('V', $messId);
 
-        $bodyLen      = strlen($body);
-        $cmdIdBytes   = pack('V', $cmdId);
-        $bodyLenBytes = pack('V', $bodyLen);
-        $messIdBytes  = pack('V', $messId);
+        // Standard: keine Channel-Extension -> payloadOffset = 0
+        $payloadOffsetBytes = pack('V', 0);
 
-        // 🔹 20-Byte-Header (Class 1465: Nonce-Request)
-        if ($messageClass === '1465') {
-            // WICHTIG: exakt wie in reolink_aio → 0x12DC
-            // Requests: Encrypt-Feld = 0xDC12, Class = 0x1465
-            switch ($encMode) {
-                case 'BC':
-                    $encryptHex = '12dc';  // <-- hier der entscheidende Fix
-                    break;
-                case 'AES':
-                    $encryptHex = '02dd';
-                    break;
-                case 'NONE':
-                default:
-                    $encryptHex = '00dd';
-                    break;
-            }
-
+        if ($class === 0x1465) {
+            // Nonce-Request (Handshake): Header nur 20 Byte, encrypt=12dc
+            $encryptHex = '12dc';
             $header = $magic
-                    . $cmdIdBytes
-                    . $bodyLenBytes
-                    . $messIdBytes
-                    . pack('H*', $encryptHex . $messageClass);
-
-            return $header . $body;
-        }
-
-        // 🔹 24-Byte-Header (1464 / 0000)
-        switch ($encMode) {
-            case 'BC':
-                $encryptHex = '01dd';
-                break;
-            case 'AES':
-                $encryptHex = '02dd';
-                break;
-            case 'NONE':
-            default:
-                $encryptHex = '00dd';
-                break;
-        }
-
-        $header = $magic
-                . $cmdIdBytes
-                . $bodyLenBytes
+                . $cmdBytes
+                . $lenBytes
                 . $messIdBytes
-                . pack('H*', $encryptHex . $messageClass)
-                . pack('V', $payloadOffset);
+                . hex2bin($encryptHex . sprintf('%04x', $class));
+        } elseif ($class === 0x1464) {
+            // Login & normale Kommandos: status_code = 0000, 24-Byte-Header
+            $statusHex = '0000';
+            $header = $magic
+                . $cmdBytes
+                . $lenBytes
+                . $messIdBytes
+                . hex2bin($statusHex . sprintf('%04x', $class))
+                . $payloadOffsetBytes;
+        } else {
+            // andere message_class -> wie 1464 behandeln (bis du mehr brauchst)
+            $statusHex = '0000';
+            $header = $magic
+                . $cmdBytes
+                . $lenBytes
+                . $messIdBytes
+                . hex2bin($statusHex . sprintf('%04x', $class))
+                . $payloadOffsetBytes;
+        }
 
-        return $header . $body;
+        // Body verschlüsseln
+        $encBody = '';
+        if ($body !== '') {
+            if ($encMode === 'BC') {
+                // Offset = messId (wie bei reolink_aio, darf <= 255 sein)
+                $offset  = $messId;
+                $encBody = $this->BaichuanEncryptBC($body, $offset);
+            } elseif ($encMode === 'AES') {
+                $encBody = $this->BaichuanAesEncrypt($body);
+            } else {
+                $this->dbg('BAICHUAN', 'BaichuanBuildFrame: unbekannter encMode', $encMode);
+            }
+        }
+
+        return $header . $encBody;
     }
 
     private function BaichuanSendFrame(
