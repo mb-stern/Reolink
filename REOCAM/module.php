@@ -409,7 +409,7 @@ class Reolink extends IPSModule
                 $deviceHeaderElement,
                 [
                     'type'    => 'Label',
-                    'caption' => '────────────────────────────────'
+                    'caption' => '----------------------------------------'
                 ],
                         // Ab hier dein bisheriges Formular
                 [
