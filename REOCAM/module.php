@@ -393,8 +393,8 @@ class Reolink extends IPSModule
                         // HINWEIS: IP-Symcon muss hier eine URL akzeptieren – wenn nicht,
                         // müsstest du später auf Base64 umsteigen.
                         'image' => $imageUrl,
-                        'width' => 160,
-                        'height'=> 90
+                        'width' => 70,
+                        'height'=> 42
                     ],
                     [
                         'type'    => 'Label',
