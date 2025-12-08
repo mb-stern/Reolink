@@ -6,11 +6,6 @@
       "caption": "Instanz aktivieren"
     },
     {
-      "type": "CheckBox",
-      "name": "UseBaichuan",
-      "caption": "Baichuan-Protokoll aktivieren"
-    },
-    {
       "type": "ValidationTextBox",
       "name": "CameraIP",
       "caption": "Kamera IP"
