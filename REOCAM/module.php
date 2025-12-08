@@ -359,6 +359,9 @@ class Reolink extends IPSModule
         // Bild holen (Base64, bereits verkleinert)
         $imageData = $this->getModelImageBase64($dev);
 
+        // Firmwarecheck-Text vorbereiten
+        $firmwareCheckMessage = $this->buildFirmwareCheckMessage($dev);
+
         // Header-Element zusammenbauen: Bild links, Infos rechts (zeilenweise)
         if (!empty($imageData)) {
             $infoColumn = [
@@ -409,9 +412,13 @@ class Reolink extends IPSModule
                 $deviceHeaderElement,
                 [
                     'type'    => 'Label',
+                    'name'    => 'FirmwareCheck',
+                    'caption' => $firmwareCheckMessage
+                ],
+                [
+                    'type'    => 'Label',
                     'caption' => ''
                 ],
-                        // Ab hier dein bisheriges Formular
                 [
                     'type'    => 'Label',
                     'name'    => 'WebhookFull',
@@ -534,6 +541,43 @@ class Reolink extends IPSModule
         ];
 
         return json_encode($form);
+    }
+
+    private function buildFirmwareCheckMessage(array $dev): string
+    {
+        // Firmware-String
+        $firm = isset($dev['firmVer']) && is_string($dev['firmVer']) && $dev['firmVer'] !== ''
+            ? $dev['firmVer']
+            : 'unbekannt';
+
+        // Build aus DevInfo
+        $build = isset($dev['buildDay']) && is_string($dev['buildDay']) ? $dev['buildDay'] : '';
+        if ($build !== '' && stripos($build, 'build ') === 0) {
+            // "build 2412021483" -> "2412021483"
+            $build = trim(substr($build, 6));
+        }
+        if ($build === '') {
+            $build = 'n/a';
+        }
+
+        // numerische Auswertung (alle Nicht-Ziffern raus)
+        $buildNumeric = (int)preg_replace('/\D/', '', $build);
+
+        // HINWEIS:
+        // Hier kannst du deinen "Mindest-Build" eintragen, ab dem du alle Funktionen
+        // sauber erwartest. Beispiel: alles ab 2024-01-01:
+        $minBuildForFullSupport = 2401010000; // TODO: auf deine Kameras anpassen
+
+        if ($buildNumeric > 0 && $minBuildForFullSupport > 0) {
+            if ($buildNumeric >= $minBuildForFullSupport) {
+                return "✅ Firmwarecheck: {$firm} (Build {$build}) – OK für dieses Modul.";
+            }
+
+            return "⚠️ Firmwarecheck: {$firm} (Build {$build}) – vermutlich zu alt; empfohlenes Mindest-Build: {$minBuildForFullSupport}.";
+        }
+
+        // Fallback, wenn wir nichts „sinnvoll“ vergleichen können
+        return "ℹ️ Firmware: {$firm} (Build {$build}) – automatische Bewertung nicht möglich (kein gültiger Build-Wert).";
     }
 
     private function getModelImageBase64(array $dev): ?string
