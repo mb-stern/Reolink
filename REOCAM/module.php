@@ -51,6 +51,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
         $this->RegisterAttributeString('DevInfoCache', '');
+        $this->RegisterAttributeString('ModelImageCache', '{}');
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -344,8 +345,7 @@ class Reolink extends IPSModule
             $build = 'n/a';
         }
 
-        // Hauptzeile: Modell, Firmware, Hardware, Build, Seriennummer
-        // => Typ (IPC) wird NICHT mehr angezeigt
+        // Hauptzeile: Modell, Firmware, Hardware, Build, Seriennummer (ohne (IPC))
         $deviceCaption = sprintf(
             'Gerät: %s – Firmware: %s – HW: %s – Build: %s – Seriennr.: %s',
             $dev['model']   ?? 'unbekannt',
@@ -362,60 +362,56 @@ class Reolink extends IPSModule
             $dev['exactType'] ?? 'n/a'
         );
 
-        // Kombinierter Text rechts (mehrzeilig)
-        $infoCaption = $deviceCaption . "\n" . $detailCaption;
+        // Bild als Base64 holen (oder null, falls Fehler)
+        $imageData = $this->getModelImageBase64($dev);
 
-        // --- Bild-URL anhand des Modellnamens GENERISCH bestimmen ---
-        $imageUrl = null;
-        if (!empty($dev['model'])) {
-            // Original-Modellname aus DevInfo
-            $modelName = $dev['model'];
-
-            // alles hinter " (" abschneiden, z.B. "E Series E540 (IPC)" -> "E Series E540"
-            $modelName = preg_replace('/\s*\(.*$/', '', $modelName);
-
-            // URL-encoden wie in deinen Beispielen (" " -> "%20" etc.)
-            $encodedModel = rawurlencode($modelName);
-
-            // Basis-URL von Reolink
-            $baseUrl  = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/';
-            $imageUrl = $baseUrl . $encodedModel . '/product.png';
-        }
-
-        // Header-Element: Bild links, Infos rechts (oder nur Infos, falls kein Bild)
-        if (!empty($imageUrl)) {
+        // Header-Element zusammenbauen
+        if (!empty($imageData)) {
             $deviceHeaderElement = [
                 'type'  => 'RowLayout',
                 'items' => [
                     [
-                        'type'  => 'Image',
-                        'name'  => 'DeviceImage',
-                        // HINWEIS: IP-Symcon muss hier eine URL akzeptieren – wenn nicht,
-                        // müsstest du später auf Base64 umsteigen.
-                        'image' => $imageUrl,
-                        'width' => 160,
-                        'height'=> 90
+                        'type'   => 'Image',
+                        'name'   => 'DeviceImage',
+                        'image'  => $imageData,
+                        // HIER: Bild wirklich klein machen
+                        'width'  => 80,
+                        'height' => 45
                     ],
                     [
                         'type'    => 'Label',
-                        'name'    => 'DeviceInfo',
-                        'caption' => $infoCaption
+                        'name'    => 'DeviceInfo1',
+                        'caption' => $deviceCaption
+                    ],
+                    [
+                        'type'    => 'Label',
+                        'name'    => 'DeviceInfo2',
+                        'caption' => $detailCaption
                     ],
                 ],
             ];
         } else {
-            // Fallback: nur Text, falls kein Modellname vorhanden
+            // Fallback: nur Text, falls Bild nicht geladen werden konnte
             $deviceHeaderElement = [
-                'type'    => 'Label',
-                'name'    => 'DeviceInfo',
-                'caption' => $infoCaption
+                'type'  => 'ColumnLayout',
+                'items' => [
+                    [
+                        'type'    => 'Label',
+                        'name'    => 'DeviceInfo1',
+                        'caption' => $deviceCaption
+                    ],
+                    [
+                        'type'    => 'Label',
+                        'name'    => 'DeviceInfo2',
+                        'caption' => $detailCaption
+                    ],
+                ],
             ];
         }
 
-        // Formular komplett in PHP aufbauen
+        // Formular weiter aufbauen
         $form = [
             'elements' => [
-                // Webhook-Info
                 [
                     'type'    => 'Label',
                     'name'    => 'WebhookFull',
@@ -547,6 +543,51 @@ class Reolink extends IPSModule
         ];
 
         return json_encode($form);
+    }
+
+    private function getModelImageBase64(array $dev): ?string
+    {
+        if (empty($dev['model'])) {
+            return null;
+        }
+
+        // Modellname aus DevInfo, evtl. "(IPC)" o.ä. abschneiden
+        $modelName = preg_replace('/\s*\(.*$/', '', $dev['model']);
+
+        // einfacher Cache nach Modellname
+        $cacheAttr = 'ModelImageCache';
+        $rawCache  = $this->ReadAttributeString($cacheAttr);
+        $cache     = @json_decode($rawCache, true);
+        if (!is_array($cache)) {
+            $cache = [];
+        }
+
+        if (isset($cache[$modelName]['image']) && is_string($cache[$modelName]['image'])) {
+            return $cache[$modelName]['image'];
+        }
+
+        // URL nach deinem Muster aufbauen
+        $encodedModel = rawurlencode($modelName);
+        $url          = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/' .
+                        $encodedModel . '/product.png';
+
+        $this->SendDebug('ModelImage', 'Lade Bild von: ' . $url, 0);
+
+        $imgData = @file_get_contents($url);
+        if ($imgData === false || $imgData === '') {
+            $this->SendDebug('ModelImage', 'Download fehlgeschlagen', 0);
+            return null;
+        }
+
+        $base64 = 'data:image/png;base64,' . base64_encode($imgData);
+
+        // im Attribut cachen
+        $cache[$modelName] = [
+            'image' => $base64
+        ];
+        $this->WriteAttributeString($cacheAttr, json_encode($cache));
+
+        return $base64;
     }
 
     private function apiGetDevInfoCached(): array
