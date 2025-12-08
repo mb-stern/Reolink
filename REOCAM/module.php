@@ -338,8 +338,8 @@ class Reolink extends IPSModule
             'Gerät: %s (%s) – Firmware: %s – Seriennr.: %s',
             $dev['model']   ?? 'unbekannt',
             $dev['type']    ?? 'n/a',
-            $dev['hardwareNo'] ?? 'n/a',
             $dev['firmVer'] ?? 'n/a',
+            $dev['hardwareNo'] ?? 'n/a',
             $dev['serial']  ?? 'n/a'
         );
 
