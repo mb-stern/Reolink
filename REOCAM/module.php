@@ -790,12 +790,32 @@ class Reolink extends IPSModule
 
     private function applyApiSupportToForm(array $form): array
     {
-        $raw = $this->ReadAttributeString('ApiSupportCache');
-        $support = json_decode($raw ?: '{}', true);
-        if (!is_array($support) || empty($support)) {
-            // Noch nie gescannt -> Formular unverändert lassen
-            return $form;
+        // Support-Cache lesen (EnableApiXxx -> true/false)
+        $rawSupport = $this->ReadAttributeString('ApiSupportCache');
+        $support = json_decode($rawSupport ?: '{}', true);
+        if (!is_array($support)) {
+            $support = [];
         }
+
+        // Versions-Cache lesen (Domain -> v20/legacy/unsupported)
+        $rawVer = $this->ReadAttributeString('ApiVersionCache');
+        $versions = json_decode($rawVer ?: '[]', true);
+        if (!is_array($versions)) {
+            $versions = [];
+        }
+
+        // Zuordnung Checkbox-Name -> Domain im VersionCache (falls relevant)
+        // Für Features ohne V20/Legacy bleibt domain = null.
+        $featureMeta = [
+            'EnableApiWhiteLed'    => ['domain' => 'spot'],    // falls du "spot" im VersionCache benutzt, sonst null
+            'EnableApiIR'          => ['domain' => null],
+            'EnableApiEmail'       => ['domain' => 'email'],
+            'EnableApiFTP'         => ['domain' => 'ftp'],
+            'EnableApiSensitivity' => ['domain' => null],
+            'EnableApiSiren'       => ['domain' => 'alarm'],
+            'EnableApiRecord'      => ['domain' => 'record'],
+            'EnableApiPTZ'         => ['domain' => null],      // PTZ hat normal kein V20/Legacy
+        ];
 
         if (!isset($form['elements']) || !is_array($form['elements'])) {
             return $form;
@@ -821,18 +841,47 @@ class Reolink extends IPSModule
                     continue;
                 }
 
-                if (!array_key_exists($name, $support)) {
-                    continue;
+                // 1) Unterstützt oder nicht?
+                $isSupported = $support[$name] ?? null; // kann true/false/null sein
+
+                // 2) Versionstext bestimmen (falls Domain hinterlegt)
+                $versionLabel = '';
+                if (isset($featureMeta[$name])) {
+                    $domain = $featureMeta[$name]['domain'];
+                    if ($domain !== null) {
+                        $ver = $versions[$domain] ?? null;
+                        if ($ver === 'v20') {
+                            $versionLabel = 'V20';
+                        } elseif ($ver === 'legacy') {
+                            $versionLabel = 'Legacy';
+                        } elseif ($ver === 'unsupported') {
+                            $versionLabel = '-';
+                        }
+                    }
                 }
 
-                if ($support[$name] === false) {
-                    // Ich würde sie einfach ausblenden:
-                    $item['visible'] = false;
+                // 3) Caption erweitern
+                //    Beispiele:
+                //    "Sirene [V20]"
+                //    "FTP (nicht unterstützt) [-]"
+                $caption = $item['caption'] ?? $name;
 
-                    // Alternative: ausgrauen statt verstecken:
-                    // $item['enabled'] = false;
-                    // $item['caption'] .= ' (nicht unterstützt)';
+                if ($isSupported === false) {
+                    // nicht unterstützt -> ausgrauen + Hinweis
+                    $item['enabled'] = false;
+                    if ($versionLabel !== '') {
+                        $caption .= ' (nicht unterstützt) [' . $versionLabel . ']';
+                    } else {
+                        $caption .= ' (nicht unterstützt)';
+                    }
+                } else {
+                    // unterstützt oder unbekannt -> nur Version dranhängen
+                    if ($versionLabel !== '') {
+                        $caption .= ' [' . $versionLabel . ']';
+                    }
                 }
+
+                $item['caption'] = $caption;
             }
             unset($item);
         }
