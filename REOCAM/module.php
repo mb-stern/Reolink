@@ -52,6 +52,8 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString('ApiCache', '{}');
         $this->RegisterAttributeString('DevInfoCache', '');
         $this->RegisterAttributeString('ModelImageCache', '{}');
+        $this->RegisterAttributeInteger('DevInfoLastRefresh', 0);
+        $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -334,7 +336,7 @@ class Reolink extends IPSModule
         $webhookFull = $this->BuildWebhookFullUrl($hookPath);
 
         // DevInfo aus Cache / API holen
-        $dev = $this->apiGetDevInfoCached();
+        $$dev = $this->apiGetDevInfoCached(true);
 
         // Build-String etwas hübscher machen (ohne "build ")
         $build = $dev['buildDay'] ?? '';
@@ -565,18 +567,28 @@ class Reolink extends IPSModule
 
         if ($online === true) {
             // Es gibt eine neuere Version auf den Reolink-Servern
-            return "⚠️ Firmwarecheck (online): Auf dem Reolink-Server ist eine neuere Firmware verfügbar als installiert "
-                . "({$firm}, Build {$build}). Bitte im Reolink-Client oder über das Download-Center aktualisieren.";
+            return sprintf(
+                "⚠️ Firmwarecheck (online): Auf dem Reolink-Server ist eine neuere Firmware verfügbar als installiert (%s, Build %s). Bitte im Reolink-Client oder über das Download-Center aktualisieren.",
+                $firm,
+                $build
+            );
         }
 
         if ($online === false) {
             // Laut Reolink-Cloud alles aktuell
-            return "✅ Firmwarecheck (online): Firmware scheint aktuell zu sein ({$firm}, Build {$build}).";
+            return sprintf(
+                "✅ Firmwarecheck (online): Firmware scheint aktuell zu sein (%s, Build %s).",
+                $firm,
+                $build
+            );
         }
 
         // Wenn der Onlinecheck nicht möglich war (kein Internet, Feature nicht unterstützt, Fehler etc.)
-        return "ℹ️ Firmware: {$firm} (Build {$build}) – Online-Firmwareprüfung nicht möglich "
-            . "(Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).";
+        return sprintf(
+            "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht möglich (Gerät ohne Internetzugang oder Modell unterstützt CheckFirmware nicht).",
+            $firm,
+            $build
+        );
     }
 
     /**
@@ -589,35 +601,35 @@ class Reolink extends IPSModule
      */
     private function CheckFirmwareOnline(): ?bool
     {
-        // Wenn Instanz deaktiviert ist, gar nichts tun
         if (!$this->isActive()) {
+            $this->SendDebug('FirmwareCheck', 'Instanz nicht aktiv', 0);
             return null;
         }
 
-        // Nutzt deine bestehende API-Infrastruktur (Token, apiBase, apiHttpPostJson, etc.)
-        $resp = $this->apiCall([
-            [
-                'cmd' => 'CheckFirmware',
-            ]
-        ], 'FWCHECK', true);
-
-        // Wenn gar keine sinnvolle Antwort kam → kein Online-Check möglich
-        if (!$resp || !isset($resp[0]['code'])) {
+        if (!$this->apiEnsureToken()) {
+            $this->SendDebug('FirmwareCheck', 'Kein API-Token vorhanden', 0);
             return null;
         }
 
-        // Wenn das Gerät einen Fehlercode liefert (z.B. kein Internet, nicht unterstützt)
+        // CheckFirmware über die vorhandene apiCall()-Logik
+        $resp = $this->apiCall([['cmd' => 'CheckFirmware']], 'FIRMWARE', /*suppress*/ true);
+        $this->SendDebug('FirmwareCheck', 'Response: ' . print_r($resp, true), 0);
+
+        if (!is_array($resp) || !isset($resp[0]['code'])) {
+            return null;
+        }
+
         if ((int)$resp[0]['code'] !== 0) {
+            // Fehlercode vom Gerät, z.B. wenn kein Internet oder Feature nicht unterstützt
             return null;
         }
 
-        // Falls das Feld nicht vorhanden ist, können wir nichts sagen
         if (!isset($resp[0]['value']['newFirmware'])) {
             return null;
         }
 
-        // Laut Spec: "newFirmware" ist typischerweise 0 oder 1
-        return (bool)$resp[0]['value']['newFirmware'];
+        $new = (bool)$resp[0]['value']['newFirmware'];
+        return $new;
     }
 
     private function getModelImageBase64(array $dev): ?string
@@ -719,27 +731,29 @@ class Reolink extends IPSModule
         return $base64;
     }
 
-    private function apiGetDevInfoCached(): array
+    private function apiGetDevInfoCached(bool $forceFresh = false): array
     {
         $attr     = 'DevInfoCache';
         $now      = time();
         $cameraIP = $this->ReadPropertyString('CameraIP');
 
-        // 1) Cache lesen
-        $raw = @$this->ReadAttributeString($attr);
-        if (is_string($raw) && $raw !== '') {
-            $obj = @json_decode($raw, true);
-            if (
-                is_array($obj)
-                && isset($obj['ts'], $obj['devInfo'], $obj['ip'])
-            ) {
-                // Nur benutzen, wenn IP noch gleich und Cache < 1h
+        // 1) Cache lesen (nur wenn nicht "forceFresh")
+        if (!$forceFresh) {
+            $raw = @$this->ReadAttributeString($attr);
+            if (is_string($raw) && $raw !== '') {
+                $obj = @json_decode($raw, true);
                 if (
-                    $obj['ip'] === $cameraIP
-                    && ($now - (int)$obj['ts']) < 3600
-                    && !empty($obj['devInfo'])
+                    is_array($obj)
+                    && isset($obj['ts'], $obj['devInfo'], $obj['ip'])
                 ) {
-                    return (array)$obj['devInfo'];
+                    // Nur benutzen, wenn IP noch gleich und Cache < 1h
+                    if (
+                        $obj['ip'] === $cameraIP
+                        && ($now - (int)$obj['ts']) < 3600
+                        && !empty($obj['devInfo'])
+                    ) {
+                        return (array)$obj['devInfo'];
+                    }
                 }
             }
         }
@@ -761,7 +775,7 @@ class Reolink extends IPSModule
             $this->WriteAttributeString($attr, json_encode([
                 'ts'      => $now,
                 'ip'      => $cameraIP,
-                'devInfo' => $devInfo,
+                'devInfo' => $devInfo
             ]));
         }
 
@@ -1740,6 +1754,21 @@ class Reolink extends IPSModule
                 return;
             }
             $this->WriteAttributeInteger('ExecLastTs', $now);
+
+            // --- NEU: DevInfo + Firmwarecheck sporadisch aktualisieren ---
+            // DevInfo-Cache alle 10 Minuten
+            $lastDev = (int)$this->ReadAttributeInteger('DevInfoLastRefresh');
+            if (($now - $lastDev) > 600) { // 600 Sekunden = 10 Minuten
+                $this->apiGetDevInfoCached(true); // holt frische Daten und schreibt Cache
+                $this->WriteAttributeInteger('DevInfoLastRefresh', $now);
+            }
+
+            // Firmware-Onlinecheck alle 6 Stunden
+            $lastFw = (int)$this->ReadAttributeInteger('FirmwareLastCheckTs');
+            if (($now - $lastFw) > 21600) { // 21600 Sekunden = 6 Stunden
+                $this->CheckFirmwareOnline();
+                $this->WriteAttributeInteger('FirmwareLastCheckTs', $now);
+            }
 
             if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
                 $this->UpdateWhiteLedStatus(); 
