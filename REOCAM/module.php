@@ -404,8 +404,7 @@ class Reolink extends IPSModule
 
         // Formular komplett in PHP aufbauen
         $form = [
-            'elements' => 
-
+            'elements' => [
                 // Bild + Geräteinfos
                 $deviceHeaderElement,
 
