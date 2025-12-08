@@ -404,18 +404,17 @@ class Reolink extends IPSModule
 
         // Formular komplett in PHP aufbauen
         $form = [
-            'elements' => [
-                // Webhook-Info
-                [
-                    'type'    => 'Label',
-                    'name'    => 'WebhookFull',
-                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
-                ],
+            'elements' => 
 
                 // Bild + Geräteinfos
                 $deviceHeaderElement,
 
                 // Ab hier dein bisheriges Formular
+                [
+                    'type'    => 'Label',
+                    'name'    => 'WebhookFull',
+                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
+                ],
                 [
                     'type'    => 'CheckBox',
                     'name'    => 'InstanceStatus',
