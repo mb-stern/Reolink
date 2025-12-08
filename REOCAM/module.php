@@ -362,23 +362,35 @@ class Reolink extends IPSModule
     private function apiGetDevInfoCached(): array
     {
         $attr = 'DevInfoCache';
-        $raw  = @ $this->ReadAttributeString($attr); // @ nur als zusätzliche Sicherheit
         $now  = time();
 
+        // 1) Cache lesen
+        $raw = @$this->ReadAttributeString($attr);
         if (is_string($raw) && $raw !== '') {
             $obj = @json_decode($raw, true);
-            if (is_array($obj) && isset($obj['ts']) && ($now - (int)$obj['ts'] < 3600)) {
-                return (array)$obj['devInfo'];
+            if (is_array($obj) && isset($obj['ts'], $obj['devInfo'])) {
+                // Wenn Cache jünger als 1 Stunde: benutzen
+                if (($now - (int)$obj['ts']) < 3600 && !empty($obj['devInfo'])) {
+                    return (array)$obj['devInfo'];
+                }
             }
         }
 
-        $res = $this->apiCall([["cmd"=>"GetDevInfo"]], 'DEVINFO', /*suppress*/ true);
-        $devInfo = is_array($res) ? ($res[0]['value']['DevInfo'] ?? []) : [];
+        // 2) Frische Abfrage
+        $res = $this->apiCall([["cmd" => "GetDevInfo"]], 'DEVINFO', /*suppress*/ true);
 
-        $this->WriteAttributeString($attr, json_encode([
-            'ts'      => $now,
-            'devInfo' => $devInfo
-        ]));
+        $devInfo = [];
+        if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
+            $devInfo = $res[0]['value']['DevInfo'] ?? [];
+        }
+
+        // Nur cachen, wenn wirklich etwas drin ist
+        if (!empty($devInfo)) {
+            $this->WriteAttributeString($attr, json_encode([
+                'ts'      => $now,
+                'devInfo' => $devInfo
+            ]));
+        }
 
         return $devInfo;
     }
