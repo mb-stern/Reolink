@@ -547,56 +547,33 @@ class Reolink extends IPSModule
     {
         $nonce = $this->ExtractXmlTag($xml, 'nonce');
         if ($nonce === '') {
-            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden');
+            $this->dbg('BAICHUAN', 'HandleHandshakeXml: nonce nicht gefunden', $xml);
             return;
         }
 
+        // Nonce merken
         $this->BaichuanNonce = $nonce;
         $this->dbg('BAICHUAN', 'Nonce erhalten', $nonce);
 
-        $username = $this->ReadPropertyString('Username');
-        $password = $this->ReadPropertyString('Password');
+        $password = trim($this->ReadPropertyString('Password'));
 
-        // 1. userHash wie in reolink_aio
-        $userHash = $this->BaichuanMd5Modern($username);
+        // AES-Key wie in reolink_aio:
+        // aes_key_str = md5_str_modern(f"{nonce}-{password}")[0:16]
+        $aesKeyStr31 = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        $this->BaichuanAesKey = substr($aesKeyStr31, 0, 16);  // 16 ASCII-Zeichen
 
-        // 2. passwordHash wie in reolink_aio: md5_str_modern(nonce + "-" + password)
-        $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        $this->dbg('BAICHUAN', 'AES-Key (16 Zeichen)', [
+            'aesKey'   => $this->BaichuanAesKey,
+            'len'      => strlen($this->BaichuanAesKey),
+            'aesKeyHex'=> bin2hex($this->BaichuanAesKey),
+        ]);
 
-        // 3. AES-Key für spätere AES-Kommandos:
-        //    md5(passwordHash + nonce) -> 16 Byte-Key
-        $aesKeyRaw = md5($passwordHash . $nonce, true);   // 16 Bytes
-        $this->BaichuanAesKey = $aesKeyRaw;
+        // State & Timer setzen, Login anstoßen
+        $this->WriteAttributeString('BaichuanState', 'waiting_login');
+        $this->SetTimerInterval('BaichuanInitTimer', 10 * 1000);
 
-        $this->dbg('BAICHUAN', 'Login-Hashes', sprintf(
-            'userHash=%s (len=%d), passwordHash=%s (len=%d)',
-            $userHash,
-            strlen($userHash),
-            $passwordHash,
-            strlen($passwordHash)
-        ));
-
-        $this->dbg('BAICHUAN', 'AES-Key (len=%d)', strlen($this->BaichuanAesKey));
-
-        // Ab hier wie gehabt: Login-XML bauen und mit encMode=BC schicken
-        $loginXml =
-            '<?xml version="1.0" encoding="UTF-8" ?>' .
-            '<body>' .
-            '<LoginUser version="1.1">' .
-            '<userName>' . $userHash . '</userName>' .
-            '<password>' . $passwordHash . '</password>' .
-            '<userVer>1</userVer>' .
-            '</LoginUser>' .
-            '<LoginNet version="1.1">' .
-            '<type>LAN</type>' .
-            '<udpPort>0</udpPort>' .
-            '</LoginNet>' .
-            '</body>';
-
-        $this->dbg('BAICHUAN', 'Login-XML', $loginXml);
-
-        // cmd_id = 1, encMode = BC, messId z.B. 250
-        $this->BaichuanSendLogin($loginXml);
+        $this->dbg('BAICHUAN', 'HandleHandshakeXml: rufe BaichuanSendLogin() auf');
+        $this->BaichuanSendLogin();
     }
 
     private function ExtractXmlTag(string $xml, string $tag): string
@@ -610,23 +587,27 @@ class Reolink extends IPSModule
 
     private function BuildBaichuanLoginXml(): string
     {
-        // Nonce & Credentials holen
         $nonce    = $this->BaichuanNonce;
         $username = trim($this->ReadPropertyString('Username'));
         $password = trim($this->ReadPropertyString('Password'));
 
-        // Hashes NUR NOCH mit Nonce berechnen
-        $userHash     = $this->BaichuanMd5Modern($nonce . '-' . $username);
-        $passwordHash = $this->BaichuanMd5Modern($nonce . '-' . $password);
+        // WICHTIG: Reihenfolge wie reolink_aio:
+        // userHash     = md5_str_modern(username + nonce)
+        // passwordHash = md5_str_modern(password + nonce)
+        $userHash     = $this->BaichuanMd5Modern($username . $nonce);
+        $passwordHash = $this->BaichuanMd5Modern($password . $nonce);
 
-        // Debug – NUR diese Variante behalten
         $this->dbg('BAICHUAN', 'Login-Hashes', [
             'nonce'        => $nonce,
+            'username'     => $username,
+            'password_len' => strlen($password),
             'userHash'     => $userHash,
-            'passwordHash' => $passwordHash
+            'userHash_len' => strlen($userHash),
+            'passwordHash' => $passwordHash,
+            'passwordHash_len' => strlen($passwordHash),
         ]);
 
-        // Login-XML mit GENAU diesen Hashes bauen
+        // Login-XML wie LOGIN_XML in reolink_aio
         $xml  = '<?xml version="1.0" encoding="UTF-8" ?>';
         $xml .= '<body>';
         $xml .= '<LoginUser version="1.1">';
@@ -647,25 +628,22 @@ class Reolink extends IPSModule
 
     private function BaichuanSendLogin(): void
     {
-        $xml    = $this->BuildBaichuanLoginXml();
-        $messId = $this->NextMessId(); // oder fix 250, beides ok solange Header+BC-Offset zusammenpassen
+        $xml     = $this->BuildBaichuanLoginXml();
+        $cmdId   = 1;
+        $class   = 0x1464;         // Login
+        $messId  = 2;              // oder dein Zähler
+        $encType = 0x01;           // BC
 
-        // Fürs Erste: Login immer im BC-Modus (XOR), AES kommt später
-        $encType = 0x01; // BC
+        $this->dbg('BAICHUAN', 'Sende Login', [
+            'cmdId'   => $cmdId,
+            'class'   => sprintf('0x%04X', $class),
+            'messId'  => $messId,
+            'encType' => $encType,
+        ]);
 
-        $this->dbg(
-            'BAICHUAN',
-            sprintf(
-                'Sende Login (cmd_id=1, class=0x1464, messId=%d, encType=0x%02X)',
-                $messId,
-                $encType
-            )
-        );
-
-        // WICHTIG: Class = MODERN / 1464, nicht 1465
         $this->BaichuanSendFrame(
-            1,
-            self::BAICHUAN_CLASS_MODERN, // 0x1464
+            $cmdId,
+            $class,
             $messId,
             $encType,
             $xml
@@ -1636,15 +1614,16 @@ class Reolink extends IPSModule
         // 1. MD5 als rohe 16-Byte-Ausgabe
         $md5Raw = md5($input, true);           // 16 Bytes
 
-        // 2. In Hex wandeln (32 Zeichen, klein)
-        $hex = bin2hex($md5Raw);               // z.B. "4fd7019e8b6841383e9b7c016ef32f4c"
+        // 2. In Hex wandeln (32 Zeichen, lowercase)
+        $hex = bin2hex($md5Raw);
 
         // 3. Auf 31 Zeichen kürzen
-        $hex31 = substr($hex, 0, 31);          // "4fd7019e8b6841383e9b7c016ef32f4"
+        $hex31 = substr($hex, 0, 31);
 
-        // 4. Uppercase, so macht es reolink_aio (md5_str_modern)
-        return strtoupper($hex31);             // "4FD7019E8B6841383E9B7C016EF32F"
+        // 4. Uppercase wie reolink_aio
+        return strtoupper($hex31);
     }
+
 
 
 
