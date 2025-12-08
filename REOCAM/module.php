@@ -347,61 +347,100 @@ class Reolink extends IPSModule
                 [
                     'type'    => 'Label',
                     'name'    => 'WebhookFull',
-                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
+                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull,
                 ],
                 [
                     'type'    => 'Label',
                     'name'    => 'DeviceInfo',
-                    'caption' => $deviceCaption
+                    'caption' => $deviceCaption,
                 ],
+
                 [
                     'type'    => 'CheckBox',
                     'name'    => 'InstanceStatus',
-                    'caption' => 'Instanz aktivieren'
+                    'caption' => 'Instanz aktivieren',
                 ],
                 [
                     'type'    => 'ValidationTextBox',
                     'name'    => 'CameraIP',
-                    'caption' => 'Kamera IP'
+                    'caption' => 'Kamera IP',
                 ],
                 [
                     'type'    => 'ValidationTextBox',
                     'name'    => 'Username',
-                    'caption' => 'Benutzername'
+                    'caption' => 'Benutzername',
                 ],
                 [
                     'type'    => 'PasswordTextBox',
                     'name'    => 'Password',
-                    'caption' => 'Passwort'
+                    'caption' => 'Passwort',
                 ],
                 [
                     'type'    => 'Select',
                     'name'    => 'StreamType',
                     'caption' => 'Stream-Typ',
                     'options' => [
-                        [ 'caption' => 'Mainstream', 'value' => 'main' ],
-                        [ 'caption' => 'Substream',  'value' => 'sub'  ],
+                        ['caption' => 'Mainstream', 'value' => 'main'],
+                        ['caption' => 'Substream',  'value' => 'sub'],
                     ],
                 ],
+
+                // ---------- API-Funktionen mit Checkboxen ----------
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'API-Funktionen',
                     'items'   => [
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',    'caption' => 'LED-Scheinwerfer' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiIR',          'caption' => 'IR-Beleuchtung' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiEmail',       'caption' => 'E-Mail Alarm' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiFTP',         'caption' => 'FTP' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiSensitivity', 'caption' => 'Sensitivität' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiSiren',       'caption' => 'Sirene' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiRecord',      'caption' => 'Kameraaufzeichnung' ],
-                        [ 'type' => 'CheckBox', 'name' => 'EnableApiPTZ',         'caption' => 'PTZ / Presets / Zoom' ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiWhiteLed',
+                            'caption' => 'LED-Scheinwerfer',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiIR',
+                            'caption' => 'IR-Beleuchtung',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiEmail',
+                            'caption' => 'E-Mail Alarm',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiFTP',
+                            'caption' => 'FTP',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiSensitivity',
+                            'caption' => 'Sensitivität',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiSiren',
+                            'caption' => 'Sirene',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiRecord',
+                            'caption' => 'Kameraaufzeichnung',
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnableApiPTZ',
+                            'caption' => 'PTZ / Presets / Zoom',
+                        ],
+
+                        // EIN Button: Fähigkeiten + Versionen neu ermitteln
                         [
                             'type'    => 'Button',
                             'caption' => 'API-Fähigkeiten neu ermitteln',
-                            'onClick' => "IPS_RequestAction(\$id, 'RefreshApiCapabilities', true); echo 'API-Fähigkeiten aktualisiert.';"
+                            'onClick' => "IPS_RequestAction(\$id, 'RefreshApiCapabilities', true); echo 'API-Fähigkeiten aktualisiert.';",
                         ],
                     ],
                 ],
+
+                // ---------- Bewegungs- / Aufnahmebereich ----------
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'Bewegungserkennung/Aufnahmen',
@@ -409,7 +448,7 @@ class Reolink extends IPSModule
                         [
                             'type'    => 'CheckBox',
                             'name'    => 'EnablePolling',
-                            'caption' => 'Polling aktivieren (für Kameras ohne Webhook-Unterstützung)'
+                            'caption' => 'Polling aktivieren (für Kameras ohne Webhook-Unterstützung)',
                         ],
                         [
                             'type'    => 'NumberSpinner',
@@ -417,45 +456,47 @@ class Reolink extends IPSModule
                             'caption' => 'Polling-Intervall',
                             'suffix'  => 'Sekunden',
                             'minimum' => 2,
-                            'maximum' => 3600
+                            'maximum' => 3600,
                         ],
                         [
                             'type'    => 'CheckBox',
                             'name'    => 'ShowTestElements',
-                            'caption' => 'Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)'
+                            'caption' => 'Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)',
                         ],
                         [
                             'type'    => 'CheckBox',
                             'name'    => 'ShowVisitorElements',
-                            'caption' => 'Besucher-Erkennung aktivieren (für Doorbell)'
+                            'caption' => 'Besucher-Erkennung aktivieren (für Doorbell)',
                         ],
                         [
                             'type'    => 'CheckBox',
                             'name'    => 'ShowMoveVariables',
-                            'caption' => 'Intelligente Bewegungserkennung'
+                            'caption' => 'Intelligente Bewegungserkennung',
                         ],
                         [
                             'type'    => 'CheckBox',
                             'name'    => 'ShowSnapshots',
-                            'caption' => 'Schnappschüsse anzeigen'
+                            'caption' => 'Schnappschüsse anzeigen',
                         ],
                         [
                             'type'    => 'CheckBox',
                             'name'    => 'ShowArchives',
-                            'caption' => 'Bildarchive anzeigen'
+                            'caption' => 'Bildarchive anzeigen',
                         ],
                         [
                             'type'    => 'NumberSpinner',
                             'name'    => 'MaxArchiveImages',
                             'caption' => 'Maximale Anzahl Archivbilder',
                             'minimum' => 1,
-                            'suffix'  => 'Bilder'
+                            'suffix'  => 'Bilder',
                         ],
                     ],
                 ],
+
+                // ---------- Donate ----------
                 [
                     'type'    => 'Label',
-                    'caption' => 'Sag danke und unterstütze den Modulentwickler:'
+                    'caption' => 'Sag danke und unterstütze den Modulentwickler:',
                 ],
                 [
                     'type'  => 'RowLayout',
@@ -463,18 +504,19 @@ class Reolink extends IPSModule
                         [
                             'type'   => 'Image',
                             'onClick'=> "echo 'https://paypal.me/mbstern';",
-                            'image'  => 'data:image/jpeg;base64,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'
+                            'image'  => 'data:image/jpeg;base64,...', // dein langer Base64-String
                         ],
                         [
                             'type'    => 'Label',
-                            'caption' => ''
+                            'caption' => '',
                         ],
                     ],
                 ],
             ],
         ];
 
-         $form = $this->applyApiSupportToForm($form);
+        // HIER: erkannte Fähigkeiten + Versionen auf die Checkboxen anwenden
+        $form = $this->applyApiSupportToForm($form);
 
         return json_encode($form);
     }
@@ -488,7 +530,7 @@ class Reolink extends IPSModule
         $this->WriteAttributeString('ApiVersionCache', '[]');
         $this->WriteAttributeString('ApiSupportCache', '{}');
 
-        // Neu scannen
+        // Fähigkeiten + Versionen neu ermitteln
         $support = $this->detectApiCapabilities();
 
         // Support-Cache speichern
@@ -698,95 +740,107 @@ class Reolink extends IPSModule
         return $rows;
     }
 
-    /**
-     * Ermittelt pro EnableApiXxx, ob die Kamera das Feature kann.
-     * Füllt nebenbei ApiVersionCache (für V20/Legacy-Domains) über apiProbe().
-     */
-    private function detectApiCapabilities(): array
-    {
-        $support = [
-            'EnableApiWhiteLed'    => false,
-            'EnableApiIR'          => false,
-            'EnableApiEmail'       => false,
-            'EnableApiFTP'         => false,
-            'EnableApiSensitivity' => false,
-            'EnableApiSiren'       => false,
-            'EnableApiRecord'      => false,
-            'EnableApiPTZ'         => false,
-        ];
+private function detectApiCapabilities(): array
+{
+    // Grundgerüst aller Features; alles erstmal false
+    $support = [
+        'EnableApiWhiteLed'    => false,
+        'EnableApiIR'          => false,
+        'EnableApiEmail'       => false,
+        'EnableApiFTP'         => false,
+        'EnableApiSensitivity' => false,
+        'EnableApiSiren'       => false,
+        'EnableApiRecord'      => false,
+        'EnableApiPTZ'         => false,
+    ];
 
-        // 1) Email: Version via apiProbe -> wenn nicht unsupported, dann supported
-        $verEmail = $this->apiProbe('email', 'GetEmailV20', 'GetEmail', 0);
-        if ($verEmail === 'v20' || $verEmail === 'legacy') {
-            $support['EnableApiEmail'] = true;
-        }
+    // Ability holen (damit PTZ & Co. sauber erkannt werden)
+    $ability = $this->apiGetAbilityCached();
+    $chn     = $ability['abilityChn'][0] ?? [];
 
-        // 2) FTP
-        $verFtp = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
-        if ($verFtp === 'v20' || $verFtp === 'legacy') {
-            $support['EnableApiFTP'] = true;
-        }
+    // ----- E-Mail (V20 / Legacy) -----
+    $verEmail = $this->apiProbe('email', 'GetEmailV20', 'GetEmail', 0);
+    if ($verEmail === 'v20' || $verEmail === 'legacy') {
+        $support['EnableApiEmail'] = true;
+    }
 
-        // 3) Record
-        $verRec = $this->apiProbe('record', 'GetRecV20', 'GetRec', 1);
-        if ($verRec === 'v20' || $verRec === 'legacy') {
-            $support['EnableApiRecord'] = true;
-        }
+    // ----- FTP (V20 / Legacy) -----
+    $verFtp = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
+    if ($verFtp === 'v20' || $verFtp === 'legacy') {
+        $support['EnableApiFTP'] = true;
+    }
 
-        // 4) Sirene / AudioAlarm
-        $verAlarm = $this->apiProbe('alarm', 'GetAudioAlarmV20', 'GetAudioAlarm', 1);
-        if ($verAlarm === 'v20' || $verAlarm === 'legacy') {
-            $support['EnableApiSiren'] = true;
-        }
+    // ----- Record (V20 / Legacy) -----
+    $verRec = $this->apiProbe('record', 'GetRecV20', 'GetRec', 1);
+    if ($verRec === 'v20' || $verRec === 'legacy') {
+        $support['EnableApiRecord'] = true;
+    }
 
-        // 5) Spotlight / WhiteLed: direktes Test-Command, NICHT von Ability abhängig
-        //    (nur lesen, macht keine sichtbare Änderung)
+    // ----- Sirene / AudioAlarm (V20 / Legacy) -----
+    $verAlarm = $this->apiProbe('alarm', 'GetAudioAlarmV20', 'GetAudioAlarm', 1);
+    if ($verAlarm === 'v20' || $verAlarm === 'legacy') {
+        $support['EnableApiSiren'] = true;
+    }
+
+    // ----- Spotlight / Weißlicht -----
+    // 1. Ability-Check
+    if ((($chn['floodLight']['ver'] ?? 0) > 0) || (($chn['whiteLed']['ver'] ?? 0) > 0)) {
+        $support['EnableApiWhiteLed'] = true;
+    } else {
+        // 2. Fallback: API-Aufruf testen
         $resSpot = $this->apiCall([[
             'cmd'    => 'GetWhiteLed',
             'action' => 0,
-            'param'  => ['channel' => 0]
+            'param'  => ['channel' => 0],
         ]], 'CAP-SPOT', /*suppress*/ true);
 
         if (is_array($resSpot) && (($resSpot[0]['code'] ?? -1) === 0)) {
             $support['EnableApiWhiteLed'] = true;
         }
+    }
 
-        // 6) IR-Licht: Test mit GetIrLights (Standard in der Doku)
+    // ----- IR-Licht -----
+    if ((($chn['irLights']['ver'] ?? 0) > 0) || (($chn['led']['ver'] ?? 0) > 0)) {
+        $support['EnableApiIR'] = true;
+    } else {
         $resIr = $this->apiCall([[
             'cmd'    => 'GetIrLights',
             'action' => 0,
-            'param'  => ['channel' => 0]
+            'param'  => ['channel' => 0],
         ]], 'CAP-IR', /*suppress*/ true);
 
         if (is_array($resIr) && (($resIr[0]['code'] ?? -1) === 0)) {
             $support['EnableApiIR'] = true;
         }
+    }
 
-        // 7) Sensitivität: wir testen z. B. GetMdState oder GetMdAlarm
-        //    -> SUCH DIR HIER den Command aus, den du sowieso fürs Modul verwendest.
+    // ----- Sensitivität / Motion Detection -----
+    if ((($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0)) {
+        $support['EnableApiSensitivity'] = true;
+    } else {
         $resMd = $this->apiCall([[
             'cmd'    => 'GetMdAlarm',
             'action' => 0,
-            'param'  => ['channel' => 0]
+            'param'  => ['channel' => 0],
         ]], 'CAP-MD', /*suppress*/ true);
 
         if (is_array($resMd) && (($resMd[0]['code'] ?? -1) === 0)) {
             $support['EnableApiSensitivity'] = true;
         }
-
-        // 8) PTZ: nur lesend -> GetPtzPreset (bewegt nichts)
-        $resPtz = $this->apiCall([[
-            'cmd'    => 'GetPtzPreset',
-            'action' => 0,
-            'param'  => ['channel' => 0]
-        ]], 'CAP-PTZ', /*suppress*/ true);
-
-        if (is_array($resPtz) && (($resPtz[0]['code'] ?? -1) === 0)) {
-            $support['EnableApiPTZ'] = true;
-        }
-
-        return $support;
     }
+
+    // ----- PTZ (wichtig: nur über Ability!) -----
+    // Viele Nicht-PTZ-Kameras beantworten GetPtzPreset mit code=0, aber ohne echte Funktion.
+    // Deshalb nutzen wir NUR abilityChn['ptz'].
+    if (($chn['ptz']['ver'] ?? 0) > 0) {
+        $support['EnableApiPTZ'] = true;
+    } else {
+        $support['EnableApiPTZ'] = false;
+    }
+
+    return $support;
+}
+
 
     private function applyApiSupportToForm(array $form): array
     {
@@ -804,17 +858,16 @@ class Reolink extends IPSModule
             $versions = [];
         }
 
-        // Zuordnung Checkbox-Name -> Domain im VersionCache (falls relevant)
-        // Für Features ohne V20/Legacy bleibt domain = null.
+        // Mapping: Checkbox-Name -> Domain (nur dort wird eine Version angezeigt)
         $featureMeta = [
-            'EnableApiWhiteLed'    => ['domain' => 'spot'],    // falls du "spot" im VersionCache benutzt, sonst null
+            'EnableApiWhiteLed'    => ['domain' => null],
             'EnableApiIR'          => ['domain' => null],
             'EnableApiEmail'       => ['domain' => 'email'],
             'EnableApiFTP'         => ['domain' => 'ftp'],
             'EnableApiSensitivity' => ['domain' => null],
             'EnableApiSiren'       => ['domain' => 'alarm'],
             'EnableApiRecord'      => ['domain' => 'record'],
-            'EnableApiPTZ'         => ['domain' => null],      // PTZ hat normal kein V20/Legacy
+            'EnableApiPTZ'         => ['domain' => null],
         ];
 
         if (!isset($form['elements']) || !is_array($form['elements'])) {
@@ -841,10 +894,12 @@ class Reolink extends IPSModule
                     continue;
                 }
 
-                // 1) Unterstützt oder nicht?
-                $isSupported = $support[$name] ?? null; // kann true/false/null sein
+                $caption = $item['caption'] ?? $name;
 
-                // 2) Versionstext bestimmen (falls Domain hinterlegt)
+                // 1) Unterstützt / nicht unterstützt?
+                $isSupported = $support[$name] ?? null; // true/false/null
+
+                // 2) Versionstext bestimmen (nur für Domains mit V20/Legacy)
                 $versionLabel = '';
                 if (isset($featureMeta[$name])) {
                     $domain = $featureMeta[$name]['domain'];
@@ -861,27 +916,16 @@ class Reolink extends IPSModule
                 }
 
                 // 3) Caption erweitern
-                //    Beispiele:
-                //    "Sirene [V20]"
-                //    "FTP (nicht unterstützt) [-]"
-                $caption = $item['caption'] ?? $name;
-
                 if ($isSupported === false) {
-                    // nicht unterstützt -> ausgrauen + Hinweis
-                    $item['enabled'] = false;
-                    if ($versionLabel !== '') {
-                        $caption .= ' (nicht unterstützt) [' . $versionLabel . ']';
-                    } else {
-                        $caption .= ' (nicht unterstützt)';
-                    }
+                    // nicht unterstützt -> Checkbox komplett ausblenden
+                    $item['visible'] = false;
                 } else {
-                    // unterstützt oder unbekannt -> nur Version dranhängen
+                    // unterstützt oder (noch) unbekannt -> Version nur anhängen, wenn bekannt
                     if ($versionLabel !== '') {
                         $caption .= ' [' . $versionLabel . ']';
                     }
+                    $item['caption'] = $caption;
                 }
-
-                $item['caption'] = $caption;
             }
             unset($item);
         }
