@@ -552,75 +552,107 @@ class Reolink extends IPSModule
 
     private function buildFirmwareCheckMessage(array $dev): string
     {
-        // Ohne DevInfo können wir nichts prüfen
-        if (empty($dev) || !isset($dev['firmVer'])) {
-            return 'ℹ️ Firmwarecheck (online): Keine Geräteinformationen vorhanden.';
+        // Firmware-String aus DevInfo
+        $firm = isset($dev['firmVer']) && is_string($dev['firmVer']) && $dev['firmVer'] !== ''
+            ? $dev['firmVer']
+            : 'unbekannt';
+
+        // Build aus DevInfo etwas hübscher machen
+        $build = isset($dev['buildDay']) && is_string($dev['buildDay']) ? $dev['buildDay'] : '';
+        if ($build !== '' && stripos($build, 'build ') === 0) {
+            // "build 2412021483" -> "2412021483"
+            $build = trim(substr($build, 6));
+        }
+        if ($build === '') {
+            $build = 'n/a';
         }
 
-        $localVersion = trim((string)$dev['firmVer']);
-        $localBuild   = $this->extractFirmwareBuild($localVersion)
-                    ?? $this->extractFirmwareBuild((string)($dev['buildDay'] ?? ''));
+        // Modell / Hardware-ID für die Anzeige
+        $model   = isset($dev['model']) && $dev['model'] !== '' ? $dev['model'] : 'unbekanntes Modell';
+        $hwId    = isset($dev['hardVer']) && $dev['hardVer'] !== '' ? $dev['hardVer'] : 'unbekannt';
+        $devText = sprintf('%s (%s)', $model, $hwId);
 
-        $model   = (string)($dev['model'] ?? 'unbekannt');
-        $hw      = (string)($dev['hardVer'] ?? ($dev['detail'] ?? ''));
-        $exact   = (string)($dev['exactType'] ?? '');
-        $idForLookup = $hw !== '' ? $hw : $exact;
-
-        // Online-Infos holen (aus der Community-Liste, die Reolink-Firmwares spiegelt)
-        $online = $this->fetchLatestFirmwareFromGithub($idForLookup);
-
-        if ($online === null) {
+        // Wenn wir keine Hardware-ID haben, können wir im Readme nichts Sinnvolles finden
+        if ($hwId === 'unbekannt') {
             return sprintf(
-                'ℹ️ Firmwarecheck (online): Kein Eintrag für Hardware "%s" gefunden.',
-                $idForLookup !== '' ? $idForLookup : 'unbekannt'
+                "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht möglich (keine Hardware-ID vorhanden).",
+                $firm,
+                $build
             );
         }
 
-        $onlineVersion = $online['version'];
-        $onlineBuild   = $this->extractFirmwareBuild($onlineVersion);
-        $downloadUrl   = $online['url'] ?? '';
+        // Online-Version aus GitHub-Readme holen
+        $onlineInfo = $this->fetchLatestFirmwareFromGithub($hwId);
 
-        // Vergleich
-        $cmp = $this->compareFirmwareVersions($localVersion, $onlineVersion, $localBuild, $onlineBuild);
+        if ($onlineInfo === null) {
+            // Kein passender Block im Readme gefunden
+            return sprintf(
+                "ℹ️ Firmwarecheck (online): Keine passende Firmware im Reolink-Readme gefunden. Gerät: %s – installiert: %s (Build %s).",
+                $devText,
+                $firm,
+                $build
+            );
+        }
 
-        $baseText = sprintf(
-            'Gerät: %s (%s) – installiert: %s, online: %s',
-            $model !== '' ? $model : 'unbekannt',
-            $idForLookup !== '' ? $idForLookup : 'n/a',
-            $localVersion,
-            $onlineVersion
-        );
+        $onlineVersion = $onlineInfo['version'] ?? '';
+        $downloadUrl   = $onlineInfo['url']     ?? '';
+
+        if ($onlineVersion === '') {
+            return sprintf(
+                "ℹ️ Firmwarecheck (online): Konnte keine gültige Online-Version ermitteln. Gerät: %s – installiert: %s (Build %s).",
+                $devText,
+                $firm,
+                $build
+            );
+        }
+
+        // Vergleich lokal vs. online
+        $cmp = $this->compareFirmwareStrings($firm, $onlineVersion);
 
         if ($cmp < 0) {
-            // online > lokal => Update verfügbar
+            // Online neuer als installiert
+            $msg = sprintf(
+                "⚠️ Firmwarecheck (online): Es ist eine neuere Firmware verfügbar. Gerät: %s – installiert: %s, online: %s.",
+                $devText,
+                $firm,
+                $onlineVersion
+            );
             if ($downloadUrl !== '') {
-                return '⚠️ Firmwarecheck (online): Update verfügbar. ' . $baseText .
-                    ' – Download: ' . $downloadUrl;
+                $msg .= " Download: " . $downloadUrl;
             }
-            return '⚠️ Firmwarecheck (online): Update verfügbar. ' . $baseText;
+            return $msg;
         }
 
-        if ($cmp > 0) {
-            // Deine Firmware ist neuer als die aus der Liste
-            return 'ℹ️ Firmwarecheck (online): Installierte Version ist neuer als die bekannte Version. ' . $baseText;
+        if ($cmp === 0) {
+            // Gleich
+            return sprintf(
+                "✅ Firmwarecheck (online): Firmware ist aktuell. Gerät: %s – Version: %s.",
+                $devText,
+                $firm
+            );
         }
 
-        // Gleich
-        return '✅ Firmwarecheck (online): Firmware scheint aktuell zu sein. ' . $baseText;
+        // Installierte Version ist höher als die im Readme bekannte
+        return sprintf(
+            "ℹ️ Firmwarecheck (online): Installierte Version ist neuer als die bekannte Version. Gerät: %s – installiert: %s, online: %s.",
+            $devText,
+            $firm,
+            $onlineVersion
+        );
     }
 
     private function extractFirmwareBuild(string $firmVer): ?int
-{
-    // Typisch: v3.1.0.4366_2412021483  -> wir nehmen 2412021483
-    if (preg_match('/_(\d{6,})$/', $firmVer, $m)) {
-        return (int)$m[1];
+    {
+        // Typisch: v3.1.0.4366_2412021483  -> wir nehmen 2412021483
+        if (preg_match('/_(\d{6,})$/', $firmVer, $m)) {
+            return (int)$m[1];
+        }
+        // Fallback: irgendwo im String eine längere Ziffernfolge
+        if (preg_match('/(\d{6,})/', $firmVer, $m)) {
+            return (int)$m[1];
+        }
+        return null;
     }
-    // Fallback: irgendwo im String eine längere Ziffernfolge
-    if (preg_match('/(\d{6,})/', $firmVer, $m)) {
-        return (int)$m[1];
-    }
-    return null;
-}
 
     private function compareFirmwareVersions(
         string $localVersion,
@@ -714,68 +746,6 @@ class Reolink extends IPSModule
         }
 
         return $best;
-    }
-
-    /**
-     * Führt einen Online-Firmwarecheck direkt über die Reolink-API aus.
-     *
-     * @return bool|null
-     *   true  = neue Firmware verfügbar
-     *   false = keine neuere Firmware gefunden
-     *   null  = Check nicht möglich / Fehler
-     */
-    private function CheckFirmwareOnline(): ?bool
-    {
-        // Wir benutzen die bestehende API-Hilfsfunktion,
-        // damit Token-Handling, HTTPS usw. konsistent sind.
-        $resp = $this->apiCall([
-            [
-                'cmd' => 'CheckFirmware',
-                // meistens sind keine weiteren Parameter nötig
-            ]
-        ], 'FirmwareCheck', true);
-
-        if (!is_array($resp) || !isset($resp[0]['code'])) {
-            $this->SendDebug('FirmwareCheck', 'Ungültige Antwortstruktur', 0);
-            return null;
-        }
-
-        if ((int)$resp[0]['code'] !== 0) {
-            // Fehlercode vom Gerät, z.B. wenn kein Internet oder Feature nicht unterstützt
-            $this->SendDebug('FirmwareCheck', 'Fehlercode vom Gerät: ' . json_encode($resp[0]), 0);
-            return null;
-        }
-
-        $value = $resp[0]['value'] ?? [];
-        $this->SendDebug('FirmwareCheck', 'Value: ' . json_encode($value), 0);
-
-        // Mögliches Flag im Value suchen – Reolink-Modelle sind da nicht immer einheitlich
-        $flag = null;
-        foreach (['newFirmware', 'hasNewFirmware', 'needUpgrade'] as $key) {
-            if (array_key_exists($key, $value)) {
-                $flag = $value[$key];
-                break;
-            }
-        }
-
-        if ($flag === null) {
-            // kein sinnvolles Flag gefunden – automatische Bewertung nicht möglich
-            return null;
-        }
-
-        // einige Kameras liefern "0"/"1" oder "true"/"false" als String
-        if (is_string($flag)) {
-            $low = strtolower($flag);
-            if (in_array($low, ['1', 'true', 'yes'], true)) {
-                return true;
-            }
-            if (in_array($low, ['0', 'false', 'no'], true)) {
-                return false;
-            }
-        }
-
-        // int/bool o.ä.
-        return (bool)$flag;
     }
 
     /**
