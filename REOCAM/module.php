@@ -572,9 +572,11 @@ class Reolink extends IPSModule
         }
 
         // Versuche online Informationen zu holen
+        $info = $this->getOnlineFirmwareInfo($dev);
         if ($info === null) {
+            // Fallback, wenn wir gar nichts online parsen konnten
             return sprintf(
-                "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden oder Gerät ist dort noch nicht gelistet).",
+                "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht möglich.",
                 $firm,
                 $build
             );
