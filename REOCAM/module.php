@@ -815,35 +815,6 @@ class Reolink extends IPSModule
     }
 
 
-    /**
-     * Vergleicht zwei reine Firmware-Strings, z.B.
-     *   v3.0.0.3471_2406116464  vs  v3.0.0.3471_2406115760
-     *
-     * @return int  -1 = $a älter, 0 = gleich, 1 = $a neuer
-     */
-    private function compareFirmwareStrings(string $a, string $b): int
-    {
-        $buildA = $this->extractFirmwareBuild($a);
-        $buildB = $this->extractFirmwareBuild($b);
-
-        // 1) Wenn beide Buildnummern haben (z.B. 2406116464), nimm die
-        if ($buildA !== null && $buildB !== null && $buildA !== $buildB) {
-            return $buildA <=> $buildB;
-        }
-
-        // 2) Nur den Teil vor dem "_" vergleichen (v3.0.0.3471 vs v3.0.0.4428)
-        $baseA = explode('_', $a)[0];
-        $baseB = explode('_', $b)[0];
-
-        $cmp = version_compare($baseA, $baseB);
-        if ($cmp !== 0) {
-            return $cmp;
-        }
-
-        // 3) Fallback: kompletter Stringvergleich
-        return strcmp($a, $b);
-    }
-
     private function apiGetDevInfoFresh(): array
     {
         $attr     = 'DevInfoCache';
