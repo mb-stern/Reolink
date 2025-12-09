@@ -774,7 +774,7 @@ class Reolink extends IPSModule
         ];
 
         $this->SendDebug('FirmwareCheck', 'Lade Firmware-README von ' . $url, 0);
-        $result = @Sys_GetURLContent($url, $opts);
+        $result = @Sys_GetURLContent($url);
 
         if ($result === false || $result === '') {
             $err = error_get_last();
