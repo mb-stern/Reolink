@@ -625,51 +625,45 @@ class Reolink extends IPSModule
         );
     }
 
-        /**
-     * Führt einen Online-Firmwarecheck aus (für Timer / zyklisch).
-     * Gibt true zurück, wenn eine neuere Firmware online gefunden wurde,
-     * false wenn alles aktuell ist, und null bei Fehlern.
-     */
-    private function CheckFirmwareOnline(): ?bool
+    protected function CheckFirmwareOnline(array $dev): string
     {
-        $dev = $this->apiGetDevInfoCached(false);
-        if (!is_array($dev) || empty($dev)) {
-            $this->SendDebug('FirmwareCheck', 'Keine DevInfo-Daten vorhanden, Onlinecheck abgebrochen.', 0);
-            return null;
+        $fw      = $dev['firmware'] ?? '';
+        $build   = $dev['build'] ?? 'n/a';
+        $model   = $dev['model'] ?? 'unbekannt';
+
+        // Basis-Text mit installierter Version
+        $baseText = sprintf(
+            'ℹ️ Firmware: %s (Build %s)',
+            $fw !== '' ? $fw : 'n/a',
+            $build
+        );
+
+        if ($fw === '') {
+            return $baseText . ' – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
         }
 
-        $info = $this->getOnlineFirmwareInfo($dev);
+        $url = 'https://raw.githubusercontent.com/your-repo-irgendwas/README.md'; // deine bisherige URL hier
+        $readme = @file_get_contents($url);
+        if ($readme === false || $readme === '') {
+            return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
+        }
+
+        $info = $this->findLatestFirmwareForInstalled($readme, $dev);
         if ($info === null) {
-            $this->SendDebug('FirmwareCheck', 'Kein Online-Firmwareeintrag gefunden.', 0);
-            return null;
+            return $baseText . ' – Online-Firmwareprüfung nicht möglich (Gerät / Firmware im README nicht gefunden).';
         }
 
-        $installedBuild = (int)($info['installedBuild'] ?? 0);
-        $latestBuild    = (int)($info['latestBuild'] ?? 0);
-
-        if ($installedBuild > 0 && $latestBuild > $installedBuild) {
-            $this->SendDebug(
-                'FirmwareCheck',
-                sprintf(
-                    'Neuere Firmware gefunden: lokal Build %d, online Build %d (%s)',
-                    $installedBuild,
-                    $latestBuild,
-                    $info['latestVersion'] ?? ''
-                ),
-                0
-            );
-            // Optional: Download-URL in Attributen ablegen
-            $this->WriteAttributeString('FirmwareLatestVersion', (string)($info['latestVersion'] ?? ''));
-            $this->WriteAttributeString('FirmwareLatestUrl', (string)($info['latestUrl'] ?? ''));
-            return true;
+        if (!$info['is_newer']) {
+            // KEINE neuere Firmware
+            return 'ℹ️ Firmwarecheck: Es wurde keine neuere Firmware gefunden.';
         }
 
-        // Optional: trotzdem aktuelle Online-Version merken
-        $this->WriteAttributeString('FirmwareLatestVersion', (string)($info['latestVersion'] ?? ''));
-        $this->WriteAttributeString('FirmwareLatestUrl', (string)($info['latestUrl'] ?? ''));
-
-        $this->SendDebug('FirmwareCheck', 'Firmware ist bereits aktuell (kein neuerer Build gefunden).', 0);
-        return false;
+        // Neuere Firmware gefunden
+        return sprintf(
+            '⚠️ Firmwarecheck: Es wurde eine neuere Firmware gefunden (%s, Download: %s).',
+            $info['latest'],
+            $info['download']
+        );
     }
 
     /**
@@ -1111,30 +1105,122 @@ class Reolink extends IPSModule
         ];
     }
 
-    private function compareFirmwareVersions(
-        string $localVersion,
-        string $onlineVersion,
-        ?int $localBuild,
-        ?int $onlineBuild
-    ): int {
-        // 1) Wenn beide Buildnummern haben, nimm die – die sind bei Reolink gut monoton
-        if ($localBuild !== null && $onlineBuild !== null && $localBuild !== $onlineBuild) {
-            return $localBuild <=> $onlineBuild; // -1: lokal < online => Update verfügbar
-        }
+// Vergleicht zwei Reolink-Firmwares à la "v3.2.0.5467_2510141213"
+// Rückgabe: -1 = $a älter, 0 = gleich, 1 = $a neuer
+private function compareFirmwareVersions(string $a, string $b): int
+{
+    $a = trim($a);
+    $b = trim($b);
+    $a = ltrim($a, "vV \t");
+    $b = ltrim($b, "vV \t");
 
-        // 2) Nur den Teil vor dem "_" vergleichen (v3.0.0 vs v3.1.0)
-        $localBase  = explode('_', $localVersion)[0];
-        $onlineBase = explode('_', $onlineVersion)[0];
+    [$aMain, $aBuild] = array_pad(explode('_', $a, 2), 2, '0');
+    [$bMain, $bBuild] = array_pad(explode('_', $b, 2), 2, '0');
 
-        $cmp = version_compare($localBase, $onlineBase);
-        if ($cmp !== 0) {
-            return $cmp;
-        }
+    $aParts = array_map('intval', explode('.', $aMain));
+    $bParts = array_map('intval', explode('.', $bMain));
 
-        // 3) Fallback: kompletter Stringvergleich
-        return strcmp($localVersion, $onlineVersion);
+    $len = max(count($aParts), count($bParts));
+    for ($i = 0; $i < $len; $i++) {
+        $ai = $aParts[$i] ?? 0;
+        $bi = $bParts[$i] ?? 0;
+        if ($ai < $bi) return -1;
+        if ($ai > $bi) return 1;
     }
 
+    $aBuild = (int)$aBuild;
+    $bBuild = (int)$bBuild;
+    if ($aBuild < $bBuild) return -1;
+    if ($aBuild > $bBuild) return 1;
+    return 0;
+}
+
+// Sucht die passende <tr>-Zeile im README, die sowohl Modell als auch installierte Firmware enthält
+private function findFirmwareRowForDevice(string $readme, string $model, string $installedFw): ?string
+{
+    $pattern = '/<tr[^>]*>.*?<\/tr>/si';
+    if (!preg_match_all($pattern, $readme, $matches)) {
+        return null;
+    }
+
+    foreach ($matches[0] as $row) {
+        if ($model !== '' && stripos($row, $model) === false) {
+            continue;
+        }
+        if (stripos($row, $installedFw) === false) {
+            continue;
+        }
+        return $row;
+    }
+
+    // Fallback: nur nach Firmware suchen (falls Modelltext sich unterscheidet)
+    foreach ($matches[0] as $row) {
+        if (stripos($row, $installedFw) !== false) {
+            return $row;
+        }
+    }
+
+    return null;
+}
+
+// Holt alle Firmware-Einträge (Version + Download-URL) aus einer Tabellenzeile
+private function extractFirmwareEntriesFromRow(string $rowHtml): array
+{
+    $result = [];
+
+    // Markdown-Links: [v3.x.x.x_xxxxxxxx](https://....zip?download_name=...)
+    $pattern = '/\[(v[0-9._]+)\]\((https?:\/\/[^)]+\.zip[^)]*)\)/i';
+    if (!preg_match_all($pattern, $rowHtml, $matches, PREG_SET_ORDER)) {
+        return $result;
+    }
+
+    foreach ($matches as $m) {
+        $result[] = [
+            'version' => $m[1],
+            'url'     => $m[2],
+        ];
+    }
+
+    return $result;
+}
+
+    // Kernfunktion: auf Basis der installierten FW in "ihrer" Zeile nach neuerer suchen
+    private function findLatestFirmwareForInstalled(string $readme, array $dev): ?array
+    {
+        $installed = $dev['firmware'] ?? '';
+        $model     = $dev['model'] ?? '';
+
+        if ($installed === '') {
+            return null;
+        }
+
+        $row = $this->findFirmwareRowForDevice($readme, $model, $installed);
+        if ($row === null) {
+            return null;
+        }
+
+        $entries = $this->extractFirmwareEntriesFromRow($row);
+        if (empty($entries)) {
+            return null;
+        }
+
+        // Höchste Version in dieser Zeile suchen
+        $latest = $entries[0];
+        foreach ($entries as $entry) {
+            if ($this->compareFirmwareVersions($entry['version'], $latest['version']) > 0) {
+                $latest = $entry;
+            }
+        }
+
+        $cmp = $this->compareFirmwareVersions($latest['version'], $installed);
+
+        return [
+            'installed' => $installed,
+            'latest'    => $latest['version'],
+            'download'  => $latest['url'],
+            'is_newer'  => ($cmp > 0)
+        ];
+    }
 
     private function apiGetDevInfoFresh(): array
     {
