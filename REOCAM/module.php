@@ -582,7 +582,7 @@ class Reolink extends IPSModule
         }
 
         // Online-Version aus GitHub-Readme holen
-        $onlineInfo = $this->fetchLatestFirmwareFromGithub($hwId);
+        $onlineInfo = $this->fetchLatestFirmwareFromGithub($dev);
 
         if ($onlineInfo === null) {
             // Kein passender Block im Readme gefunden
@@ -652,6 +652,142 @@ class Reolink extends IPSModule
             return (int)$m[1];
         }
         return null;
+    }
+
+    private function compareFirmwareStrings(string $installed, string $online): int
+    {
+        // -1 = installiert älter, 0 = gleich, 1 = installiert neuer
+
+        if ($installed === $online) {
+            return 0;
+        }
+
+        $normalize = function (string $v): array {
+            $v = trim($v);
+            $main  = $v;
+            $build = 0;
+
+            if (strpos($v, '_') !== false) {
+                [$main, $buildStr] = explode('_', $v, 2);
+                $build = (int)preg_replace('/\D/', '', $buildStr);
+            }
+
+            $main = ltrim($main, "vV");
+            $parts = array_map('intval', explode('.', $main));
+            while (count($parts) < 4) {
+                $parts[] = 0;
+            }
+            $parts[] = $build;
+
+            return $parts;
+        };
+
+        $a = $normalize($installed);
+        $b = $normalize($online);
+
+        $len = max(count($a), count($b));
+        for ($i = 0; $i < $len; $i++) {
+            $ai = $a[$i] ?? 0;
+            $bi = $b[$i] ?? 0;
+            if ($ai < $bi) {
+                return -1;
+            }
+            if ($ai > $bi) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    private function fetchLatestFirmwareFromGithub(array $dev): ?array
+    {
+        $hw   = $dev['hardVer'] ?? '';
+        $model = $dev['model'] ?? '';
+
+        if ($hw === '') {
+            $this->SendDebug(__FUNCTION__, 'Keine Hardware-ID im DevInfo gefunden.', 0);
+            return null;
+        }
+
+        $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 5,
+                'header'  => "User-Agent: IP-Symcon-Reolink\r\n"
+            ]
+        ]);
+
+        $readme = @file_get_contents($url, false, $ctx);
+        if ($readme === false || $readme === '') {
+            $this->SendDebug(__FUNCTION__, 'README konnte nicht von GitHub geladen werden.', 0);
+            return null;
+        }
+
+        $lines = preg_split("/\R/", $readme);
+        $currentProduct = '';
+        $foundBlockLines = [];
+
+        $lineCount = count($lines);
+        for ($i = 0; $i < $lineCount; $i++) {
+            $line = $lines[$i];
+
+            // Produktüberschrift, z.B. "Reolink Duo 2 WiFi"
+            if (preg_match('/^Reolink .*$/', $line)) {
+                $currentProduct = trim($line);
+                continue;
+            }
+
+            // Hardware-Heading, z.B. "### IPC_529B17B8MP"
+            if (preg_match('/^###\s+(\S+)/', $line, $m)) {
+                $currentHw = trim($m[1]);
+
+                if ($currentHw === $hw && ($model === '' || stripos($currentProduct, $model) !== false)) {
+                    // Ab hier die Zeilen einsammeln, bis zum nächsten "###" oder "Reolink ..." oder Dateiende
+                    $block = [];
+                    for ($j = $i + 1; $j < $lineCount; $j++) {
+                        $l2 = $lines[$j];
+                        if (preg_match('/^###\s+\S+/', $l2) || preg_match('/^Reolink .*$/', $l2)) {
+                            break;
+                        }
+                        $block[] = $l2;
+                    }
+                    $foundBlockLines = $block;
+                    break;
+                }
+            }
+        }
+
+        if (empty($foundBlockLines)) {
+            $this->SendDebug(__FUNCTION__, "Keinen passenden Firmware-Block für Modell '{$model}' / HW '{$hw}' gefunden.", 0);
+            return null;
+        }
+
+        $blockText = implode("\n", $foundBlockLines);
+
+        // Alle Firmware-Versionen im Block einsammeln
+        if (!preg_match_all('/v\d+\.\d+\.\d+\.\d+_\d+/', $blockText, $matches) || empty($matches[0])) {
+            $this->SendDebug(__FUNCTION__, 'Keine Firmware-Version im Block gefunden.', 0);
+            return null;
+        }
+
+        // README ist neu->alt sortiert ⇒ erste Version ist die neueste
+        $version = $matches[0][0];
+
+        // Download-URL aus derselben Zeile wie die Version extrahieren
+        $downloadUrl = '';
+        foreach ($foundBlockLines as $l) {
+            if (strpos($l, $version) !== false && preg_match('/https?:\/\/\S+/', $l, $mm)) {
+                $downloadUrl = rtrim($mm[0], ".)");
+                break;
+            }
+        }
+
+        $this->SendDebug(__FUNCTION__, "Online-Firmware: {$version}, URL: {$downloadUrl}", 0);
+
+        return [
+            'version' => $version,
+            'url'     => $downloadUrl,
+        ];
     }
 
     private function compareFirmwareVersions(
