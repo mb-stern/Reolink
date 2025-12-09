@@ -941,15 +941,28 @@ class Reolink extends IPSModule
         return 0;
     }
 
+    /**
+     * Liest das Firmware-README von GitHub und sucht NUR im Block des
+     * Kameramodells (z.B. "Reolink Duo 2 WiFi") nach der neuesten Firmware.
+     * Optional wird innerhalb dieses Blocks noch die Hardware-ID (hardVer) beachtet.
+     *
+     * @param array $dev DevInfo aus der Kamera (mind. 'model' und optional 'hardVer')
+     * @return array|null ['version' => 'v3.x.y.z_YYYYMMDD', 'url' => 'https://...'] oder null bei Fehler
+     */
     private function fetchLatestFirmwareFromGithub(array $dev): ?array
     {
-        $hw   = $dev['hardVer'] ?? '';
-        $model = $dev['model'] ?? '';
+        $hwRaw    = trim($dev['hardVer'] ?? '');
+        $modelRaw = trim($dev['model'] ?? '');
 
-        if ($hw === '') {
-            $this->SendDebug(__FUNCTION__, 'Keine Hardware-ID im DevInfo gefunden.', 0);
+        if ($modelRaw === '' && $hwRaw === '') {
+            $this->SendDebug(__FUNCTION__, 'Kein Modell / keine Hardware-ID in DevInfo gefunden.', 0);
             return null;
         }
+
+        // Modellname so, wie er im Formular steht (alles hinter "(" abschneiden)
+        // z.B. "Reolink Duo 2 WiFi (IPC_529B17B8MP)" -> "Reolink Duo 2 WiFi"
+        $modelName = preg_replace('/\s*\(.*$/', '', $modelRaw);
+        $this->SendDebug(__FUNCTION__, "Suche Firmware für Modell '{$modelName}', HW '{$hwRaw}'", 0);
 
         $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
         $ctx = stream_context_create([
@@ -965,69 +978,135 @@ class Reolink extends IPSModule
             return null;
         }
 
-        $lines = preg_split("/\R/", $readme);
-        $currentProduct = '';
-        $foundBlockLines = [];
+        $lines = preg_split("/\r\n|\n|\r/", $readme);
+        $cnt   = count($lines);
 
-        $lineCount = count($lines);
-        for ($i = 0; $i < $lineCount; $i++) {
-            $line = $lines[$i];
-
-            // Produktüberschrift, z.B. "Reolink Duo 2 WiFi"
-            if (preg_match('/^Reolink .*$/', $line)) {
-                $currentProduct = trim($line);
-                continue;
+        // 1) Den <summary>-Block für GENAU dieses Modell suchen
+        $summaryIndex = -1;
+        for ($i = 0; $i < $cnt; $i++) {
+            $line = trim($lines[$i]);
+            if (stripos($line, '<summary>') !== false && stripos($line, $modelName) !== false) {
+                $summaryIndex = $i;
+                break;
             }
+        }
 
-            // Hardware-Heading, z.B. "### IPC_529B17B8MP"
+        if ($summaryIndex === -1) {
+            $this->SendDebug(__FUNCTION__, "Kein <summary>-Block für Modell '{$modelName}' gefunden.", 0);
+            return null;
+        }
+
+        // 2) Ende des <details>-Blocks finden
+        $detailsEnd = $cnt;
+        for ($i = $summaryIndex + 1; $i < $cnt; $i++) {
+            if (stripos($lines[$i], '</details>') !== false) {
+                $detailsEnd = $i;
+                break;
+            }
+        }
+
+        // 3) Innerhalb dieses Blocks nach passender Hardware-Section suchen (### HWID)
+        $foundBlockLines = [];
+        for ($i = $summaryIndex + 1; $i < $detailsEnd; $i++) {
+            $line = trim($lines[$i]);
+
             if (preg_match('/^###\s+(\S+)/', $line, $m)) {
                 $currentHw = trim($m[1]);
 
-                if ($currentHw === $hw && ($model === '' || stripos($currentProduct, $model) !== false)) {
-                    // Ab hier die Zeilen einsammeln, bis zum nächsten "###" oder "Reolink ..." oder Dateiende
+                // Standardmäßig nehmen wir die erste HW in diesem Modellblock.
+                $matchesHw = true;
+
+                if ($hwRaw !== '') {
+                    // wenn wir eine Hardware-ID aus DevInfo haben, versuchen wir, genau diese zu matchen
+                    $matchesHw = ($currentHw === $hwRaw);
+
+                    // kleiner Fallback: viele HW-IDs haben einen "MP"-Suffix
+                    if (!$matchesHw) {
+                        $shortHw = preg_replace('/MP$/', '', $hwRaw);
+                        if ($shortHw !== $hwRaw && $currentHw === $shortHw) {
+                            $matchesHw = true;
+                        }
+                    }
+                }
+
+                if ($matchesHw) {
+                    // alle Zeilen bis zur nächsten "###" oder dem Ende des <details>-Blocks einsammeln
                     $block = [];
-                    for ($j = $i + 1; $j < $lineCount; $j++) {
-                        $l2 = $lines[$j];
-                        if (preg_match('/^###\s+\S+/', $l2) || preg_match('/^Reolink .*$/', $l2)) {
+                    for ($j = $i + 1; $j < $detailsEnd; $j++) {
+                        $l2 = trim($lines[$j]);
+                        if (preg_match('/^###\s+\S+/', $l2) || stripos($l2, '<summary>') !== false) {
                             break;
                         }
-                        $block[] = $l2;
+                        $block[] = $lines[$j];
                     }
                     $foundBlockLines = $block;
+                    $this->SendDebug(__FUNCTION__, "Gefundener Firmware-Block für Modell '{$modelName}' / HW '{$currentHw}'.", 0);
                     break;
                 }
             }
         }
 
         if (empty($foundBlockLines)) {
-            $this->SendDebug(__FUNCTION__, "Keinen passenden Firmware-Block für Modell '{$model}' / HW '{$hw}' gefunden.", 0);
+            $this->SendDebug(__FUNCTION__, "Kein Firmware-Block im README für Modell '{$modelName}' (HW '{$hwRaw}') gefunden.", 0);
             return null;
         }
 
-        $blockText = implode("\n", $foundBlockLines);
-
-        // Alle Firmware-Versionen im Block einsammeln
-        if (!preg_match_all('/v\d+\.\d+\.\d+\.\d+_\d+/', $blockText, $matches) || empty($matches[0])) {
-            $this->SendDebug(__FUNCTION__, 'Keine Firmware-Version im Block gefunden.', 0);
+        // 4) Aus dem Block alle Firmware-Versionen herausziehen
+        $joined = implode("\n", $foundBlockLines);
+        if (!preg_match_all('/v\d+\.\d+\.\d+\.\d+_\d+/', $joined, $mVers) || empty($mVers[0])) {
+            $this->SendDebug(__FUNCTION__, "Im Firmware-Block für Modell '{$modelName}' keine Versionszeichenketten gefunden.", 0);
             return null;
         }
 
-        // README ist neu->alt sortiert ⇒ erste Version ist die neueste
-        $version = $matches[0][0];
+        $versions = array_unique($mVers[0]);
 
-        // Download-URL aus derselben Zeile wie die Version extrahieren
+        // 5) Neueste Version bestimmen (mit compareFirmwareVersions)
+        $bestVersion = null;
+        $bestBuild   = null;
+        foreach ($versions as $v) {
+            $build = $this->extractFirmwareBuild($v);
+
+            if ($bestVersion === null) {
+                $bestVersion = $v;
+                $bestBuild   = $build;
+                continue;
+            }
+
+            $cmp = $this->compareFirmwareVersions(
+                $bestVersion,
+                $v,
+                $bestBuild,
+                $build
+            );
+
+            if ($cmp < 0) {
+                $bestVersion = $v;
+                $bestBuild   = $build;
+            }
+        }
+
+        if ($bestVersion === null) {
+            $this->SendDebug(__FUNCTION__, "Konnte in den gefundenen Zeilen keine „beste“ Version bestimmen.", 0);
+            return null;
+        }
+
+        // 6) Download-URL aus der Zeile mit der besten Version ziehen
         $downloadUrl = '';
         foreach ($foundBlockLines as $l) {
-            if (strpos($l, $version) !== false && preg_match('/https?:\/\/\S+/', $l, $mm)) {
+            if (strpos($l, $bestVersion) !== false && preg_match('/https?:\/\/\S+/', $l, $mm)) {
                 $downloadUrl = rtrim($mm[0], ".)");
                 break;
             }
         }
 
-        $this->SendDebug(__FUNCTION__, "Online-Firmware: {$version}, URL: {$downloadUrl}", 0);
+        $this->SendDebug(
+            __FUNCTION__,
+            "Online-Firmware für Modell '{$modelName}': {$bestVersion}, URL: {$downloadUrl}",
+            0
+        );
 
         return [
-            'version' => $version,
+            'version' => $bestVersion,
             'url'     => $downloadUrl,
         ];
     }
