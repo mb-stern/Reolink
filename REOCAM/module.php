@@ -550,80 +550,48 @@ class Reolink extends IPSModule
         return json_encode($form);
     }
 
-    /**
-     * Baut die Anzeigezeile für den Firmwarecheck im Konfigurationsformular.
-     * Nutzt die Online-Firmwareliste (README) und vergleicht sie mit den DevInfo-Daten.
-     */
-    private function buildFirmwareCheckMessage(array $dev): string
-    {
-        // Firmware-String (aus DevInfo)
-        $firm = isset($dev['firmVer']) && is_string($dev['firmVer']) && $dev['firmVer'] !== ''
-            ? $dev['firmVer']
-            : 'unbekannt';
+private function buildFirmwareCheckMessage(array $dev): string
+{
+    // 1. Installierte Firmware aus DevInfo
+    $firm = trim($dev['firmVer'] ?? '');
+    $build = trim($dev['build'] ?? '');
 
-        // Build aus DevInfo
-        $build = isset($dev['buildDay']) && is_string($dev['buildDay']) ? $dev['buildDay'] : '';
-        if ($build !== '' && stripos($build, 'build ') === 0) {
-            // "build 2412021483" -> "2412021483"
-            $build = trim(substr($build, 6));
-        }
-        if ($build === '') {
-            $build = 'n/a';
-        }
-
-        // Versuche online Informationen zu holen
-        $info = $this->getOnlineFirmwareInfo($dev);
-        if ($info === null) {
-            // Fallback, wenn wir gar nichts online parsen konnten
-            return sprintf(
-                "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht möglich.",
-                $firm,
-                $build
-            );
-        }
-
-        $installedVersion = $info['installedVersion'] ?? $firm;
-        $installedBuild   = (int)($info['installedBuild'] ?? 0);
-        $latestVersion    = $info['latestVersion'] ?? '';
-        $latestBuild      = (int)($info['latestBuild'] ?? 0);
-        $latestUrl        = $info['latestUrl'] ?? '';
-
-        // Wenn wir keinen gültigen Build haben, können wir nur sehr grob etwas sagen
-        if ($installedBuild <= 0 || $latestBuild <= 0) {
-            if ($latestVersion !== '' && $latestUrl !== '') {
-                return sprintf(
-                    "ℹ️ Firmware: %s – Online-Eintrag gefunden: %s (Download: %s)",
-                    $firm,
-                    $latestVersion,
-                    $latestUrl
-                );
-            }
-
-            return sprintf(
-                "ℹ️ Firmware: %s (Build %s) – Online-Firmwareprüfung nicht eindeutig.",
-                $firm,
-                $build
-            );
-        }
-
-        // Vergleich: gibt es eine neuere Firmware?
-        if ($latestBuild > $installedBuild) {
-            // Neuere Firmware verfügbar
-            return sprintf(
-                "⚠️ Firmwarecheck: Es wurde eine neuere Firmware gefunden (%s, Build %s, Download: %s)",
-                $latestVersion,
-                $latestBuild,
-                $latestUrl
-            );
-        }
-
-        // Alles auf dem aktuellen Stand
-        return sprintf(
-            "✅ Firmwarecheck: Es wurde keine neuere Firmware gefunden (%s, Build %s).",
-            $installedVersion,
-            $build
-        );
+    if ($firm === '') {
+        return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
     }
+
+    $baseText = 'ℹ️ Firmware: ' . $firm;
+    if ($build !== '') {
+        $baseText .= ' (Build ' . $build . ')';
+    }
+
+    // 2. README laden
+    $readme = $this->fetchFirmwareReadme();
+    if ($readme === null || $readme === '') {
+        return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
+    }
+
+    // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
+    //    und dort prüfen, ob es eine neuere gibt.
+    $info = $this->findLatestFirmwareForInstalled($readme, $firm);
+
+    if ($info === null || !$info['installed_found']) {
+        return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
+    }
+
+    if (!$info['is_newer']) {
+        return $baseText . ' – Es wurde keine neuere Firmware gefunden.';
+    }
+
+    // Neuere Version vorhanden
+    $msg = $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $info['latest_version'];
+    if (!empty($info['download_url'])) {
+        $msg .= ' (' . $info['download_url'] . ')';
+    }
+
+    return $msg;
+}
+
 
     protected function CheckFirmwareOnline(array $dev): string
     {
@@ -664,89 +632,6 @@ class Reolink extends IPSModule
         );
     }
 
-    /**
-     * Holt Informationen zur neuesten Online-Firmware für dieses Gerät.
-     * Nutzt den Gerätenamen (z.B. "E Series E540") und Firmwareversion aus DevInfo.
-     *
-     * Rückgabe:
-     * [
-     *   'installedVersion' => string,
-     *   'installedBuild'   => int,
-     *   'latestVersion'    => string,
-     *   'latestBuild'      => int,
-     *   'latestUrl'        => string,
-     * ]
-     */
-    private function getOnlineFirmwareInfo(array $dev): ?array
-    {
-        $readme = $this->fetchFirmwareReadme();
-        if ($readme === null || $readme === '') {
-            return null;
-        }
-
-        $model = isset($dev['model']) && is_string($dev['model']) ? trim($dev['model']) : '';
-        $hw    = isset($dev['exactType']) && is_string($dev['exactType']) ? trim($dev['exactType']) : '';
-        $firm  = isset($dev['firmVer']) && is_string($dev['firmVer']) ? trim($dev['firmVer']) : '';
-
-        // Installierte Buildnummer aus Firmwarestring / buildDay ermitteln
-        $installedBuild = 0;
-        if ($firm !== '' && preg_match('/_([0-9]{5,})$/', $firm, $m)) {
-            $installedBuild = (int)$m[1];
-        } else {
-            $build = isset($dev['buildDay']) && is_string($dev['buildDay']) ? $dev['buildDay'] : '';
-            if ($build !== '' && stripos($build, 'build ') === 0) {
-                $build = trim(substr($build, 6));
-            }
-            if ($build !== '' && preg_match('/([0-9]{5,})/', $build, $m2)) {
-                $installedBuild = (int)$m2[1];
-            }
-        }
-
-        // 1) Versuche, den Gerätebereich über den Modellnamen zu finden
-        $entries = [];
-        if ($model !== '') {
-            $entries = $this->parseFirmwareEntriesForSection($readme, '<summary>' . $model . '</summary>');
-        }
-
-        // 2) Fallback: versuche Hardware-Typ (z.B. "IPC_566SD85MP")
-        if (empty($entries) && $hw !== '') {
-            $entries = $this->parseFirmwareEntriesForSection($readme, '### ' . $hw);
-        }
-
-        // 3) Fallback: Suche global nach der exakten Firmwareversion und nimm alle Einträge in der Nähe
-        if (empty($entries) && $firm !== '') {
-            $entries = $this->parseFirmwareEntriesByVersion($readme, $firm);
-        }
-
-        if (empty($entries)) {
-            $this->SendDebug('FirmwareCheck', 'Keine passenden Firmware-Einträge im README gefunden.', 0);
-            return null;
-        }
-
-        // höchste Buildnummer bestimmen
-        $latest = null;
-        foreach ($entries as $row) {
-            if (!isset($row['build']) || $row['build'] <= 0) {
-                continue;
-            }
-            if ($latest === null || $row['build'] > $latest['build']) {
-                $latest = $row;
-            }
-        }
-
-        if ($latest === null) {
-            return null;
-        }
-
-        return [
-            'installedVersion' => $firm,
-            'installedBuild'   => $installedBuild,
-            'latestVersion'    => $latest['version'],
-            'latestBuild'      => $latest['build'],
-            'latestUrl'        => $latest['url'],
-        ];
-    }
-
     private function fetchFirmwareReadme(): ?string
     {
         // ggf. anpassen, wenn du eine eigene Kopie nutzt
@@ -781,326 +666,29 @@ class Reolink extends IPSModule
         return $result;
     }
 
-    /**
-     * Parst alle Firmwarezeilen innerhalb eines bestimmten Abschnitts
-     * (z.B. "<summary>E Series E540</summary>" ... "</details>").
-     */
-    private function parseFirmwareEntriesForSection(string $readme, string $anchor): array
+
+    private function extractFirmwareBuild(string $ver): int
     {
-        $entries = [];
-
-        $pos = strpos($readme, $anchor);
-        if ($pos === false) {
-            return $entries;
-        }
-
-        // Schneide den Bereich ab dem Anker aus
-        $chunk = substr($readme, $pos);
-
-        // Bis zum Ende des Details-Blocks oder Dateiende begrenzen
-        $endPos = strpos($chunk, '</details>');
-        if ($endPos !== false) {
-            $chunk = substr($chunk, 0, $endPos);
-        }
-
-        // In diesem Block nach Versionszeilen suchen:
-        // [v3.1.0.4366_2412021483](https://...) | 2024-12-02 | ...
-        if (preg_match_all('/\[(v[0-9][^\]]*)\]\((https?:\/\/[^)]+)\)/', $chunk, $m, PREG_SET_ORDER)) {
-            foreach ($m as $row) {
-                $version = $row[1];
-                $url     = $row[2];
-
-                $build = 0;
-                if (preg_match('/_([0-9]{5,})$/', $version, $mb)) {
-                    $build = (int)$mb[1];
-                }
-
-                $entries[] = [
-                    'version' => $version,
-                    'build'   => $build,
-                    'url'     => $url,
-                ];
-            }
-        }
-
-        return $entries;
-    }
-
-    /**
-     * Fallback: Suche global nach der angegebenen Firmware-Version im README
-     * und sammle alle Versionszeilen im selben Abschnitt.
-     */
-    private function parseFirmwareEntriesByVersion(string $readme, string $firmVer): array
-    {
-        $entries = [];
-
-        $pos = strpos($readme, $firmVer);
-        if ($pos === false) {
-            return $entries;
-        }
-
-        // Wir suchen den Beginn des umgebenden <details>-Blocks vor der Fundstelle
-        $startPos = strrpos(substr($readme, 0, $pos), '<details>');
-        if ($startPos === false) {
-            $startPos = max(strrpos(substr($readme, 0, $pos), '### '), 0);
-        }
-
-        $chunk = substr($readme, $startPos);
-
-        $endPos = strpos($chunk, '</details>');
-        if ($endPos !== false) {
-            $chunk = substr($chunk, 0, $endPos);
-        }
-
-        // In diesem Block wieder alle Versionslinks einsammeln
-        if (preg_match_all('/\[(v[0-9][^\]]*)\]\((https?:\/\/[^)]+)\)/', $chunk, $m, PREG_SET_ORDER)) {
-            foreach ($m as $row) {
-                $version = $row[1];
-                $url     = $row[2];
-
-                $build = 0;
-                if (preg_match('/_([0-9]{5,})$/', $version, $mb)) {
-                    $build = (int)$mb[1];
-                }
-
-                $entries[] = [
-                    'version' => $version,
-                    'build'   => $build,
-                    'url'     => $url,
-                ];
-            }
-        }
-
-        return $entries;
-    }
-
-
-    private function extractFirmwareBuild(string $firmVer): ?int
-    {
-        // Typisch: v3.1.0.4366_2412021483  -> wir nehmen 2412021483
-        if (preg_match('/_(\d{6,})$/', $firmVer, $m)) {
+        // Erwartet z.B. v3.0.0.3471_2406116464 -> extrahiert 2406116464
+        if (preg_match('/_(\d+)$/', trim($ver), $m)) {
             return (int)$m[1];
-        }
-        // Fallback: irgendwo im String eine längere Ziffernfolge
-        if (preg_match('/(\d{6,})/', $firmVer, $m)) {
-            return (int)$m[1];
-        }
-        return null;
-    }
-
-    private function compareFirmwareStrings(string $installed, string $online): int
-    {
-        // -1 = installiert älter, 0 = gleich, 1 = installiert neuer
-
-        if ($installed === $online) {
-            return 0;
-        }
-
-        $normalize = function (string $v): array {
-            $v = trim($v);
-            $main  = $v;
-            $build = 0;
-
-            if (strpos($v, '_') !== false) {
-                [$main, $buildStr] = explode('_', $v, 2);
-                $build = (int)preg_replace('/\D/', '', $buildStr);
-            }
-
-            $main = ltrim($main, "vV");
-            $parts = array_map('intval', explode('.', $main));
-            while (count($parts) < 4) {
-                $parts[] = 0;
-            }
-            $parts[] = $build;
-
-            return $parts;
-        };
-
-        $a = $normalize($installed);
-        $b = $normalize($online);
-
-        $len = max(count($a), count($b));
-        for ($i = 0; $i < $len; $i++) {
-            $ai = $a[$i] ?? 0;
-            $bi = $b[$i] ?? 0;
-            if ($ai < $bi) {
-                return -1;
-            }
-            if ($ai > $bi) {
-                return 1;
-            }
         }
         return 0;
     }
 
     /**
-     * Liest das Firmware-README von GitHub und sucht NUR im Block des
-     * Kameramodells (z.B. "Reolink Duo 2 WiFi") nach der neuesten Firmware.
-     * Optional wird innerhalb dieses Blocks noch die Hardware-ID (hardVer) beachtet.
-     *
-     * @param array $dev DevInfo aus der Kamera (mind. 'model' und optional 'hardVer')
-     * @return array|null ['version' => 'v3.x.y.z_YYYYMMDD', 'url' => 'https://...'] oder null bei Fehler
+     * Vergleicht zwei Firmware-Versionen anhand der Build-Nummer.
+     * Rückgabe wie strcmp: <0 = a älter, 0 = gleich, >0 = a neuer als b.
      */
-    private function fetchLatestFirmwareFromGithub(array $dev): ?array
+    private function compareFirmwareVersions(string $a, string $b): int
     {
-        $hwRaw    = trim($dev['hardVer'] ?? '');
-        $modelRaw = trim($dev['model'] ?? '');
+        $ba = $this->extractFirmwareBuild($a);
+        $bb = $this->extractFirmwareBuild($b);
 
-        if ($modelRaw === '' && $hwRaw === '') {
-            $this->SendDebug(__FUNCTION__, 'Kein Modell / keine Hardware-ID in DevInfo gefunden.', 0);
-            return null;
+        if ($ba === $bb) {
+            return 0;
         }
-
-        // Modellname so, wie er im Formular steht (alles hinter "(" abschneiden)
-        // z.B. "Reolink Duo 2 WiFi (IPC_529B17B8MP)" -> "Reolink Duo 2 WiFi"
-        $modelName = preg_replace('/\s*\(.*$/', '', $modelRaw);
-        $this->SendDebug(__FUNCTION__, "Suche Firmware für Modell '{$modelName}', HW '{$hwRaw}'", 0);
-
-        $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
-        $ctx = stream_context_create([
-            'http' => [
-                'timeout' => 5,
-                'header'  => "User-Agent: IP-Symcon-Reolink\r\n"
-            ]
-        ]);
-
-        $readme = @file_get_contents($url, false, $ctx);
-        if ($readme === false || $readme === '') {
-            $this->SendDebug(__FUNCTION__, 'README konnte nicht von GitHub geladen werden.', 0);
-            return null;
-        }
-
-        $lines = preg_split("/\r\n|\n|\r/", $readme);
-        $cnt   = count($lines);
-
-        // 1) Den <summary>-Block für GENAU dieses Modell suchen
-        $summaryIndex = -1;
-        for ($i = 0; $i < $cnt; $i++) {
-            $line = trim($lines[$i]);
-            if (stripos($line, '<summary>') !== false && stripos($line, $modelName) !== false) {
-                $summaryIndex = $i;
-                break;
-            }
-        }
-
-        if ($summaryIndex === -1) {
-            $this->SendDebug(__FUNCTION__, "Kein <summary>-Block für Modell '{$modelName}' gefunden.", 0);
-            return null;
-        }
-
-        // 2) Ende des <details>-Blocks finden
-        $detailsEnd = $cnt;
-        for ($i = $summaryIndex + 1; $i < $cnt; $i++) {
-            if (stripos($lines[$i], '</details>') !== false) {
-                $detailsEnd = $i;
-                break;
-            }
-        }
-
-        // 3) Innerhalb dieses Blocks nach passender Hardware-Section suchen (### HWID)
-        $foundBlockLines = [];
-        for ($i = $summaryIndex + 1; $i < $detailsEnd; $i++) {
-            $line = trim($lines[$i]);
-
-            if (preg_match('/^###\s+(\S+)/', $line, $m)) {
-                $currentHw = trim($m[1]);
-
-                // Standardmäßig nehmen wir die erste HW in diesem Modellblock.
-                $matchesHw = true;
-
-                if ($hwRaw !== '') {
-                    // wenn wir eine Hardware-ID aus DevInfo haben, versuchen wir, genau diese zu matchen
-                    $matchesHw = ($currentHw === $hwRaw);
-
-                    // kleiner Fallback: viele HW-IDs haben einen "MP"-Suffix
-                    if (!$matchesHw) {
-                        $shortHw = preg_replace('/MP$/', '', $hwRaw);
-                        if ($shortHw !== $hwRaw && $currentHw === $shortHw) {
-                            $matchesHw = true;
-                        }
-                    }
-                }
-
-                if ($matchesHw) {
-                    // alle Zeilen bis zur nächsten "###" oder dem Ende des <details>-Blocks einsammeln
-                    $block = [];
-                    for ($j = $i + 1; $j < $detailsEnd; $j++) {
-                        $l2 = trim($lines[$j]);
-                        if (preg_match('/^###\s+\S+/', $l2) || stripos($l2, '<summary>') !== false) {
-                            break;
-                        }
-                        $block[] = $lines[$j];
-                    }
-                    $foundBlockLines = $block;
-                    $this->SendDebug(__FUNCTION__, "Gefundener Firmware-Block für Modell '{$modelName}' / HW '{$currentHw}'.", 0);
-                    break;
-                }
-            }
-        }
-
-        if (empty($foundBlockLines)) {
-            $this->SendDebug(__FUNCTION__, "Kein Firmware-Block im README für Modell '{$modelName}' (HW '{$hwRaw}') gefunden.", 0);
-            return null;
-        }
-
-        // 4) Aus dem Block alle Firmware-Versionen herausziehen
-        $joined = implode("\n", $foundBlockLines);
-        if (!preg_match_all('/v\d+\.\d+\.\d+\.\d+_\d+/', $joined, $mVers) || empty($mVers[0])) {
-            $this->SendDebug(__FUNCTION__, "Im Firmware-Block für Modell '{$modelName}' keine Versionszeichenketten gefunden.", 0);
-            return null;
-        }
-
-        $versions = array_unique($mVers[0]);
-
-        // 5) Neueste Version bestimmen (mit compareFirmwareVersions)
-        $bestVersion = null;
-        $bestBuild   = null;
-        foreach ($versions as $v) {
-            $build = $this->extractFirmwareBuild($v);
-
-            if ($bestVersion === null) {
-                $bestVersion = $v;
-                $bestBuild   = $build;
-                continue;
-            }
-
-            $cmp = $this->compareFirmwareVersions(
-                $bestVersion,
-                $v,
-                $bestBuild,
-                $build
-            );
-
-            if ($cmp < 0) {
-                $bestVersion = $v;
-                $bestBuild   = $build;
-            }
-        }
-
-        if ($bestVersion === null) {
-            $this->SendDebug(__FUNCTION__, "Konnte in den gefundenen Zeilen keine „beste“ Version bestimmen.", 0);
-            return null;
-        }
-
-        // 6) Download-URL aus der Zeile mit der besten Version ziehen
-        $downloadUrl = '';
-        foreach ($foundBlockLines as $l) {
-            if (strpos($l, $bestVersion) !== false && preg_match('/https?:\/\/\S+/', $l, $mm)) {
-                $downloadUrl = rtrim($mm[0], ".)");
-                break;
-            }
-        }
-
-        $this->SendDebug(
-            __FUNCTION__,
-            "Online-Firmware für Modell '{$modelName}': {$bestVersion}, URL: {$downloadUrl}",
-            0
-        );
-
-        return [
-            'version' => $bestVersion,
-            'url'     => $downloadUrl,
-        ];
+        return ($ba < $bb) ? -1 : 1;
     }
 
     // -1 = $a älter, 0 = gleich, 1 = $a neuer
@@ -1130,82 +718,6 @@ class Reolink extends IPSModule
         if ($aBuild < $bBuild) return -1;
         if ($aBuild > $bBuild) return 1;
         return 0;
-    }
-
-    private function findLatestFirmwareInSameTable(string $readme, string $installed): ?array
-    {
-        $installed = trim($installed);
-        if ($installed === '') {
-            return null;
-        }
-
-        $lines = preg_split('/\R/', $readme);
-        $n = count($lines);
-
-        // 1) Zeile finden, die die installierte Firmware enthält
-        $posLine = -1;
-        for ($i = 0; $i < $n; $i++) {
-            if (stripos($lines[$i], $installed) !== false) {
-                $posLine = $i;
-                break;
-            }
-        }
-        if ($posLine === -1) {
-            return null; // Firmware nicht im README
-        }
-
-        // 2) Nach oben laufen bis zur Tabellen-Headerzeile "Version |"
-        $headerIndex = $posLine;
-        while ($headerIndex >= 0 && stripos($lines[$headerIndex], 'Version') === false) {
-            $headerIndex--;
-        }
-        if ($headerIndex < 0 || strpos($lines[$headerIndex], '|') === false) {
-            return null; // keine Tabelle gefunden
-        }
-
-        // 3) Ab Header + 2 (Header + Separator) Tabellenzeilen einsammeln
-        $rowStart = $headerIndex + 2; // Zeile mit --- | --- | --- | ---
-        $rows = [];
-        for ($i = $rowStart; $i < $n; $i++) {
-            $line = trim($lines[$i]);
-            if ($line === '' || strpos($line, '|') === false) {
-                break; // Tabelle zu Ende
-            }
-            $rows[] = $line;
-        }
-        if (empty($rows)) {
-            return null;
-        }
-
-        // 4) Zeilen parsen: erste Spalte im Format [vX.Y.Z_BBBBB](URL.zip...)
-        $pattern = '/^\s*\[(v[0-9._]+)\]\((https?:\/\/[^)]+\.zip[^)]*)\)/i';
-        $entries = [];
-        foreach ($rows as $line) {
-            if (preg_match($pattern, $line, $m)) {
-                $entries[] = [
-                    'version' => $m[1],
-                    'url'     => $m[2],
-                ];
-            }
-        }
-        if (empty($entries)) {
-            return null;
-        }
-
-        // 5) Höchste Version in dieser Tabelle bestimmen
-        $latest = $entries[0];
-        foreach ($entries as $entry) {
-            if ($this->compareFirmwareVersions($entry['version'], $latest['version']) > 0) {
-                $latest = $entry;
-            }
-        }
-
-        return [
-            'installed' => $installed,
-            'latest'    => $latest['version'],
-            'download'  => $latest['url'],
-            'is_newer'  => ($this->compareFirmwareVersions($latest['version'], $installed) > 0)
-        ];
     }
 
     // Sucht die passende <tr>-Zeile im README, die sowohl Modell als auch installierte Firmware enthält
@@ -1258,16 +770,17 @@ class Reolink extends IPSModule
     }
 
         /**
-     * Sucht im README die Zeile mit der installierten Firmware
-     * und wertet nur die dazugehörige Tabelle aus.
+     * Sucht im README genau die Tabelle, in der die installierte Firmware-Version vorkommt
+     * und ermittelt dort die neueste Version.
      *
      * Rückgabe:
-     *   [
-     *     'installed' => 'v3.0.0.3471_2406116464',
-     *     'latest'    => 'v3.0.0.4428_2412183304',
-     *     'download'  => 'https://...zip',
-     *     'is_newer'  => true/false
-     *   ]
+     *  [
+     *      'installed_found' => bool,
+     *      'installed_version' => string,
+     *      'latest_version'    => ?string,
+     *      'download_url'      => ?string,
+     *      'is_newer'          => bool
+     *  ] | null
      */
     private function findLatestFirmwareForInstalled(string $readme, string $installed): ?array
     {
@@ -1276,73 +789,101 @@ class Reolink extends IPSModule
             return null;
         }
 
-        $lines = preg_split('/\R/', $readme);
-        $n     = count($lines);
+        $pos = strpos($readme, $installed);
+        if ($pos === false) {
+            // Firmware kommt im gesamten README nicht vor
+            return [
+                'installed_found'  => false,
+                'installed_version'=> $installed,
+                'latest_version'   => null,
+                'download_url'     => null,
+                'is_newer'         => false
+            ];
+        }
 
-        // 1) Zeile finden, in der die installierte Firmware vorkommt
-        $posLine = -1;
-        for ($i = 0; $i < $n; $i++) {
-            if (stripos($lines[$i], $installed) !== false) {
-                $posLine = $i;
-                break;
+        // 1. Anfang der dazugehörigen Tabelle finden: letzte "Version |" vor der Fundstelle
+        $before = substr($readme, 0, $pos);
+        $headerPos = strrpos($before, "\nVersion |");
+        if ($headerPos === false) {
+            // Keine Tabellen-Überschrift gefunden
+            return [
+                'installed_found'  => false,
+                'installed_version'=> $installed,
+                'latest_version'   => null,
+                'download_url'     => null,
+                'is_newer'         => false
+            ];
+        }
+
+        $tableStart = $headerPos + 1; // +1 um das \n zu überspringen
+
+        // 2. Ende der Tabelle: nächstes Leerzeilen-"### " oder "<details" oder Dateiende
+        $after = substr($readme, $pos);
+        $endOffset = strlen($after);
+
+        $candidates = [];
+        $p = strpos($after, "\n\n### ");
+        if ($p !== false) {
+            $candidates[] = $p;
+        }
+        $p = strpos($after, "\n\n<details");
+        if ($p !== false) {
+            $candidates[] = $p;
+        }
+        if (!empty($candidates)) {
+            $endOffset = min($candidates);
+        }
+
+        $tableEnd = $pos + $endOffset;
+        $table = substr($readme, $tableStart, $tableEnd - $tableStart);
+
+        // 3. Alle Firmware-Zeilen in dieser Tabelle parsen:
+        //    Format: [v3.0.0.3471_2406116464](https://...)
+        $pattern = '/^\[(v[^\]]+)\]\(([^)]+)\)/m';
+        if (!preg_match_all($pattern, $table, $matches, PREG_SET_ORDER)) {
+            return [
+                'installed_found'  => true,
+                'installed_version'=> $installed,
+                'latest_version'   => null,
+                'download_url'     => null,
+                'is_newer'         => false
+            ];
+        }
+
+        $installedFound = false;
+        $installedVersion = $installed;
+        $installedBuild = $this->extractFirmwareBuild($installedVersion);
+
+        $latestVersion = $installedVersion;
+        $latestBuild   = $installedBuild;
+        $latestUrl     = null;
+
+        foreach ($matches as $m) {
+            $ver = trim($m[1]);   // z.B. v3.0.0.4428_2412183304
+            $url = trim($m[2]);   // Download-Link
+
+            if ($ver === $installedVersion) {
+                $installedFound = true;
+            }
+
+            $build = $this->extractFirmwareBuild($ver);
+
+            // Ist diese Version neuer als die bisherige "latest"?
+            if ($this->compareFirmwareVersions($latestVersion, $ver) < 0) {
+                $latestVersion = $ver;
+                $latestBuild   = $build;
+                $latestUrl     = $url;
             }
         }
-        if ($posLine === -1) {
-            // Firmware steht in keiner Tabelle => keine Auswertung möglich
-            return null;
-        }
 
-        // 2) Von dort nach oben bis zum Tabellen-Header "Version |"
-        $headerIndex = $posLine;
-        while ($headerIndex >= 0 && stripos($lines[$headerIndex], 'Version') === false) {
-            $headerIndex--;
-        }
-        if ($headerIndex < 0 || strpos($lines[$headerIndex], '|') === false) {
-            return null; // keine gültige Tabelle gefunden
-        }
-
-        // 3) Ab Header + 2 (Header + '--- | --- | --- | ---') Tabellenzeilen einsammeln
-        $rowStart = $headerIndex + 2;
-        $rows     = [];
-        for ($i = $rowStart; $i < $n; $i++) {
-            $line = trim($lines[$i]);
-            if ($line === '' || strpos($line, '|') === false) {
-                break; // Tabelle zu Ende
-            }
-            $rows[] = $line;
-        }
-        if (empty($rows)) {
-            return null;
-        }
-
-        // 4) Jede Zeile: erste Spalte im Format [vX.Y.Z_BBBB](URL...)
-        $pattern = '/^\s*\[(v[0-9._]+)\]\((https?:\/\/[^)]+\.zip[^)]*)\)/i';
-        $entries = [];
-        foreach ($rows as $line) {
-            if (preg_match($pattern, $line, $m)) {
-                $entries[] = [
-                    'version' => $m[1],
-                    'url'     => $m[2],
-                ];
-            }
-        }
-        if (empty($entries)) {
-            return null;
-        }
-
-        // 5) Neueste Version innerhalb dieser EINEN Tabelle bestimmen
-        $latest = $entries[0];
-        foreach ($entries as $entry) {
-            if ($this->compareFirmwareVersions($entry['version'], $latest['version']) > 0) {
-                $latest = $entry;
-            }
-        }
+        $isNewer = ($latestBuild > $installedBuild);
 
         return [
-            'installed' => $installed,
-            'latest'    => $latest['version'],
-            'download'  => $latest['url'],
-            'is_newer'  => ($this->compareFirmwareVersions($latest['version'], $installed) > 0)
+            'installed_found'  => $installedFound,
+            'installed_version'=> $installedVersion,
+            'latest_version'   => $isNewer ? $latestVersion : $installedVersion,
+            'download_url'     => $isNewer ? $latestUrl : null,
+            'is_newer'         => $isNewer
         ];
     }
 
