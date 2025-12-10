@@ -740,18 +740,17 @@ private function buildFirmwareCheckMessage(array $dev): string
         return $result;
     }
 
-        /**
-     * Sucht im README genau die Tabelle, in der die installierte Firmware-Version vorkommt
-     * und ermittelt dort die neueste Version.
+    /**
+     * Sucht im README die Zeile mit der installierten Firmware
+     * und wertet nur die dazugehörige Tabelle aus.
      *
      * Rückgabe:
-     *  [
-     *      'installed_found' => bool,
-     *      'installed_version' => string,
-     *      'latest_version'    => ?string,
-     *      'download_url'      => ?string,
-     *      'is_newer'          => bool
-     *  ] | null
+     *   [
+     *     'installed' => 'v3.0.0.3471_2406116464',
+     *     'latest'    => 'v3.0.0.4428_2412183304',
+     *     'download'  => 'https://…zip',
+     *     'is_newer'  => true/false
+     *   ]
      */
     private function findLatestFirmwareForInstalled(string $readme, string $installed): ?array
     {
@@ -760,101 +759,83 @@ private function buildFirmwareCheckMessage(array $dev): string
             return null;
         }
 
-        $pos = strpos($readme, $installed);
-        if ($pos === false) {
-            // Firmware kommt im gesamten README nicht vor
-            return [
-                'installed_found'  => false,
-                'installed_version'=> $installed,
-                'latest_version'   => null,
-                'download_url'     => null,
-                'is_newer'         => false
-            ];
+        // README in einzelne Zeilen aufspalten (funktioniert mit \n, \r\n, …)
+        $lines = preg_split('/\R/', $readme);
+        if (!is_array($lines) || empty($lines)) {
+            return null;
         }
+        $n = count($lines);
 
-        // 1. Anfang der dazugehörigen Tabelle finden: letzte "Version |" vor der Fundstelle
-        $before = substr($readme, 0, $pos);
-        $headerPos = strrpos($before, "\nVersion |");
-        if ($headerPos === false) {
-            // Keine Tabellen-Überschrift gefunden
-            return [
-                'installed_found'  => false,
-                'installed_version'=> $installed,
-                'latest_version'   => null,
-                'download_url'     => null,
-                'is_newer'         => false
-            ];
-        }
-
-        $tableStart = $headerPos + 1; // +1 um das \n zu überspringen
-
-        // 2. Ende der Tabelle: nächstes Leerzeilen-"### " oder "<details" oder Dateiende
-        $after = substr($readme, $pos);
-        $endOffset = strlen($after);
-
-        $candidates = [];
-        $p = strpos($after, "\n\n### ");
-        if ($p !== false) {
-            $candidates[] = $p;
-        }
-        $p = strpos($after, "\n\n<details");
-        if ($p !== false) {
-            $candidates[] = $p;
-        }
-        if (!empty($candidates)) {
-            $endOffset = min($candidates);
-        }
-
-        $tableEnd = $pos + $endOffset;
-        $table = substr($readme, $tableStart, $tableEnd - $tableStart);
-
-        // 3. Alle Firmware-Zeilen in dieser Tabelle parsen:
-        //    Format: [v3.0.0.3471_2406116464](https://...)
-        $pattern = '/^\[(v[^\]]+)\]\(([^)]+)\)/m';
-        if (!preg_match_all($pattern, $table, $matches, PREG_SET_ORDER)) {
-            return [
-                'installed_found'  => true,
-                'installed_version'=> $installed,
-                'latest_version'   => null,
-                'download_url'     => null,
-                'is_newer'         => false
-            ];
-        }
-
-        $installedFound = false;
-        $installedVersion = $installed;
-        $installedBuild = $this->extractFirmwareBuild($installedVersion);
-
-        $latestVersion = $installedVersion;
-        $latestBuild   = $installedBuild;
-        $latestUrl     = null;
-
-        foreach ($matches as $m) {
-            $ver = trim($m[1]);   // z.B. v3.0.0.4428_2412183304
-            $url = trim($m[2]);   // Download-Link
-
-            if ($ver === $installedVersion) {
-                $installedFound = true;
-            }
-
-            $build = $this->extractFirmwareBuild($ver);
-
-            // Ist diese Version neuer als die bisherige "latest"?
-            if ($this->compareFirmwareVersions($latestVersion, $ver) < 0) {
-                $latestVersion = $ver;
-                $latestBuild   = $build;
-                $latestUrl     = $url;
+        // 1) Zeile finden, in der die installierte Firmware vorkommt
+        $posLine = -1;
+        for ($i = 0; $i < $n; $i++) {
+            if (stripos($lines[$i], $installed) !== false) {
+                $posLine = $i;
+                break;
             }
         }
+        if ($posLine === -1) {
+            // Firmware steht in keiner Tabelle => keine Auswertung möglich
+            $this->SendDebug(__FUNCTION__, 'Installierte Firmware im README nicht gefunden: '.$installed, 0);
+            return null;
+        }
 
-        $isNewer = ($latestBuild > $installedBuild);
+        // 2) Von dort nach oben bis zum Tabellen-Header "Version |"
+        $headerIndex = $posLine;
+        while ($headerIndex >= 0 && stripos($lines[$headerIndex], 'Version') === false) {
+            $headerIndex--;
+        }
+        if ($headerIndex < 0 || strpos($lines[$headerIndex], '|') === false) {
+            $this->SendDebug(__FUNCTION__, 'Kein Tabellenkopf "Version |" vor der Firmwarezeile gefunden.', 0);
+            return null; // keine gültige Tabelle gefunden
+        }
+
+        // 3) Ab Header + 2 (Header + '--- | --- | --- | ---') Tabellenzeilen einsammeln
+        $rowStart = $headerIndex + 2;
+        $rows     = [];
+        for ($i = $rowStart; $i < $n; $i++) {
+            $line = trim($lines[$i]);
+
+            // Tabelle endet bei leerer Zeile oder Zeilen ohne '|'
+            if ($line === '' || strpos($line, '|') === false) {
+                break;
+            }
+            $rows[] = $line;
+        }
+        if (empty($rows)) {
+            $this->SendDebug(__FUNCTION__, 'Keine Tabellenzeilen nach dem Header gefunden.', 0);
+            return null;
+        }
+
+        // 4) Jede Zeile: erste Spalte im Format [vX.Y.Z_BBBB](URL.zip…)
+        $pattern = '/^\s*\[(v[0-9._]+)\]\((https?:\/\/[^)]+\.zip[^)]*)\)/i';
+        $entries = [];
+        foreach ($rows as $line) {
+            if (preg_match($pattern, $line, $m)) {
+                $entries[] = [
+                    'version' => $m[1],
+                    'url'     => $m[2],
+                ];
+            }
+        }
+        if (empty($entries)) {
+            $this->SendDebug(__FUNCTION__, 'Keine Firmware-Einträge in der Tabelle gefunden.', 0);
+            return null;
+        }
+
+        // 5) Neueste Version innerhalb dieser Tabelle bestimmen
+        $latest = $entries[0];
+        foreach ($entries as $e) {
+            if ($this->compareFirmwareStrings($latest['version'], $e['version']) < 0) {
+                $latest = $e;
+            }
+        }
 
         return [
-            'installed_found'  => $installedFound,
-            'installed_version'=> $installedVersion,
-            'latest_version'   => $isNewer ? $latestVersion : $installedVersion,
-            'download_url'     => $isNewer ? $latestUrl : null,
-            'is_newer'         => $isNewer
+            'installed' => $installed,
+            'latest'    => $latest['version'],
+            'download'  => $latest['url'],
+            'is_newer'  => ($this->compareFirmwareStrings($installed, $latest['version']) < 0),
         ];
     }
 
