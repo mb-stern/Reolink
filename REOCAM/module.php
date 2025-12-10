@@ -839,6 +839,84 @@ private function buildFirmwareCheckMessage(array $dev): string
         ];
     }
 
+    /**
+     * Vergleicht zwei Reolink-Firmwarestrings wie
+     *   v3.0.0.3471_2406116464
+     *   v3.0.0.4428_2412183304
+     *
+     * Rückgabe:
+     *   < 0  => $a ist älter als $b
+     *   = 0  => gleich
+     *   > 0  => $a ist neuer als $b
+     */
+    private function compareFirmwareStrings(string $a, string $b): int
+    {
+        $a = trim($a);
+        $b = trim($b);
+
+        if ($a === $b) {
+            return 0;
+        }
+
+        // "v" am Anfang entfernen
+        if ($a !== '' && ($a[0] === 'v' || $a[0] === 'V')) {
+            $a = substr($a, 1);
+        }
+        if ($b !== '' && ($b[0] === 'v' || $b[0] === 'V')) {
+            $b = substr($b, 1);
+        }
+
+        // in Basis-Version und Build aufsplitten: 3.0.0.3471_2406116464
+        $parse = function (string $fw): array {
+            $base  = $fw;
+            $build = 0;
+
+            // Teil hinter '_' als Build interpretieren, falls vorhanden
+            if (strpos($fw, '_') !== false) {
+                [$base, $buildStr] = explode('_', $fw, 2);
+                // Build als Integer, wenn möglich
+                if (is_numeric($buildStr)) {
+                    $build = (int)$buildStr;
+                }
+            }
+
+            // Basis-Teil in numerische Komponenten zerlegen (3.0.0.3471)
+            $parts = array_map('intval', preg_split('/[^\d]+/', $base, -1, PREG_SPLIT_NO_EMPTY));
+
+            return [
+                'parts' => $parts,
+                'build' => $build,
+            ];
+        };
+
+        $pa = $parse($a);
+        $pb = $parse($b);
+
+        // erst Basis-Teile vergleichen
+        $len = max(count($pa['parts']), count($pb['parts']));
+        for ($i = 0; $i < $len; $i++) {
+            $va = $pa['parts'][$i] ?? 0;
+            $vb = $pb['parts'][$i] ?? 0;
+            if ($va < $vb) {
+                return -1;
+            }
+            if ($va > $vb) {
+                return 1;
+            }
+        }
+
+        // wenn Basis gleich: Build vergleichen
+        if ($pa['build'] < $pb['build']) {
+            return -1;
+        }
+        if ($pa['build'] > $pb['build']) {
+            return 1;
+        }
+
+        // Fallback, falls alles gleich aussieht
+        return 0;
+    }
+
     private function apiGetDevInfoFresh(): array
     {
         $attr     = 'DevInfoCache';
