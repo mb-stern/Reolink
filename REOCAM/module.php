@@ -691,35 +691,6 @@ private function buildFirmwareCheckMessage(array $dev): string
         return ($ba < $bb) ? -1 : 1;
     }
 
-    // -1 = $a älter, 0 = gleich, 1 = $a neuer
-    private function compareFirmwareVersions(string $a, string $b): int
-    {
-        $a = trim($a);
-        $b = trim($b);
-        $a = ltrim($a, "vV \t");
-        $b = ltrim($b, "vV \t");
-
-        [$aMain, $aBuild] = array_pad(explode('_', $a, 2), 2, '0');
-        [$bMain, $bBuild] = array_pad(explode('_', $b, 2), 2, '0');
-
-        $aParts = array_map('intval', explode('.', $aMain));
-        $bParts = array_map('intval', explode('.', $bMain));
-
-        $len = max(count($aParts), count($bParts));
-        for ($i = 0; $i < $len; $i++) {
-            $ai = $aParts[$i] ?? 0;
-            $bi = $bParts[$i] ?? 0;
-            if ($ai < $bi) return -1;
-            if ($ai > $bi) return 1;
-        }
-
-        $aBuild = (int)$aBuild;
-        $bBuild = (int)$bBuild;
-        if ($aBuild < $bBuild) return -1;
-        if ($aBuild > $bBuild) return 1;
-        return 0;
-    }
-
     // Sucht die passende <tr>-Zeile im README, die sowohl Modell als auch installierte Firmware enthält
     private function findFirmwareRowForDevice(string $readme, string $model, string $installedFw): ?string
     {
