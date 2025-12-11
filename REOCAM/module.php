@@ -577,11 +577,10 @@ class Reolink extends IPSModule
 private function buildFirmwareCheckMessage(array $dev): string
 {
     // 1. Installierte Firmware aus DevInfo
-    $firm  = trim($dev['firmVer'] ?? '');
+    $firm = trim($dev['firmVer'] ?? '');
     $build = trim($dev['build'] ?? '');
 
     if ($firm === '') {
-        $this->UpdateFirmwareVariables(null);
         return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
     }
 
@@ -593,36 +592,27 @@ private function buildFirmwareCheckMessage(array $dev): string
     // 2. README laden
     $readme = $this->fetchFirmwareReadme();
     if ($readme === null || $readme === '') {
-        $this->UpdateFirmwareVariables(null);
         return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
     }
 
-    // 3. Innerhalb der README die passende Tabelle finden
+    // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
+    //    und dort prüfen, ob es eine neuere gibt.
     $info = $this->findLatestFirmwareForInstalled($readme, $firm);
-
-    // Firmware-Variablen immer aktualisieren
     $this->UpdateFirmwareVariables($info);
 
-    if ($info === null || empty($info['installed_found'])) {
+    if ($info === null || !$info['installed_found']) {
         return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
     }
 
-    if (empty($info['is_newer'])) {
+    if (!$info['is_newer']) {
         return $baseText . ' – Es wurde keine neuere Firmware gefunden.';
     }
 
-    // ⭐ Neuere Version vorhanden → Versionstext als Link bauen
-    $linkText = $info['latest_version'];
-
+    // Neuere Version vorhanden
+    $msg = $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $info['latest_version'];
     if (!empty($info['download_url'])) {
-        $linkText = sprintf(
-            '<a href="%s" target="_blank">%s</a>',
-            $info['download_url'],
-            $info['latest_version']
-        );
+        $msg .= ' (' . $info['download_url'] . ')';
     }
-
-    $msg = $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $linkText;
 
     return $msg;
 }
