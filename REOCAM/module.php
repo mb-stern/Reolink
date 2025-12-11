@@ -1964,8 +1964,8 @@ private function buildFirmwareCheckMessage(array $dev): string
 
         // -------- Firmwarevariablen--------
         if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
-            $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware gefunden", "~Switch", -10);
-            $this->RegisterVariableString("FirmwareDownloadUrl", "Firmware Downloadlink", "~HTMLBox", -9);
+            $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware gefunden", "~Switch", 12);
+            $this->RegisterVariableString("FirmwareDownloadUrl", "Firmware Downloadlink", "~HTMLBox", 13);
 
         } else {
             $this->UnregisterVariable("FirmwareUpdateAvailable");
