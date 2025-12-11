@@ -110,28 +110,6 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("PollingTimer", 0);
         }
 
-        // Firmwarevaraiblen
-
-        $enableFwVars = $this->ReadPropertyBoolean('EnableFirmwareVariables');
-
-        if ($enableFwVars) {
-            // Variablen registrieren (falls noch nicht vorhanden)
-            $this->RegisterVariableBoolean(
-                'FirmwareUpdateAvailable',
-                'Neue Firmware gefunden',
-                ''
-            );
-            $this->RegisterVariableString(
-                'FirmwareDownloadUrl',
-                'Firmware Downloadlink',
-                ''
-            );
-        } else {
-            // Variablen entfernen
-            $this->UnregisterVariable('FirmwareUpdateAvailable');
-            $this->UnregisterVariable('FirmwareDownloadUrl');
-        }
-
         // API-Schalter
         $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
         $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
@@ -1982,6 +1960,16 @@ private function buildFirmwareCheckMessage(array $dev): string
         if (@$this->GetIDForIdent('KameraOnline') === false) {
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
+        }
+
+        // -------- Firmwarevariablen--------
+        if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
+            $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware gefunden", "~Switch", -10);
+            $this->RegisterVariableString("FirmwareDownloadUrl", "Firmware Downloadlink", "~HTMLBox", -9);
+
+        } else {
+            $this->UnregisterVariable("FirmwareUpdateAvailable");
+            $this->UnregisterVariable("FirmwareDownloadUrl");
         }
     }
 
