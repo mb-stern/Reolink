@@ -877,9 +877,7 @@ private function buildFirmwareCheckMessage(array $dev): string
             $this->SetValue('FirmwareDownloadUrl', 'Keine neuere Firmware vorhanden');
         } else {
             $this->SetValue('FirmwareUpdateAvailable', true);
-            $this->SetValue( $this->GetIDForIdent('FirmwareDownloadUrl'),
-    sprintf('<a href="%s" target="_blank">%s</a>', $url, $url)
-);
+            $this->SetValue('FirmwareDownloadUrl', sprintf('<a href="%s" target="_blank">%s</a>', $url, $url));
         }
     }
 
