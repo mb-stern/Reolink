@@ -609,7 +609,7 @@ private function buildFirmwareCheckMessage(array $dev): string
     }
 
     // Neuere Version vorhanden
-    $msg = 'Neuer Firmware gefunden: ];
+    $msg = 'Neuer Firmware gefunden: ' . $info['latest_version'];
     if (!empty($info['download_url'])) {
         $msg .= ' (' . $info['download_url'] . ')';
     }
