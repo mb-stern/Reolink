@@ -592,7 +592,7 @@ private function buildFirmwareCheckMessage(array $dev): string
     // 2. README laden
     $readme = $this->fetchFirmwareReadme();
     if ($readme === null || $readme === '') {
-        return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
+        return 'Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
     }
 
     // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
@@ -601,7 +601,7 @@ private function buildFirmwareCheckMessage(array $dev): string
     $this->UpdateFirmwareVariables($info);
 
     if ($info === null || !$info['installed_found']) {
-        return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
+        return 'Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
     }
 
     if (!$info['is_newer']) {
