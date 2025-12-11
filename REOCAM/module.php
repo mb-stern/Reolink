@@ -577,10 +577,11 @@ class Reolink extends IPSModule
     private function buildFirmwareCheckMessage(array $dev): string
     {
         // 1. Installierte Firmware aus DevInfo
-        $firm = trim($dev['firmVer'] ?? '');
+        $firm  = trim($dev['firmVer'] ?? '');
         $build = trim($dev['build'] ?? '');
 
         if ($firm === '') {
+            $this->UpdateFirmwareVariables(null);
             return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
         }
 
@@ -592,33 +593,38 @@ class Reolink extends IPSModule
         // 2. README laden
         $readme = $this->fetchFirmwareReadme();
         if ($readme === null || $readme === '') {
+            $this->UpdateFirmwareVariables(null);
             return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
         }
 
-        // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
-        //    und dort prüfen, ob es eine neuere gibt.
+        // 3. Innerhalb der README die passende Tabelle finden
         $info = $this->findLatestFirmwareForInstalled($readme, $firm);
+
+        // Firmware-Variablen immer aktualisieren
         $this->UpdateFirmwareVariables($info);
 
-        if ($info === null || !$info['installed_found']) {
+        if ($info === null || empty($info['installed_found'])) {
             return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
         }
 
-        if (!$info['is_newer']) {
+        if (empty($info['is_newer'])) {
             return $baseText . ' – Es wurde keine neuere Firmware gefunden.';
         }
 
-        // 4. Neuere Version vorhanden
-        //    Wenn Download-URL vorhanden → Version als klickbarer Link
+        // ⭐ Neuere Version vorhanden → Versionstext als Link bauen
+        $linkText = $info['latest_version'];
+
         if (!empty($info['download_url'])) {
-            return '<html>' . $baseText . ' – Es wurde eine neuere Firmware gefunden: ' .
-                '<a href="' . $info['download_url'] . '" target="_blank">' .
-                    $info['latest_version'] .
-                '</a>';
+            $linkText = sprintf(
+                '<a href="%s" target="_blank">%s</a>',
+                $info['download_url'],
+                $info['latest_version']
+            );
         }
 
-        // Fallback: neuere Version, aber keine URL bekannt
-        return $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $info['latest_version'];
+        $msg = $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $linkText;
+
+        return $msg;
     }
 
     protected function CheckFirmwareOnline(array $dev): string
