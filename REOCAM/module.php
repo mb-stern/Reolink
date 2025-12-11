@@ -740,181 +740,141 @@ private function buildFirmwareCheckMessage(array $dev): string
         return $result;
     }
 
-    /**
-     * Sucht im README die Zeile mit der installierten Firmware
-     * und wertet nur die dazugehörige Tabelle aus.
-     *
-     * Rückgabe:
-     *   [
-     *     'installed' => 'v3.0.0.3471_2406116464',
-     *     'latest'    => 'v3.0.0.4428_2412183304',
-     *     'download'  => 'https://…zip',
-     *     'is_newer'  => true/false
-     *   ]
-     */
-    private function findLatestFirmwareForInstalled(string $readme, string $installed): ?array
+    private function findLatestFirmwareForInstalled(string $readme, string $firmVer): ?array
     {
-        $installed = trim($installed);
-        if ($installed === '') {
+        $firmVer = trim($firmVer);
+        if ($firmVer === '') {
             return null;
         }
 
-        // README in einzelne Zeilen aufspalten (funktioniert mit \n, \r\n, …)
-        $lines = preg_split('/\R/', $readme);
-        if (!is_array($lines) || empty($lines)) {
-            return null;
+        // Wir suchen mit führendem "v", weil die README-Tabellen so aussehen:
+        // [v3.0.0.3471_2406116464](...)
+        $searchVer = $firmVer;
+        if ($searchVer[0] !== 'v') {
+            $searchVer = 'v' . $searchVer;
         }
-        $n = count($lines);
 
-        // 1) Zeile finden, in der die installierte Firmware vorkommt
-        $posLine = -1;
-        for ($i = 0; $i < $n; $i++) {
-            if (stripos($lines[$i], $installed) !== false) {
-                $posLine = $i;
-                break;
+        // 1) Position der installierten Firmware im gesamten README finden
+        $posInstalled = strpos($readme, $searchVer);
+        if ($posInstalled === false) {
+            // Firmware kommt nirgendwo im README vor
+            return [
+                'installed_found'   => false,
+                'installed_version' => $searchVer,
+                'latest_version'    => null,
+                'download_url'      => null,
+                'is_newer'          => false
+            ];
+        }
+
+        // 2) Start des passenden Abschnitts (### IPC_...) nach oben suchen
+        $before       = substr($readme, 0, $posInstalled);
+        $sectionStart = strrpos($before, "\n  ### ");
+        if ($sectionStart === false) {
+            // Fallback: kein Abschnitts-Header gefunden → gesamte Datei verwenden (sollte nicht vorkommen)
+            $sectionText = $readme;
+        } else {
+            $sectionText = substr($readme, $sectionStart);
+
+            // Bis zum nächsten Abschnitt (nächste ###) begrenzen
+            $nextHeadingPos = strpos($sectionText, "\n  ### ", 6);
+            if ($nextHeadingPos !== false) {
+                $sectionText = substr($sectionText, 0, $nextHeadingPos);
             }
         }
-        if ($posLine === -1) {
-            // Firmware steht in keiner Tabelle => keine Auswertung möglich
-            $this->SendDebug(__FUNCTION__, 'Installierte Firmware im README nicht gefunden: '.$installed, 0);
-            return null;
-        }
 
-        // 2) Von dort nach oben bis zum Tabellen-Header "Version |"
-        $headerIndex = $posLine;
-        while ($headerIndex >= 0 && stripos($lines[$headerIndex], 'Version') === false) {
-            $headerIndex--;
-        }
-        if ($headerIndex < 0 || strpos($lines[$headerIndex], '|') === false) {
-            $this->SendDebug(__FUNCTION__, 'Kein Tabellenkopf "Version |" vor der Firmwarezeile gefunden.', 0);
-            return null; // keine gültige Tabelle gefunden
-        }
-
-        // 3) Ab Header + 2 (Header + '--- | --- | --- | ---') Tabellenzeilen einsammeln
-        $rowStart = $headerIndex + 2;
-        $rows     = [];
-        for ($i = $rowStart; $i < $n; $i++) {
-            $line = trim($lines[$i]);
-
-            // Tabelle endet bei leerer Zeile oder Zeilen ohne '|'
-            if ($line === '' || strpos($line, '|') === false) {
-                break;
-            }
-            $rows[] = $line;
-        }
-        if (empty($rows)) {
-            $this->SendDebug(__FUNCTION__, 'Keine Tabellenzeilen nach dem Header gefunden.', 0);
-            return null;
-        }
-
-        // 4) Jede Zeile: erste Spalte im Format [vX.Y.Z_BBBB](URL.zip…)
-        $pattern = '/^\s*\[(v[0-9._]+)\]\((https?:\/\/[^)]+\.zip[^)]*)\)/i';
+        // 3) Nur in diesem Abschnitt die Firmware-Tabelle parsen
+        $lines   = preg_split("/\r\n|\r|\n/", $sectionText);
         $entries = [];
-        foreach ($rows as $line) {
-            if (preg_match($pattern, $line, $m)) {
+
+        foreach ($lines as $line) {
+            // Zeilen wie:
+            // [v3.0.0.3471_2406116464](https://...) | 2024-06-11 | ...
+            if (preg_match('/\[(v[^\]]+)\]\(([^)]+)\)\s*\|/u', $line, $m)) {
                 $entries[] = [
                     'version' => $m[1],
-                    'url'     => $m[2],
+                    'url'     => $m[2]
                 ];
             }
         }
-        if (empty($entries)) {
-            $this->SendDebug(__FUNCTION__, 'Keine Firmware-Einträge in der Tabelle gefunden.', 0);
-            return null;
+
+        if ($entries === []) {
+            // Im Abschnitt keine Firmware-Zeilen → besser ein "not found" zurückgeben
+            return [
+                'installed_found'   => false,
+                'installed_version' => $searchVer,
+                'latest_version'    => null,
+                'download_url'      => null,
+                'is_newer'          => false
+            ];
         }
 
-        // 5) Neueste Version innerhalb dieser Tabelle bestimmen
-        $latest = $entries[0];
-        foreach ($entries as $e) {
-            if ($this->compareFirmwareStrings($latest['version'], $e['version']) < 0) {
-                $latest = $e;
+        // 4) In dieser Tabelle die installierte Version und die neueste Version bestimmen
+        $installedFound = false;
+        $latest         = null;
+
+        foreach ($entries as $entry) {
+            if ($entry['version'] === $searchVer) {
+                $installedFound = true;
             }
+
+            if ($latest === null || $this->compareFirmwareStrings($entry['version'], $latest['version']) > 0) {
+                $latest = $entry;
+            }
+        }
+
+        // Falls aus irgendeinem Grund kein "latest" gesetzt ist, lieber ein defensives Ergebnis zurückgeben
+        if ($latest === null) {
+            return [
+                'installed_found'   => $installedFound,
+                'installed_version' => $searchVer,
+                'latest_version'    => null,
+                'download_url'      => null,
+                'is_newer'          => false
+            ];
         }
 
         return [
-            'installed' => $installed,
-            'latest'    => $latest['version'],
-            'download'  => $latest['url'],
-            'is_newer'  => ($this->compareFirmwareStrings($installed, $latest['version']) < 0),
+            'installed_found'   => $installedFound,
+            'installed_version' => $searchVer,
+            'latest_version'    => $latest['version'],
+            'download_url'      => $latest['url'],
+            'is_newer'          => $installedFound
+                                && $this->compareFirmwareStrings($latest['version'], $searchVer) > 0
         ];
     }
 
-    /**
-     * Vergleicht zwei Reolink-Firmwarestrings wie
-     *   v3.0.0.3471_2406116464
-     *   v3.0.0.4428_2412183304
-     *
-     * Rückgabe:
-     *   < 0  => $a ist älter als $b
-     *   = 0  => gleich
-     *   > 0  => $a ist neuer als $b
-     */
     private function compareFirmwareStrings(string $a, string $b): int
     {
-        $a = trim($a);
-        $b = trim($b);
-
-        if ($a === $b) {
-            return 0;
-        }
-
-        // "v" am Anfang entfernen
-        if ($a !== '' && ($a[0] === 'v' || $a[0] === 'V')) {
+        // führendes "v" ignorieren
+        if ($a !== '' && $a[0] === 'v') {
             $a = substr($a, 1);
         }
-        if ($b !== '' && ($b[0] === 'v' || $b[0] === 'V')) {
+        if ($b !== '' && $b[0] === 'v') {
             $b = substr($b, 1);
         }
 
-        // in Basis-Version und Build aufsplitten: 3.0.0.3471_2406116464
-        $parse = function (string $fw): array {
-            $base  = $fw;
-            $build = 0;
+        // Hauptversion und Build trennen: 3.0.0.3471_2406116464
+        [$va, $ba] = array_pad(explode('_', $a, 2), 2, '');
+        [$vb, $bb] = array_pad(explode('_', $b, 2), 2, '');
 
-            // Teil hinter '_' als Build interpretieren, falls vorhanden
-            if (strpos($fw, '_') !== false) {
-                [$base, $buildStr] = explode('_', $fw, 2);
-                // Build als Integer, wenn möglich
-                if (is_numeric($buildStr)) {
-                    $build = (int)$buildStr;
-                }
-            }
+        $partsA = array_map('intval', explode('.', $va));
+        $partsB = array_map('intval', explode('.', $vb));
 
-            // Basis-Teil in numerische Komponenten zerlegen (3.0.0.3471)
-            $parts = array_map('intval', preg_split('/[^\d]+/', $base, -1, PREG_SPLIT_NO_EMPTY));
-
-            return [
-                'parts' => $parts,
-                'build' => $build,
-            ];
-        };
-
-        $pa = $parse($a);
-        $pb = $parse($b);
-
-        // erst Basis-Teile vergleichen
-        $len = max(count($pa['parts']), count($pb['parts']));
+        $len = max(count($partsA), count($partsB));
         for ($i = 0; $i < $len; $i++) {
-            $va = $pa['parts'][$i] ?? 0;
-            $vb = $pb['parts'][$i] ?? 0;
-            if ($va < $vb) {
-                return -1;
+            $pa = $partsA[$i] ?? 0;
+            $pb = $partsB[$i] ?? 0;
+            if ($pa === $pb) {
+                continue;
             }
-            if ($va > $vb) {
-                return 1;
-            }
+            return $pa <=> $pb;
         }
 
-        // wenn Basis gleich: Build vergleichen
-        if ($pa['build'] < $pb['build']) {
-            return -1;
-        }
-        if ($pa['build'] > $pb['build']) {
-            return 1;
-        }
-
-        // Fallback, falls alles gleich aussieht
-        return 0;
+        // gleiche Hauptversion → Build vergleichen
+        $baInt = ctype_digit($ba) ? (int)$ba : 0;
+        $bbInt = ctype_digit($bb) ? (int)$bb : 0;
+        return $baInt <=> $bbInt;
     }
 
     private function apiGetDevInfoFresh(): array
