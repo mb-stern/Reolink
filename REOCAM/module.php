@@ -574,49 +574,52 @@ class Reolink extends IPSModule
         return json_encode($form);
     }
 
-private function buildFirmwareCheckMessage(array $dev): string
-{
-    // 1. Installierte Firmware aus DevInfo
-    $firm = trim($dev['firmVer'] ?? '');
-    $build = trim($dev['build'] ?? '');
+    private function buildFirmwareCheckMessage(array $dev): string
+    {
+        // 1. Installierte Firmware aus DevInfo
+        $firm = trim($dev['firmVer'] ?? '');
+        $build = trim($dev['build'] ?? '');
 
-    if ($firm === '') {
-        return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
+        if ($firm === '') {
+            return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
+        }
+
+        $baseText = 'ℹ️ Firmware: ' . $firm;
+        if ($build !== '') {
+            $baseText .= ' (Build ' . $build . ')';
+        }
+
+        // 2. README laden
+        $readme = $this->fetchFirmwareReadme();
+        if ($readme === null || $readme === '') {
+            return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
+        }
+
+        // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
+        //    und dort prüfen, ob es eine neuere gibt.
+        $info = $this->findLatestFirmwareForInstalled($readme, $firm);
+        $this->UpdateFirmwareVariables($info);
+
+        if ($info === null || !$info['installed_found']) {
+            return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
+        }
+
+        if (!$info['is_newer']) {
+            return $baseText . ' – Es wurde keine neuere Firmware gefunden.';
+        }
+
+        // 4. Neuere Version vorhanden
+        //    Wenn Download-URL vorhanden → Version als klickbarer Link
+        if (!empty($info['download_url'])) {
+            return '<html>' . $baseText . ' – Es wurde eine neuere Firmware gefunden: ' .
+                '<a href="' . $info['download_url'] . '" target="_blank">' .
+                    $info['latest_version'] .
+                '</a>';
+        }
+
+        // Fallback: neuere Version, aber keine URL bekannt
+        return $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $info['latest_version'];
     }
-
-    $baseText = 'ℹ️ Firmware: ' . $firm;
-    if ($build !== '') {
-        $baseText .= ' (Build ' . $build . ')';
-    }
-
-    // 2. README laden
-    $readme = $this->fetchFirmwareReadme();
-    if ($readme === null || $readme === '') {
-        return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
-    }
-
-    // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
-    //    und dort prüfen, ob es eine neuere gibt.
-    $info = $this->findLatestFirmwareForInstalled($readme, $firm);
-    $this->UpdateFirmwareVariables($info);
-
-    if ($info === null || !$info['installed_found']) {
-        return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
-    }
-
-    if (!$info['is_newer']) {
-        return $baseText . ' – Es wurde keine neuere Firmware gefunden.';
-    }
-
-    // Neuere Version vorhanden
-    $msg = $baseText . ' – Es wurde eine neuere Firmware gefunden: ' . $info['latest_version'];
-    if (!empty($info['download_url'])) {
-        $msg .= ' (' . $info['download_url'] . ')';
-    }
-
-    return $msg;
-}
-
 
     protected function CheckFirmwareOnline(array $dev): string
     {
