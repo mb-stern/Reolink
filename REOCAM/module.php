@@ -63,10 +63,11 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset",     0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Besucher");');
-
         $this->RegisterTimer("PollingTimer",      0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer",   0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\'], false);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("FirmwareCheckTimer", 0, 'REOCAM_FirmwareCheckTimer($_IPS[\'TARGET\']);');
+
     }
 
     public function ApplyChanges()
@@ -78,7 +79,7 @@ class Reolink extends IPSModule
             $this->SetStatus(104);
             foreach ([
                 "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
-                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
+                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer","FirmwareCheckTimer"
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
@@ -127,6 +128,13 @@ class Reolink extends IPSModule
 
 
         $this->CreateOrUpdateApiVariablesUnified();
+
+        // Firmware-Check-Timer: einmal pro Tag
+        if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
+            $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
+        } else {
+            $this->SetTimerInterval('FirmwareCheckTimer', 0);
+        }
 
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
         if ($anyFeatureOn) {
@@ -913,6 +921,24 @@ private function buildFirmwareCheckMessage(array $dev): string
         $bbInt = ctype_digit($bb) ? (int)$bb : 0;
         return $baInt <=> $bbInt;
     }
+
+    public function FirmwareCheckTimer(): void
+    {
+        // Wenn Instanz inaktiv oder Firmware-Variablen abgeschaltet → Timer aus
+        if (!$this->isActive() || !$this->ReadPropertyBoolean('EnableFirmwareVariables')) {
+            $this->SetTimerInterval('FirmwareCheckTimer', 0);
+            return;
+        }
+
+        // DevInfo frisch holen (wie im Formular)
+        $dev = $this->apiGetDevInfoFresh();
+        if (!is_array($dev)) {
+            $dev = [];
+        }
+
+        $this->buildFirmwareCheckMessage($dev);
+    }
+
 
     private function apiGetDevInfoFresh(): array
     {
