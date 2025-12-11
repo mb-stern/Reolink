@@ -34,6 +34,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
+        $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
 
 
         // Archiv
@@ -107,6 +108,28 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
         } else {
             $this->SetTimerInterval("PollingTimer", 0);
+        }
+
+        // Firmwarevaraiblen
+
+        $enableFwVars = $this->ReadPropertyBoolean('EnableFirmwareVariables');
+
+        if ($enableFwVars) {
+            // Variablen registrieren (falls noch nicht vorhanden)
+            $this->RegisterVariableBoolean(
+                'FirmwareUpdateAvailable',
+                'Neue Firmware gefunden',
+                ''
+            );
+            $this->RegisterVariableString(
+                'FirmwareDownloadUrl',
+                'Firmware Downloadlink',
+                ''
+            );
+        } else {
+            // Variablen entfernen
+            $this->UnregisterVariable('FirmwareUpdateAvailable');
+            $this->UnregisterVariable('FirmwareDownloadUrl');
         }
 
         // API-Schalter
@@ -464,14 +487,15 @@ class Reolink extends IPSModule
                     'type'    => 'ExpansionPanel',
                     'caption' => 'API-Funktionen',
                     'items'   => [
-                        ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',    'caption' => 'LED-Scheinwerfer'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiIR',          'caption' => 'IR-Beleuchtung'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiEmail',       'caption' => 'E-Mail Alarm'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiFTP',         'caption' => 'FTP'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity', 'caption' => 'Sensitivität'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiSiren',       'caption' => 'Sirene'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiRecord',      'caption' => 'Kameraaufzeichnung'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',         'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Statusvariablen erstellen'],
                         [
                             'type'    => 'Button',
                             'caption' => 'API-Version Cache zurücksetzen',
@@ -574,6 +598,7 @@ private function buildFirmwareCheckMessage(array $dev): string
     // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
     //    und dort prüfen, ob es eine neuere gibt.
     $info = $this->findLatestFirmwareForInstalled($readme, $firm);
+    $this->UpdateFirmwareVariables($info);
 
     if ($info === null || !$info['installed_found']) {
         return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
@@ -842,6 +867,52 @@ private function buildFirmwareCheckMessage(array $dev): string
             'is_newer'          => $installedFound
                                 && $this->compareFirmwareStrings($latest['version'], $searchVer) > 0
         ];
+    }
+
+    private function UpdateFirmwareVariables(?array $info): void
+    {
+        $enableFwVars = $this->ReadPropertyBoolean('EnableFirmwareVariables');
+        if (!$enableFwVars) {
+            return;
+        }
+
+        // Sicherstellen, dass Variablen existieren
+        $this->RegisterVariableBoolean(
+            'FirmwareUpdateAvailable',
+            'Neue Firmware gefunden',
+            ''
+        );
+        $this->RegisterVariableString(
+            'FirmwareDownloadUrl',
+            'Firmware Downloadlink',
+            ''
+        );
+
+        if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
+            // generischer Fehler
+            $this->SetValue('FirmwareUpdateAvailable', false);
+            $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
+            return;
+        }
+
+        if (!$info['installed_found']) {
+            $this->SetValue('FirmwareUpdateAvailable', false);
+            $this->SetValue('FirmwareDownloadUrl', 'Firmware im README nicht gefunden');
+            return;
+        }
+
+        // Ab hier: passende Tabelle gefunden
+        $latest = $info['latest_version'] ?? null;
+        $url    = $info['download_url'] ?? null;
+        $isNewer = $info['is_newer'] ?? false;
+
+        if (!$isNewer || $latest === null || $url === null) {
+            $this->SetValue('FirmwareUpdateAvailable', false);
+            $this->SetValue('FirmwareDownloadUrl', 'Keine neuere Firmware in der passenden Tabelle vorhanden');
+        } else {
+            $this->SetValue('FirmwareUpdateAvailable', true);
+            $this->SetValue('FirmwareDownloadUrl', $url);
+        }
     }
 
     private function compareFirmwareStrings(string $a, string $b): int
