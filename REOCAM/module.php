@@ -854,18 +854,6 @@ private function buildFirmwareCheckMessage(array $dev): string
             return;
         }
 
-        // Sicherstellen, dass Variablen existieren
-        $this->RegisterVariableBoolean(
-            'FirmwareUpdateAvailable',
-            'Neue Firmware gefunden',
-            ''
-        );
-        $this->RegisterVariableString(
-            'FirmwareDownloadUrl',
-            'Firmware Downloadlink',
-            ''
-        );
-
         if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
             // generischer Fehler
             $this->SetValue('FirmwareUpdateAvailable', false);
