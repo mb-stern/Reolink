@@ -605,7 +605,7 @@ private function buildFirmwareCheckMessage(array $dev): string
     }
 
     if (!$info['is_newer']) {
-        return $baseText . ' – Es wurde keine neuere Firmware gefunden.';
+        return 'Es wurde keine neuere Firmware gefunden.';
     }
 
     // Neuere Version vorhanden
