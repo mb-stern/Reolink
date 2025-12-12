@@ -376,7 +376,9 @@ class Reolink extends IPSModule
         $imageData = $this->getModelImageBase64($dev);
 
         // Firmwarecheck-Text vorbereiten
-        $firmwareCheckMessage = $this->buildFirmwareCheckMessage($dev);
+        $fwInfo = $this->FirmwareCheck($dev);
+        $firmwareCheckMessage = $this->FirmwareCheckMessage($dev, $fwInfo);
+
 
         // Header-Element zusammenbauen: Bild links, Infos rechts (zeilenweise)
         if (!empty($imageData)) {
@@ -560,87 +562,60 @@ class Reolink extends IPSModule
         return json_encode($form);
     }
 
-private function buildFirmwareCheckMessage(array $dev): string
-{
-    // 1. Installierte Firmware aus DevInfo
-    $firm = trim($dev['firmVer'] ?? '');
-    $build = trim($dev['build'] ?? '');
-
-    if ($firm === '') {
-        return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
-    }
-
-    $baseText = 'ℹ️ Firmware: ' . $firm;
-    if ($build !== '') {
-        $baseText .= ' (Build ' . $build . ')';
-    }
-
-    // 2. README laden
-    $readme = $this->fetchFirmwareReadme();
-    if ($readme === null || $readme === '') {
-        return 'Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
-    }
-
-    // 3. Innerhalb der README die Tabelle finden, in der die installierte Firmware vorkommt,
-    //    und dort prüfen, ob es eine neuere gibt.
-    $info = $this->findLatestFirmwareForInstalled($readme, $firm);
-    $this->UpdateFirmwareVariables($info);
-
-    if ($info === null || !$info['installed_found']) {
-        return 'Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
-    }
-
-    if (!$info['is_newer']) {
-        return 'Es wurde keine neuere Firmware gefunden.';
-    }
-
-    // Neuere Version vorhanden
-    $msg = 'Neue Firmware gefunden: ';
-    if (!empty($info['download_url'])) {
-        $msg .= '' . $info['download_url'] . '';
-    }
-
-    return $msg;
-}
-
-
-    protected function CheckFirmwareOnline(array $dev): string
+    // 1) Reiner Check: holt README, parst, vergleicht -> gibt Info-Array zurück (oder null bei Fehler)
+    private function FirmwareCheck(array $dev): ?array
     {
-        $fw    = $dev['firmware'] ?? '';
-        $build = $dev['build'] ?? 'n/a';
-
-        $baseText = sprintf(
-            'ℹ️ Firmware: %s (Build %s)',
-            $fw !== '' ? $fw : 'n/a',
-            $build
-        );
-
-        if ($fw === '') {
-            return $baseText . ' – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
+        $firm = trim((string)($dev['firmVer'] ?? ''));
+        if ($firm === '') {
+            return null;
         }
 
-        // README-URL anpassen!
-        $url = 'https://raw.githubusercontent.com/DEIN-REPO/DEIN-PFAD/README.md';
-
-        $readme = @file_get_contents($url);
-        if ($readme === false || $readme === '') {
-            return $baseText . ' – Online-Firmwareprüfung nicht möglich (README konnte nicht geladen werden).';
+        $readme = $this->fetchFirmwareReadme();
+        if ($readme === null || $readme === '') {
+            return null;
         }
 
-        $info = $this->findLatestFirmwareForInstalled($readme, $fw);
-        if ($info === null) {
-            return $baseText . ' – Online-Firmwareprüfung nicht möglich (Firmware im README nicht gefunden).';
+        return $this->findLatestFirmwareForInstalled($readme, $firm);
+    }
+
+    // 2) Reine Darstellung fürs Formular (kein SetValue, keine Seiteneffekte)
+    private function FirmwareCheckMessage(array $dev, ?array $info): string
+    {
+        $firm = trim((string)($dev['firmVer'] ?? ''));
+        $buildDay = trim((string)($dev['buildDay'] ?? ''));
+        if (stripos($buildDay, 'build ') === 0) {
+            $buildDay = trim(substr($buildDay, 6));
         }
 
-        if (!$info['is_newer']) {
-            return 'ℹ️ Firmwarecheck: Es wurde keine neuere Firmware gefunden.';
+        if ($firm === '') {
+            return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
         }
 
-        return sprintf(
-            '⚠️ Firmwarecheck: Es wurde eine neuere Firmware gefunden (%s, Download: %s).',
-            $info['latest'],
-            $info['download']
-        );
+        $base = 'ℹ️ Firmware: ' . $firm;
+        if ($buildDay !== '') {
+            $base .= ' (Build ' . $buildDay . ')';
+        }
+
+        if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
+            return $base . ' – Online-Firmwareprüfung nicht möglich.';
+        }
+
+        if (!$info['installed_found']) {
+            return $base . ' – Firmware im README nicht gefunden.';
+        }
+
+        if (empty($info['is_newer'])) {
+            return 'Es wurde keine neuere Firmware gefunden.';
+        }
+
+        $latest = (string)($info['latest_version'] ?? '');
+        $url    = (string)($info['download_url'] ?? '');
+
+        if ($latest !== '' && $url !== '') {
+            return 'Neue Firmware gefunden: ' . $latest . ' – Download: ' . $url;
+        }
+
+        return 'Neue Firmware gefunden.';
     }
 
     private function fetchFirmwareReadme(): ?string
@@ -672,80 +647,6 @@ private function buildFirmwareCheckMessage(array $dev): string
                 0
             );
             return null;
-        }
-
-        return $result;
-    }
-
-
-    private function extractFirmwareBuild(string $ver): int
-    {
-        // Erwartet z.B. v3.0.0.3471_2406116464 -> extrahiert 2406116464
-        if (preg_match('/_(\d+)$/', trim($ver), $m)) {
-            return (int)$m[1];
-        }
-        return 0;
-    }
-
-    /**
-     * Vergleicht zwei Firmware-Versionen anhand der Build-Nummer.
-     * Rückgabe wie strcmp: <0 = a älter, 0 = gleich, >0 = a neuer als b.
-     */
-    private function compareFirmwareVersions(string $a, string $b): int
-    {
-        $ba = $this->extractFirmwareBuild($a);
-        $bb = $this->extractFirmwareBuild($b);
-
-        if ($ba === $bb) {
-            return 0;
-        }
-        return ($ba < $bb) ? -1 : 1;
-    }
-
-    // Sucht die passende <tr>-Zeile im README, die sowohl Modell als auch installierte Firmware enthält
-    private function findFirmwareRowForDevice(string $readme, string $model, string $installedFw): ?string
-    {
-        $pattern = '/<tr[^>]*>.*?<\/tr>/si';
-        if (!preg_match_all($pattern, $readme, $matches)) {
-            return null;
-        }
-
-        foreach ($matches[0] as $row) {
-            if ($model !== '' && stripos($row, $model) === false) {
-                continue;
-            }
-            if (stripos($row, $installedFw) === false) {
-                continue;
-            }
-            return $row;
-        }
-
-        // Fallback: nur nach Firmware suchen (falls Modelltext sich unterscheidet)
-        foreach ($matches[0] as $row) {
-            if (stripos($row, $installedFw) !== false) {
-                return $row;
-            }
-        }
-
-        return null;
-    }
-
-    // Holt alle Firmware-Einträge (Version + Download-URL) aus einer Tabellenzeile
-    private function extractFirmwareEntriesFromRow(string $rowHtml): array
-    {
-        $result = [];
-
-        // Markdown-Links: [v3.x.x.x_xxxxxxxx](https://....zip?download_name=...)
-        $pattern = '/\[(v[0-9._]+)\]\((https?:\/\/[^)]+\.zip[^)]*)\)/i';
-        if (!preg_match_all($pattern, $rowHtml, $matches, PREG_SET_ORDER)) {
-            return $result;
-        }
-
-        foreach ($matches as $m) {
-            $result[] = [
-                'version' => $m[1],
-                'url'     => $m[2],
-            ];
         }
 
         return $result;
@@ -924,21 +825,21 @@ private function buildFirmwareCheckMessage(array $dev): string
 
     public function FirmwareCheckTimer(): void
     {
-        // Wenn Instanz inaktiv oder Firmware-Variablen abgeschaltet → Timer aus
         if (!$this->isActive() || !$this->ReadPropertyBoolean('EnableFirmwareVariables')) {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
             return;
         }
 
-        // DevInfo frisch holen (wie im Formular)
         $dev = $this->apiGetDevInfoFresh();
         if (!is_array($dev)) {
             $dev = [];
         }
 
-        $this->buildFirmwareCheckMessage($dev);
-    }
+        $info = $this->FirmwareCheck($dev);
+        $this->UpdateFirmwareVariables($info);
 
+        $this->WriteAttributeInteger('FirmwareLastCheckTs', time());
+    }
 
     private function apiGetDevInfoFresh(): array
     {
