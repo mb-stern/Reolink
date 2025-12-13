@@ -335,7 +335,7 @@ class Reolink extends IPSModule
     // Webhook + Formular
     // ---------------------------
 
-   public function GetConfigurationForm()
+    public function GetConfigurationForm()
     {
         // Webhook ermitteln/registrieren
         $hookPath = $this->ReadAttributeString('CurrentHook');
@@ -363,76 +363,71 @@ class Reolink extends IPSModule
 
         // Zeilenweise Ausgabe vorbereiten
         $lines = [
-            'Gerät: '     . ($dev['model']   ?? 'unbekannt'),
-            'Firmware: '  . ($dev['firmVer'] ?? 'n/a'),
-            'HW: '        . ($dev['hardVer'] ?? 'n/a'),
+            'Gerät: '     . ($dev['model']     ?? 'unbekannt'),
+            'Firmware: '  . ($dev['firmVer']   ?? 'n/a'),
+            'HW: '        . ($dev['hardVer']   ?? 'n/a'),
             'Build: '     . $build,
-            'Seriennr.: ' . ($dev['serial']  ?? 'n/a'),
+            'Seriennr.: ' . ($dev['serial']    ?? 'n/a'),
             'Detail: '    . ($dev['detail']    ?? 'n/a'),
             'ExactType: ' . ($dev['exactType'] ?? 'n/a'),
         ];
 
-        // Bild holen (Base64, bereits verkleinert)
-        $imageData = $this->getModelImageBase64($dev);
-
-        // Firmwarecheck-Text vorbereiten
+        // Firmwarecheck-Text vorbereiten (nur Anzeige, keine Seiteneffekte)
         $fwInfo = $this->FirmwareCheck($dev);
         $firmwareCheckMessage = $this->FirmwareCheckMessage($dev, $fwInfo);
 
+        // Bild holen (Base64, bereits verkleinert)
+        $imageData = $this->getModelImageBase64($dev);
 
-        // Header-Element zusammenbauen: Bild links, Infos rechts (zeilenweise)
+        // Spalte 2: Device-Infos (immer gleich, unabhängig vom Bild)
+        $infoColumn = [
+            'type'  => 'ColumnLayout',
+            'items' => [
+                ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
+                ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
+                ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
+                ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
+                ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
+                ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
+                ['type' => 'Label', 'name' => 'DevLine7', 'caption' => $lines[6]],
+            ],
+        ];
+
+        // Spalte 3: Firmware-Infos
+        $firmwareColumn = [
+            'type'  => 'ColumnLayout',
+            'items' => [
+                ['type' => 'Label', 'name' => 'FwTitle', 'caption' => 'Firmware-Check:'],
+                ['type' => 'Label', 'name' => 'FwInfo',  'caption' => $firmwareCheckMessage],
+            ],
+        ];
+
+        // Header-Row: (Bild optional) + Infos + Firmware
+        $headerItems = [];
+
         if (!empty($imageData)) {
-            $infoColumn = [
-                'type'  => 'ColumnLayout',
-                'items' => [
-                    ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
-                    ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
-                    ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
-                    ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
-                    ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
-                    ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
-                    ['type' => 'Label', 'name' => 'DevLine7', 'caption' => $lines[6]],
-                ],
-            ];
-
-            $deviceHeaderElement = [
-                'type'  => 'RowLayout',
-                'items' => [
-                    [
-                        'type'  => 'Image',
-                        'name'  => 'DeviceImage',
-                        'image' => $imageData
-                        // width/height optional, Bild ist physisch verkleinert
-                    ],
-                    $infoColumn,
-                ],
-            ];
-        } else {
-            // Fallback ohne Bild: nur Infos untereinander
-            $deviceHeaderElement = [
-                'type'  => 'ColumnLayout',
-                'items' => [
-                    ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
-                    ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
-                    ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
-                    ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
-                    ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
-                    ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
-                    ['type' => 'Label', 'name' => 'DevLine7', 'caption' => $lines[6]],
-                ],
+            $headerItems[] = [
+                'type'  => 'Image',
+                'name'  => 'DeviceImage',
+                'image' => $imageData
+                // width/height optional
             ];
         }
+
+        $headerItems[] = $infoColumn;
+        $headerItems[] = $firmwareColumn;
+
+        $deviceHeaderElement = [
+            'type'  => 'RowLayout',
+            'items' => $headerItems,
+        ];
 
         // Formular komplett in PHP aufbauen
         $form = [
             'elements' => [
-                // Bild + Geräteinfos
+                // Bild + Geräteinfos + Firmwareinfos (in einer Zeile / 3 Spalten)
                 $deviceHeaderElement,
-                [
-                    'type'    => 'Label',
-                    'name'    => 'FirmwareCheck',
-                    'caption' => $firmwareCheckMessage
-                ],
+
                 [
                     'type'    => 'Label',
                     'caption' => ''
@@ -545,6 +540,9 @@ class Reolink extends IPSModule
                 [
                     'type'  => 'RowLayout',
                     'items' => [
+                [
+                    'type'  => 'RowLayout',
+                    'items' => [
                             [
                                         'type'   => 'Image',
                                         'onClick'=> "echo 'https://paypal.me/mbstern';",
@@ -561,6 +559,10 @@ class Reolink extends IPSModule
 
         return json_encode($form);
     }
+
+    // ---------------------------
+    // Firmware und Gerätecheck
+    // ---------------------------
 
     // 1) Reiner Check: holt README, parst, vergleicht -> gibt Info-Array zurück (oder null bei Fehler)
     private function FirmwareCheck(array $dev): ?array
