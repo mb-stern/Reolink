@@ -344,24 +344,22 @@ public function GetConfigurationForm()
     }
     $webhookFull = $this->BuildWebhookFullUrl($hookPath);
 
-    // DevInfo für das Formular IMMER frisch von der Kamera holen
+    // DevInfo immer live
     $dev = $this->apiGetDevInfoFresh();
-
-    // Fallback, falls die Abfrage schiefgeht
     if (!is_array($dev)) {
         $dev = [];
     }
 
-    // Build-String etwas hübscher machen (ohne "build ")
+    // Build hübscher
     $build = $dev['buildDay'] ?? '';
     if (is_string($build) && stripos($build, 'build ') === 0) {
-        $build = trim(substr($build, 6)); // "build 2412021483" -> "2412021483"
+        $build = trim(substr($build, 6));
     }
     if ($build === '') {
         $build = 'n/a';
     }
 
-    // Zeilenweise Ausgabe vorbereiten
+    // Device-Lines
     $lines = [
         'Gerät: '     . ($dev['model']     ?? 'unbekannt'),
         'Firmware: '  . ($dev['firmVer']   ?? 'n/a'),
@@ -372,17 +370,22 @@ public function GetConfigurationForm()
         'ExactType: ' . ($dev['exactType'] ?? 'n/a'),
     ];
 
-    // Firmwarecheck-Text vorbereiten (Anzeige)
+    // Firmware (nur Anzeige)
     $fwInfo = $this->FirmwareCheck($dev);
     $firmwareCheckMessage = $this->FirmwareCheckMessage($dev, $fwInfo);
 
-    // Bild holen (Base64, bereits verkleinert)
+    // Firmwaretext „schmal“ machen: Link auf eigene Zeile falls vorhanden
+    $fwLines = [];
+    $fwLines[] = 'Firmware-Check:';
+    $fwLines[] = $firmwareCheckMessage;
+
+    // Bild
     $imageData = $this->getModelImageBase64($dev);
 
-    // Spalte 2: Device-Infos (wie bisher, aber mit width)
+    // Spalte 2: Infos (fixe px-Breite!)
     $infoColumn = [
         'type'  => 'ColumnLayout',
-        'width' => '45%',
+        'width' => '420px',
         'items' => [
             ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
             ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
@@ -394,48 +397,41 @@ public function GetConfigurationForm()
         ],
     ];
 
-    // Spalte 3: Firmware-Infos (identisch als ColumnLayout, mit width)
+    // Spalte 3: Firmware (fixe px-Breite!)
     $firmwareColumn = [
         'type'  => 'ColumnLayout',
-        'width' => '35%',
+        'width' => '420px',
         'items' => [
-            ['type' => 'Label', 'name' => 'FwTitle', 'caption' => 'Firmware-Check:'],
-            ['type' => 'Label', 'name' => 'FwInfo',  'caption' => $firmwareCheckMessage],
+            ['type' => 'Label', 'name' => 'FwLine1', 'caption' => $fwLines[0]],
+            ['type' => 'Label', 'name' => 'FwLine2', 'caption' => $fwLines[1]],
         ],
     ];
 
-    // Bild links: feste Breite, sonst verdrängt es die Spalten
+    // Header als RowLayout mit 3 Items (Bild optional, aber auch feste Breite)
     $headerItems = [];
     if (!empty($imageData)) {
         $headerItems[] = [
-            'type'   => 'Image',
-            'name'   => 'DeviceImage',
-            'image'  => $imageData,
-            'width'  => '140px',
-            // optional: 'height' => '140px'
+            'type'  => 'Image',
+            'name'  => 'DeviceImage',
+            'image' => $imageData,
+            'width' => '160px'
         ];
     }
 
-    // Immer 2. und 3. Spalte anhängen
     $headerItems[] = $infoColumn;
     $headerItems[] = $firmwareColumn;
 
-    // Header-Element: echte 3-Spalten-Zeile
     $deviceHeaderElement = [
         'type'  => 'RowLayout',
-        'items' => $headerItems,
+        'items' => $headerItems
     ];
 
-    // Formular komplett in PHP aufbauen
     $form = [
         'elements' => [
-            // Bild + Geräteinfos + Firmwareinfos in EINER Zeile (3 Spalten)
             $deviceHeaderElement,
 
-            [
-                'type'    => 'Label',
-                'caption' => ''
-            ],
+            ['type' => 'Label', 'caption' => ''],
+
             [
                 'type'    => 'Label',
                 'name'    => 'WebhookFull',
@@ -541,25 +537,12 @@ public function GetConfigurationForm()
                     ],
                 ],
             ],
-            [
-                'type'  => 'RowLayout',
-                'items' => [
-                    [
-                        'type'   => 'Image',
-                        'onClick'=> "echo 'https://paypal.me/mbstern';",
-                        'image'  => "data:image/jpeg;base64,/9j/4QAYRXhpZgAASUkqAAgAAAAAAAAAAAAAAP/sABFEdWNreQABAAQAAAA8AAD/7gAOQWRvYmUAZMAAAAAB/9sAhAAGBAQEBQQGBQUGCQYFBgkLCAYGCAsMCgoLCgoMEAwMDAwMDBAMDg8QDw4MExMUFBMTHBsbGxwfHx8fHx8fHx8fAQcHBw0MDRgQEBgaFREVGh8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx//wAARCABLAGQDAREAAhEBAxEB/8QAqwABAAICAwEBAAAAAAAAAAAAAAUGAgcDBAgJAQEBAAIDAQAAAAAAAAAAAAAAAAMEAgUGARAAAQMCAwMEDwMICwAAAAAAAgEDBAAFERIGIRMHMdEUFkFRcSKyk6PDJFSEFTZGZmEyCIGxQlKSIzODkaFigmOz00QlVRgRAAICAQIDBQYFBQAAAAAAAAABAgMREgQhMQVBUWEiE/BxgaGxBpHRQhQVwfEyUiP/2gAMAwEAAhEDEQA/AN+WWywr/CS63VDfkPmeUc5CICJKKCKCqbNlAd/qNpr1YvGHz0A6jaa9WLxh89AOo2mvVi8YfPQDqNpr1YvGHz0A6jaa9WLxh89AOo2mvVi8YfPQDqNpr1YvGHz0A6jaa9WLxh89AOo2mvVi8YfPQDqNpr1YvGHz0A6jaa9WLxh89ARnuVr3/wC4t+97o3PSui51+9jly5vvZezhQEnob4ajd1zw1oCeoBQCgFA=="
-                    ],
-                    [
-                        'type'    => 'Label',
-                        'caption' => 'Sag danke und unterstütze den Modulentwickler: paypal.me/mbstern'
-                    ],
-                ],
-            ],
         ],
     ];
 
     return json_encode($form);
 }
+
 
 
 
