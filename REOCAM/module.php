@@ -423,163 +423,160 @@ class Reolink extends IPSModule
             ];
         }
 
-// Formular komplett in PHP aufbauen
-$form = [
-    'elements' => [
+        // Formular komplett in PHP aufbauen
+        $form = [
+            'elements' => [
 
-        // --- OBEN: Webhook & Einstellungen ---
-        [
-            'type'    => 'Label',
-            'caption' => ''
-        ],
-        [
-            'type'    => 'Label',
-            'name'    => 'WebhookFull',
-            'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
-        ],
-        [
-            'type'    => 'CheckBox',
-            'name'    => 'InstanceStatus',
-            'caption' => 'Instanz aktivieren'
-        ],
-        [
-            'type'    => 'ValidationTextBox',
-            'name'    => 'CameraIP',
-            'caption' => 'Kamera IP'
-        ],
-        [
-            'type'    => 'ValidationTextBox',
-            'name'    => 'Username',
-            'caption' => 'Benutzername'
-        ],
-        [
-            'type'    => 'PasswordTextBox',
-            'name'    => 'Password',
-            'caption' => 'Passwort'
-        ],
-        [
-            'type'    => 'Select',
-            'name'    => 'StreamType',
-            'caption' => 'Stream-Typ',
-            'options' => [
-                ['caption' => 'Mainstream', 'value' => 'main'],
-                ['caption' => 'Substream',  'value' => 'sub'],
-            ],
-        ],
-        [
-            'type'    => 'ExpansionPanel',
-            'caption' => 'API-Funktionen',
-            'items'   => [
-                ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
-                ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
-                ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Statusvariablen erstellen'],
+                // --- OBEN: Webhook & Einstellungen ---
                 [
-                    'type'    => 'Button',
-                    'caption' => 'API-Version Cache zurücksetzen',
-                    'onClick' => "IPS_RequestAction(\$id, 'ResetApiCache', true); echo 'Cache gelöscht.';"
-                ],
-            ],
-        ],
-        [
-            'type'    => 'ExpansionPanel',
-            'caption' => 'Bewegungserkennung/Aufnahmen',
-            'items'   => [
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'EnablePolling',
-                    'caption' => 'Polling aktivieren (für Kameras ohne Webhook-Unterstützung)'
-                ],
-                [
-                    'type'    => 'NumberSpinner',
-                    'name'    => 'PollingInterval',
-                    'caption' => 'Polling-Intervall',
-                    'suffix'  => 'Sekunden',
-                    'minimum' => 2,
-                    'maximum' => 3600
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'ShowTestElements',
-                    'caption' => 'Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)'
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'ShowVisitorElements',
-                    'caption' => 'Besucher-Erkennung aktivieren (für Doorbell)'
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'ShowMoveVariables',
-                    'caption' => 'Intelligente Bewegungserkennung'
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'ShowSnapshots',
-                    'caption' => 'Schnappschüsse anzeigen'
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'ShowArchives',
-                    'caption' => 'Bildarchive anzeigen'
-                ],
-                [
-                    'type'    => 'NumberSpinner',
-                    'name'    => 'MaxArchiveImages',
-                    'caption' => 'Maximale Anzahl Archivbilder',
-                    'minimum' => 1,
-                    'suffix'  => 'Bilder'
-                ],
-            ],
-        ],
-
-        // --- HIER: nach den Einstellungen, vor PayPal ---
-        [
-            'type'    => 'Label',
-            'caption' => ''
-        ],
-
-        // Bild + Geräteinfos (wie bisher gebaut)
-        $deviceHeaderElement,
-
-        // Firmware-Check direkt darunter (wie bisher)
-        [
-            'type'    => 'Label',
-            'name'    => 'FirmwareCheck',
-            'caption' => $firmwareCheckMessage
-        ],
-
-        [
-            'type'    => 'Label',
-            'caption' => ''
-        ],
-
-        // --- Ganz unten: PayPal ---
-        [
-            'type'  => 'RowLayout',
-            'items' => [
-                [
-                    'type'    => 'Image',
-                    'onClick' => "echo 'https://paypal.me/mbstern';",
-                    'image'   => "data:image/jpeg;base64,/9j/4QAYRXhpZgAASUkqAAgAAAAAAAAAAAAAAP/sABFEdWNreQABAAQAAAA8AAD/7gAOQWRvYmUAZMAAAAAB/9sAhAAGBAQEBQQGBQUGCQYFBgkLCAYGCAsMCgoLCgoMEAwMDAwMDBAMDg8QDw4MExMUFBMTHBsbGxwfHx8fHx8fHx8fAQcHBw0MDRgQEBgaFREVGh8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx//wAARCABLAGQDAREAAhEBAxEB/8QAqwABAAICAwEBAAAAAAAAAAAAAAUGAgcDBAgJAQEBAAIDAQAAAAAAAAAAAAAAAAMEAgUGARAAAQMCAwMEDwMICwAAAAAAAgEDBAAFERIGIRMHMdEUFkFRcSKyk6PDJFSEFTZGZmEyCIGxQlKSIzODkaFigmOz00QlVRgRAAICAQIDBQYFBQAAAAAAAAABAgMREgQhMQVBUWEiE/BxgaGxBpHRQhQVwfEyUiP/2gAMAwEAAhEDEQA/AN+W.../9k="
+                    'type'    => 'Label',
+                    'caption' => ''
                 ],
                 [
                     'type'    => 'Label',
-                    'caption' => "Sag danke und unterstütze den Modulentwickler: paypal.me/mbstern"
+                    'name'    => 'WebhookFull',
+                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
+                ],
+                [
+                    'type'    => 'CheckBox',
+                    'name'    => 'InstanceStatus',
+                    'caption' => 'Instanz aktivieren'
+                ],
+                [
+                    'type'    => 'ValidationTextBox',
+                    'name'    => 'CameraIP',
+                    'caption' => 'Kamera IP'
+                ],
+                [
+                    'type'    => 'ValidationTextBox',
+                    'name'    => 'Username',
+                    'caption' => 'Benutzername'
+                ],
+                [
+                    'type'    => 'PasswordTextBox',
+                    'name'    => 'Password',
+                    'caption' => 'Passwort'
+                ],
+                [
+                    'type'    => 'Select',
+                    'name'    => 'StreamType',
+                    'caption' => 'Stream-Typ',
+                    'options' => [
+                        ['caption' => 'Mainstream', 'value' => 'main'],
+                        ['caption' => 'Substream',  'value' => 'sub'],
+                    ],
+                ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'API-Funktionen',
+                    'items'   => [
+                        ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Statusvariablen erstellen'],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'API-Version Cache zurücksetzen',
+                            'onClick' => "IPS_RequestAction(\$id, 'ResetApiCache', true); echo 'Cache gelöscht.';"
+                        ],
+                    ],
+                ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Bewegungserkennung/Aufnahmen',
+                    'items'   => [
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnablePolling',
+                            'caption' => 'Polling aktivieren (für Kameras ohne Webhook-Unterstützung)'
+                        ],
+                        [
+                            'type'    => 'NumberSpinner',
+                            'name'    => 'PollingInterval',
+                            'caption' => 'Polling-Intervall',
+                            'suffix'  => 'Sekunden',
+                            'minimum' => 2,
+                            'maximum' => 3600
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowTestElements',
+                            'caption' => 'Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowVisitorElements',
+                            'caption' => 'Besucher-Erkennung aktivieren (für Doorbell)'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowMoveVariables',
+                            'caption' => 'Intelligente Bewegungserkennung'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowSnapshots',
+                            'caption' => 'Schnappschüsse anzeigen'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowArchives',
+                            'caption' => 'Bildarchive anzeigen'
+                        ],
+                        [
+                            'type'    => 'NumberSpinner',
+                            'name'    => 'MaxArchiveImages',
+                            'caption' => 'Maximale Anzahl Archivbilder',
+                            'minimum' => 1,
+                            'suffix'  => 'Bilder'
+                        ],
+                    ],
+                ],
+
+                // --- HIER: nach den Einstellungen, vor PayPal ---
+                [
+                    'type'    => 'Label',
+                    'caption' => ''
+                ],
+
+                // Bild + Geräteinfos (wie bisher gebaut)
+                $deviceHeaderElement,
+
+                // Firmware-Check direkt darunter (wie bisher)
+                [
+                    'type'    => 'Label',
+                    'name'    => 'FirmwareCheck',
+                    'caption' => $firmwareCheckMessage
+                ],
+
+                [
+                    'type'    => 'Label',
+                    'caption' => ''
+                ],
+                [
+                    'type'  => 'RowLayout',
+                    'items' => [
+                        [
+                            'type'    => 'Image',
+                            'onClick' => "echo 'https://paypal.me/mbstern';",
+                            'image'   => "data:image/jpeg;base64,/9j/4QAYRXhpZgAASUkqAAgAAAAAAAAAAAAAAP/sABFEdWNreQABAAQAAAA8AAD/7gAOQWRvYmUAZMAAAAAB/9sAhAAGBAQEBQQGBQUGCQYFBgkLCAYGCAsMCgoLCgoMEAwMDAwMDBAMDg8QDw4MExMUFBMTHBsbGxwfHx8fHx8fHx8fAQcHBw0MDRgQEBgaFREVGh8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx//wAARCABLAGQDAREAAhEBAxEB/8QAqwABAAICAwEBAAAAAAAAAAAAAAUGAgcDBAgJAQEBAAIDAQAAAAAAAAAAAAAAAAMEAgUGARAAAQMCAwMEDwMICwAAAAAAAgEDBAAFERIGIRMHMdEUFkFRcSKyk6PDJFSEFTZGZmEyCIGxQlKSIzODkaFigmOz00QlVRgRAAICAQIDBQYFBQAAAAAAAAABAgMREgQhMQVBUWEiE/BxgaGxBpHRQhQVwfEyUiP/2gAMAwEAAhEDEQA/AN+W.../9k="
+                        ],
+                        [
+                            'type'    => 'Label',
+                            'caption' => "Sag danke und unterstütze den Modulentwickler: paypal.me/mbstern"
+                        ],
+                    ],
                 ],
             ],
-        ],
-    ],
-];
+        ];
 
-return json_encode($form);
-
-
+        return json_encode($form);
+    }
 
     // ---------------------------
     // Firmware und Gerätecheck
