@@ -920,52 +920,28 @@ class Reolink extends IPSModule
 
         // Bild nach Download massiv verkleinern (z.B. 10x kleiner)
         if (function_exists('imagecreatefromstring')) {
-            $src = @imagecreatefromstring($imgData);
+            $src = imagecreatefromstring($imgData);
             if ($src !== false) {
                 $srcWidth  = imagesx($src);
                 $srcHeight = imagesy($src);
 
-                if ($srcWidth > 0 && $srcHeight > 0) {
-                    $factor    = 4; // 4x kleiner
-                    $newWidth  = max(0.5, (int)round($srcWidth / $factor));
-                    $newHeight = max(0.5, (int)round($srcHeight / $factor));
+                $factor = 4;
+                $newWidth  = max(1, (int)($srcWidth / $factor));
+                $newHeight = max(1, (int)($srcHeight / $factor));
 
-                    $this->SendDebug('ModelImage', sprintf(
-                        'Resize von %dx%d auf %dx%d',
-                        $srcWidth,
-                        $srcHeight,
-                        $newWidth,
-                        $newHeight
-                    ), 0);
+                $dst = imagescale($src, $newWidth, $newHeight, IMG_BILINEAR_FIXED);
 
-                    $dst = imagecreatetruecolor($newWidth, $newHeight);
-
-                    // Transparenz erhalten (PNG)
+                if ($dst !== false) {
                     imagealphablending($dst, false);
                     imagesavealpha($dst, true);
 
-                    imagecopyresampled(
-                        $dst,
-                        $src,
-                        0,
-                        0,
-                        0,
-                        0,
-                        $newWidth,
-                        $newHeight,
-                        $srcWidth,
-                        $srcHeight
-                    );
-
                     ob_start();
-                    imagepng($dst);
+                    imagepng($dst, null, 9); // <<< Kompression!
                     $imgData = ob_get_clean();
 
                     imagedestroy($dst);
-                    imagedestroy($src);
-                } else {
-                    imagedestroy($src);
                 }
+                imagedestroy($src);
             }
         } else {
             $this->SendDebug('ModelImage', 'GD/Image-Funktionen nicht verfügbar, kein Resize möglich', 0);
