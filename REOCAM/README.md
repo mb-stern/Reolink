@@ -155,6 +155,7 @@ Je nach Konfiguration werden automatisch angelegt:
 ### Version 2.13 (23.12.2025)
 - Kamera-Infos und Produktbild werden im Konfigurationsformular angezeigt.
 - Die aktuelle Firmware wird auf https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md (inoffiziell) geprüft und eine neuere Version kann direkt im Konfigurationsformualer oder in der entsprechenden Variable heruntergeladen werden.
+- Timeout-Problem bei fehlerhafter Verbindungen behoben.
 
 ### Version 2.12 (09.11.2025)
 - Fehler beim setzen der Sensitivität behoben.
