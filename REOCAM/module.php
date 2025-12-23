@@ -926,7 +926,7 @@ class Reolink extends IPSModule
                 $srcHeight = imagesy($src);
 
                 if ($srcWidth > 0 && $srcHeight > 0) {
-                    $factor    = 5; // 4x kleiner
+                    $factor    = 7; // 4x kleiner
                     $newWidth  = max(1, (int)round($srcWidth / $factor));
                     $newHeight = max(1, (int)round($srcHeight / $factor));
 
