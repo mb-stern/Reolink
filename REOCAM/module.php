@@ -421,11 +421,8 @@ class Reolink extends IPSModule
             ];
         }
 
-        // Formular komplett in PHP aufbauen
         $form = [
             'elements' => [
-
-                // --- OBEN: Webhook & Einstellungen ---
                 [
                     'type'    => 'Label',
                     'caption' => ''
@@ -536,16 +533,8 @@ class Reolink extends IPSModule
                     ],
                 ],
 
-                // --- HIER: nach den Einstellungen, vor PayPal ---
-                [
-                    'type'    => 'Label',
-                    'caption' => ''
-                ],
-
-                // Bild + Geräteinfos (wie bisher gebaut)
                 $deviceHeaderElement,
 
-                // Firmware-Check direkt darunter (wie bisher)
                 [
                     'type'    => 'Label',
                     'name'    => 'FirmwareCheck',
@@ -936,7 +925,7 @@ class Reolink extends IPSModule
                     imagesavealpha($dst, true);
 
                     ob_start();
-                    imagepng($dst, null, 18); // <<< Kompression!
+                    imagepng($dst, null, 9); // <<< Kompression!
                     $imgData = ob_get_clean();
 
                     imagedestroy($dst);
