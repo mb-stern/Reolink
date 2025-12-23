@@ -2084,7 +2084,6 @@ class Reolink extends IPSModule
     private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
     {
         $this->dbg($topic, "HTTP POST", ['url' => $url]);
-
         $this->dbg($topic, "REQUEST", $payload);
 
         $ch = curl_init($url);
@@ -2094,8 +2093,15 @@ class Reolink extends IPSModule
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload)
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+
+            // >>> hier neu: Timeouts <<<
+            // Max. Zeit für den Verbindungsaufbau (Sekunden)
+            CURLOPT_CONNECTTIMEOUT => 5,
+            // Max. Gesamtzeit für die Anfrage (Sekunden)
+            CURLOPT_TIMEOUT        => 8
         ]);
+
         $raw = curl_exec($ch);
         if ($raw === false) {
             $err = curl_error($ch);
