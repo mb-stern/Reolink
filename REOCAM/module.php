@@ -1971,8 +1971,10 @@ class Reolink extends IPSModule
                 curl_close($ch);
                 $this->dbg('TOKEN', 'cURL-Fehler', $err);
                 $this->LogMessage("Reolink/TOKEN: cURL-Fehler beim Login: $err", KL_ERROR);
+                $this->WriteAttributeInteger('LastTokenErrorTs', time());
                 return;
             }
+
             curl_close($ch);
 
             $this->dbg('TOKEN', 'RAW', $this->redactDeep($response));
@@ -1982,11 +1984,14 @@ class Reolink extends IPSModule
             if (!is_string($token) || $token === "") {
                 $this->dbg('TOKEN', 'Ungueltige Antwort (kein Token)', $responseData);
                 $this->LogMessage("Reolink/TOKEN: Fehler beim Abrufen des Tokens: ".$response, KL_ERROR);
+                $this->WriteAttributeInteger('LastTokenErrorTs', time());
                 return;
             }
 
+
             $this->WriteAttributeString("ApiToken", $token);
             $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
+            $this->WriteAttributeInteger('LastTokenErrorTs', 0); // Fehler-Flag zurücksetzen
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
             $this->dbg('TOKEN', 'Token gespeichert; Erneuerungstimer gesetzt');
         } finally {
@@ -2006,6 +2011,13 @@ class Reolink extends IPSModule
 
         // Online-Status aktualisieren (z.B. Ping / Erreichbarkeit)
         $this->UpdateOnlineStatus();
+
+        // Wenn Kamera als offline markiert ist, keine API-Requests ausführen
+        $onlineId = @$this->GetIDForIdent('KameraOnline');
+        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
+            $this->dbg('API', 'Abgebrochen: Kamera offline, keine API-Requests');
+            return;
+        }
 
         // Ohne gültigen Token machen alle weiteren API-Aufrufe keinen Sinn
         if (!$this->apiEnsureToken()) {
@@ -2081,7 +2093,7 @@ class Reolink extends IPSModule
         return "http://{$ip}/api.cgi";
     }
 
-    function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
+    private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
     {
         $this->dbg($topic, "HTTP POST", ['url' => $url]);
         $this->dbg($topic, "REQUEST", $payload);
@@ -2095,9 +2107,12 @@ class Reolink extends IPSModule
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode($payload),
 
-            // <<< WICHTIG: Timeouts >>>
-            CURLOPT_CONNECTTIMEOUT => 5, // Sekunden für Verbindungsaufbau
-            CURLOPT_TIMEOUT        => 8, // Max. Dauer der kompletten Anfrage
+            // >>> wichtige Timeouts <<<
+            CURLOPT_CONNECTTIMEOUT => 5,  // Sekunden für Verbindungsaufbau
+            CURLOPT_TIMEOUT        => 8,  // maximale Gesamtdauer
+            // wenn du es noch aggressiver willst:
+            // CURLOPT_CONNECTTIMEOUT_MS => 3000,
+            // CURLOPT_TIMEOUT_MS        => 5000,
         ]);
 
         $raw = curl_exec($ch);
@@ -2127,12 +2142,35 @@ class Reolink extends IPSModule
 
     private function apiEnsureToken(): bool
     {
-        if (!$this->isActive()) return false;
+        if (!$this->isActive()) {
+            return false;
+        }
+
+        // Wenn es eine KameraOnline-Variable gibt und sie FALSE ist:
+        // => gar nicht erst versuchen, einen Token zu holen.
+        $onlineId = @$this->GetIDForIdent('KameraOnline');
+        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
+            $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
+            return false;
+        }
+
         $token = $this->ReadAttributeString("ApiToken");
         $exp   = (int)$this->ReadAttributeInteger("ApiTokenExpiresAt");
-        if ($token === "" || time() >= ($exp - 30)) {
+        $now   = time();
+
+        // Token fehlt oder läuft in Kürze ab
+        if ($token === "" || $now >= ($exp - 30)) {
+
+            // Login-Backoff: wenn der letzte Fehler < 60s her ist, NICHT erneut versuchen
+            $lastError = (int)$this->ReadAttributeInteger('LastTokenErrorTs');
+            if ($lastError !== 0 && ($now - $lastError) < 60) {
+                $this->dbg('TOKEN', 'Letzter Login-Fehler < 60s her – überspringe neuen Versuch');
+                return false;
+            }
+
             $this->GetToken();
         }
+
         return $this->ReadAttributeString("ApiToken") !== "";
     }
 
