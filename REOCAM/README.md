@@ -109,6 +109,7 @@ Je nach Konfiguration werden automatisch angelegt:
 | Bewegung Sensitivität  | Integer | Bewegungsempfindlichkeit |
 | Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
 | Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
+| Neue Firmware vorhanden / Firmware Download | Boolean  / String | Firmware gefunden mit Downloadmöglichkeit |
 
 
 ### Profile
