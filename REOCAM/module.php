@@ -132,7 +132,10 @@ class Reolink extends IPSModule
 
         // Firmware-Check-Timer: einmal pro Tag
         if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
+            // Timer für spätere automatische Checks
             $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
+
+            $this->FirmwareCheckTimer();
         } else {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
         }
