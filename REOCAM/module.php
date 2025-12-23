@@ -925,7 +925,7 @@ class Reolink extends IPSModule
                 $srcWidth  = imagesx($src);
                 $srcHeight = imagesy($src);
 
-                $factor = 5;
+                $factor = 4;
                 $newWidth  = max(1, (int)($srcWidth / $factor));
                 $newHeight = max(1, (int)($srcHeight / $factor));
 
@@ -936,7 +936,7 @@ class Reolink extends IPSModule
                     imagesavealpha($dst, true);
 
                     ob_start();
-                    imagepng($dst, null, 9); // <<< Kompression!
+                    imagepng($dst, null, 18); // <<< Kompression!
                     $imgData = ob_get_clean();
 
                     imagedestroy($dst);
