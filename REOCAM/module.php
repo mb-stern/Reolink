@@ -2095,20 +2095,27 @@ class Reolink extends IPSModule
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode($payload),
 
-            // >>> hier neu: Timeouts <<<
+            // --- WICHTIG: Timeouts ---
             // Max. Zeit für den Verbindungsaufbau (Sekunden)
             CURLOPT_CONNECTTIMEOUT => 5,
-            // Max. Gesamtzeit für die Anfrage (Sekunden)
-            CURLOPT_TIMEOUT        => 8
+            // Max. Gesamtzeit für die komplette Anfrage (Sekunden)
+            CURLOPT_TIMEOUT        => 8,
         ]);
 
         $raw = curl_exec($ch);
         if ($raw === false) {
-            $err = curl_error($ch);
+            $errno = curl_errno($ch);
+            $err   = curl_error($ch);
+            $info  = curl_getinfo($ch);
             curl_close($ch);
+
             if (!$suppressError) {
-                $this->dbg($topic, "cURL error", $err);
-                $this->LogMessage("Reolink/$topic: cURL-Fehler: $err", KL_ERROR);
+                $this->dbg($topic, "cURL error", [
+                    'errno' => $errno,
+                    'error' => $err,
+                    'info'  => $info
+                ]);
+                $this->LogMessage("Reolink/$topic: cURL-Fehler: [$errno] $err", KL_ERROR);
             }
             return null;
         }
