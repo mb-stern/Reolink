@@ -473,6 +473,7 @@ class Reolink extends IPSModule
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Statusvariablen erstellen'],
                         [
                             'type'    => 'Button',
                             'caption' => 'API-Version Cache zurücksetzen',
@@ -542,7 +543,7 @@ class Reolink extends IPSModule
                     'name'    => 'FirmwareCheck',
                     'caption' => $firmwareCheckMessage
                 ],
-                ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Statusvariablen erstellen'],
+
                 [
                     'type'    => 'Label',
                     'caption' => ''
