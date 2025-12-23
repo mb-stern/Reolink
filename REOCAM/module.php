@@ -417,7 +417,6 @@ class Reolink extends IPSModule
                     ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
                     ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
                     ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
-                    ['type' => 'Label', 'name' => 'DevLine7', 'caption' => $lines[6]],
                 ],
             ];
         }
@@ -927,7 +926,7 @@ class Reolink extends IPSModule
                 $srcHeight = imagesy($src);
 
                 if ($srcWidth > 0 && $srcHeight > 0) {
-                    $factor    = 4; // 4x kleiner
+                    $factor    = 5; // 4x kleiner
                     $newWidth  = max(1, (int)round($srcWidth / $factor));
                     $newHeight = max(1, (int)round($srcHeight / $factor));
 
