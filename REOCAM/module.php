@@ -861,8 +861,8 @@ class Reolink extends IPSModule
         $cameraIP = $this->ReadPropertyString('CameraIP');
 
         // Frische Abfrage
-        $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO(FRESH)', /*suppress*/ true);
-        $this->SendDebug('DEVINFO(FRESH)', 'RAW: ' . print_r($res, true), 0);
+        $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO', /*suppress*/ true);
+        $this->SendDebug('DEVINFO', 'RAW: ' . print_r($res, true), 0);
 
         $devInfo = [];
         if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
