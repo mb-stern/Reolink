@@ -52,6 +52,7 @@ class Reolink extends IPSModule
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
         $this->RegisterAttributeString('DevInfoCache', '');
+        $this->RegisterAttributeString('ModelImageCache', '{}');
         $this->RegisterAttributeInteger('DevInfoLastRefresh', 0);
         $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
@@ -884,49 +885,97 @@ class Reolink extends IPSModule
             return null;
         }
 
-        $modelName   = preg_replace('/\s*\(.*$/', '', $dev['model']);
+        // Modellname aus DevInfo, evtl. "(IPC)" o.ä. abschneiden
+        $modelName = preg_replace('/\s*\(.*$/', '', $dev['model']);
+
+        // einfacher Cache nach Modellname
+        $cacheAttr = 'ModelImageCache';
+        $rawCache  = $this->ReadAttributeString($cacheAttr);
+        $cache     = @json_decode($rawCache, true);
+        if (!is_array($cache)) {
+            $cache = [];
+        }
+
+        //if (isset($cache[$modelName]['image']) && is_string($cache[$modelName]['image'])) {
+        //    return $cache[$modelName]['image'];
+        }
+
+        // URL nach Reolink-Muster aufbauen
         $encodedModel = rawurlencode($modelName);
-        $url = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/' .
-            $encodedModel . '/product.png';
+        $url          = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/' .
+                        $encodedModel . '/product.png';
 
         $this->SendDebug('ModelImage', 'Lade Bild von: ' . $url, 0);
 
-        // Download mit Timeout
-        $ctx = stream_context_create([
-            'http' => [
-                'timeout' => 5
-            ]
-        ]);
-
-        $imgData = @file_get_contents($url, false, $ctx);
+        $imgData = @file_get_contents($url);
         if ($imgData === false || $imgData === '') {
             $this->SendDebug('ModelImage', 'Download fehlgeschlagen', 0);
             return null;
         }
 
-        // Optional: Resize
+        // Bild nach Download massiv verkleinern (z.B. 10x kleiner)
         if (function_exists('imagecreatefromstring')) {
-            $src = @imagecreatefromstring($imgData);
+                $src = @imagecreatefromstring($imgData);
             if ($src !== false) {
+                $srcWidth  = imagesx($src);
+                $srcHeight = imagesy($src);
 
-                // feste Zielbreite statt Faktor (empfohlen)
-                $dst = imagescale($src, 160, -1, IMG_BILINEAR_FIXED);
+                if ($srcWidth > 0 && $srcHeight > 0) {
+                    $factor    = 4; // 4x kleiner
+                    $newWidth  = max(1, (int)round($srcWidth / $factor));
+                    $newHeight = max(1, (int)round($srcHeight / $factor));
 
-                if ($dst !== false) {
+                    $this->SendDebug('ModelImage', sprintf(
+                        'Resize von %dx%d auf %dx%d',
+                        $srcWidth,
+                        $srcHeight,
+                        $newWidth,
+                        $newHeight
+                    ), 0);
+
+                    $dst = imagecreatetruecolor($newWidth, $newHeight);
+
+                    // Transparenz erhalten (PNG)
                     imagealphablending($dst, false);
                     imagesavealpha($dst, true);
 
+                    imagecopyresampled(
+                        $dst,
+                        $src,
+                        0,
+                        0,
+                        0,
+                        0,
+                        $newWidth,
+                        $newHeight,
+                        $srcWidth,
+                        $srcHeight
+                    );
+
                     ob_start();
-                    imagepng($dst, null, 9); // maximale PNG-Kompression
+                    imagepng($dst);
                     $imgData = ob_get_clean();
 
                     imagedestroy($dst);
+                    imagedestroy($src);
+                } else {
+                    imagedestroy($src);
                 }
-                imagedestroy($src);
             }
+        } else {
+            $this->SendDebug('ModelImage', 'GD/Image-Funktionen nicht verfügbar, kein Resize möglich', 0);
         }
 
-        return 'data:image/png;base64,' . base64_encode($imgData);
+        // verkleinertes Bild in Base64 wandeln
+        $base64 = 'data:image/png;base64,' . base64_encode($imgData);
+
+        // im Attribut cachen
+        $cache[$modelName] = [
+            'image' => $base64
+        ];
+        $this->WriteAttributeString($cacheAttr, json_encode($cache));
+
+        return $base64;
     }
 
     private function apiGetDevInfoCached(bool $forceFresh = false): array
