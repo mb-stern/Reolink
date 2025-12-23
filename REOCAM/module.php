@@ -927,8 +927,8 @@ class Reolink extends IPSModule
 
                 if ($srcWidth > 0 && $srcHeight > 0) {
                     $factor    = 4; // 4x kleiner
-                    $newWidth  = max(0.8, (int)round($srcWidth / $factor));
-                    $newHeight = max(0.8, (int)round($srcHeight / $factor));
+                    $newWidth  = max(0.5, (int)round($srcWidth / $factor));
+                    $newHeight = max(0.5, (int)round($srcHeight / $factor));
 
                     $this->SendDebug('ModelImage', sprintf(
                         'Resize von %dx%d auf %dx%d',
