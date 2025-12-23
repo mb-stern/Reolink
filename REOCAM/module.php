@@ -534,7 +534,7 @@ class Reolink extends IPSModule
                 ],
             ],
 
-                'elements' => [
+                'actions' => [
 
                 $deviceHeaderElement,
 
