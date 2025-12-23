@@ -888,18 +888,6 @@ class Reolink extends IPSModule
         // Modellname aus DevInfo, evtl. "(IPC)" o.ä. abschneiden
         $modelName = preg_replace('/\s*\(.*$/', '', $dev['model']);
 
-        // einfacher Cache nach Modellname
-        $cacheAttr = 'ModelImageCache';
-        $rawCache  = $this->ReadAttributeString($cacheAttr);
-        $cache     = @json_decode($rawCache, true);
-        if (!is_array($cache)) {
-            $cache = [];
-        }
-
-        //if (isset($cache[$modelName]['image']) && is_string($cache[$modelName]['image'])) {
-        //    return $cache[$modelName]['image'];
-        }
-
         // URL nach Reolink-Muster aufbauen
         $encodedModel = rawurlencode($modelName);
         $url          = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/' .
@@ -913,9 +901,9 @@ class Reolink extends IPSModule
             return null;
         }
 
-        // Bild nach Download massiv verkleinern (z.B. 10x kleiner)
+        // Bild nach Download massiv verkleinern (z.B. 4x kleiner)
         if (function_exists('imagecreatefromstring')) {
-                $src = @imagecreatefromstring($imgData);
+            $src = @imagecreatefromstring($imgData);
             if ($src !== false) {
                 $srcWidth  = imagesx($src);
                 $srcHeight = imagesy($src);
@@ -966,14 +954,8 @@ class Reolink extends IPSModule
             $this->SendDebug('ModelImage', 'GD/Image-Funktionen nicht verfügbar, kein Resize möglich', 0);
         }
 
-        // verkleinertes Bild in Base64 wandeln
+        // Bild in Base64 wandeln
         $base64 = 'data:image/png;base64,' . base64_encode($imgData);
-
-        // im Attribut cachen
-        $cache[$modelName] = [
-            'image' => $base64
-        ];
-        $this->WriteAttributeString($cacheAttr, json_encode($cache));
 
         return $base64;
     }
