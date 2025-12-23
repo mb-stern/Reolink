@@ -533,7 +533,7 @@ class Reolink extends IPSModule
                     ],
                 ],
 
-                $deviceHeaderElement, $firmwareCheckMessage,
+                $deviceHeaderElement,
 
                 [
                     'type'    => 'Label',
