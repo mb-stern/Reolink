@@ -29,11 +29,12 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean("EnableApiWhiteLed", true);
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
-        $this->RegisterPropertyBoolean("EnableApiFTP", false);
+        $this->RegisterPropertyBoolean("EnableApiFTP", true);
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
+        $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
 
 
         // Archiv
@@ -50,6 +51,11 @@ class Reolink extends IPSModule
         $this->RegisterAttributeInteger("ExecLastTs", 0);
         $this->RegisterAttributeString('ApiVersionCache', '{}');
         $this->RegisterAttributeString('ApiCache', '{}');
+        $this->RegisterAttributeString('DevInfoCache', '');
+        $this->RegisterAttributeString('ModelImageCache', '{}');
+        $this->RegisterAttributeInteger('DevInfoLastRefresh', 0);
+        $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
+        $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -58,10 +64,11 @@ class Reolink extends IPSModule
         $this->RegisterTimer("Bewegung_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Bewegung");');
         $this->RegisterTimer("Test_Reset",     0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Test");');
         $this->RegisterTimer("Besucher_Reset", 0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Besucher");');
-
         $this->RegisterTimer("PollingTimer",      0, 'REOCAM_Polling($_IPS[\'TARGET\']);');
         $this->RegisterTimer("ApiRequestTimer",   0, 'REOCAM_ExecuteApiRequests($_IPS[\'TARGET\'], false);');
         $this->RegisterTimer("TokenRenewalTimer", 0, 'REOCAM_GetToken($_IPS[\'TARGET\']);');
+        $this->RegisterTimer("FirmwareCheckTimer", 0, 'REOCAM_FirmwareCheckTimer($_IPS[\'TARGET\']);');
+
     }
 
     public function ApplyChanges()
@@ -73,7 +80,7 @@ class Reolink extends IPSModule
             $this->SetStatus(104);
             foreach ([
                 "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
-                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer"
+                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer","FirmwareCheckTimer"
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
@@ -122,6 +129,16 @@ class Reolink extends IPSModule
 
 
         $this->CreateOrUpdateApiVariablesUnified();
+
+        // Firmware-Check-Timer: einmal pro Tag
+        if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
+            // Timer für spätere automatische Checks
+            $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
+
+            $this->FirmwareCheckTimer();
+        } else {
+            $this->SetTimerInterval('FirmwareCheckTimer', 0);
+        }
 
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
         if ($anyFeatureOn) {
@@ -322,29 +339,901 @@ class Reolink extends IPSModule
     // Webhook + Formular
     // ---------------------------
 
-    public function GetConfigurationForm()
+   public function GetConfigurationForm()
     {
-        $formPath = __DIR__ . '/form.json';
-        $form = file_exists($formPath) ? json_decode(file_get_contents($formPath), true) : ['elements' => []];
-
-        $hookPath = $this->ReadAttributeString("CurrentHook");
+        // Webhook ermitteln/registrieren
+        $hookPath = $this->ReadAttributeString('CurrentHook');
         if ($hookPath === '') {
             $hookPath = $this->RegisterHook();
         }
+        $webhookFull = $this->BuildWebhookFullUrl($hookPath);
 
-        $full = $this->BuildWebhookFullUrl($hookPath);
+        // DevInfo für das Formular IMMER frisch von der Kamera holen
+        $dev = $this->apiGetDevInfoFresh();
 
-        $head = [
-            [
-                "type"    => "Label",
-                "name"    => "WebhookFull",
-                "caption" => "Webhook für Kamerakonfiguration: " . $full
+        // Fallback, falls die Abfrage schiefgeht
+        if (!is_array($dev)) {
+            $dev = [];
+        }
+
+        // Build-String etwas hübscher machen (ohne "build ")
+        $build = $dev['buildDay'] ?? '';
+        if (is_string($build) && stripos($build, 'build ') === 0) {
+            $build = trim(substr($build, 6)); // "build 2412021483" -> "2412021483"
+        }
+        if ($build === '') {
+            $build = 'n/a';
+        }
+
+        // Zeilenweise Ausgabe vorbereiten
+        $lines = [
+            'Gerät: '     . ($dev['model']   ?? 'unbekannt'),
+            'Firmware: '  . ($dev['firmVer'] ?? 'n/a'),
+            'HW: '        . ($dev['hardVer'] ?? 'n/a'),
+            'Build: '     . $build,
+            'Seriennr.: ' . ($dev['serial']  ?? 'n/a'),
+            'Detail: '    . ($dev['detail']    ?? 'n/a'),
+        ];
+
+        // Bild holen (Base64, bereits verkleinert)
+        $imageData = $this->getModelImageBase64($dev);
+
+        // Firmwarecheck-Text vorbereiten
+        $fwInfo = $this->FirmwareCheck($dev);
+        $firmwareCheckMessage = $this->FirmwareCheckMessage($dev, $fwInfo);
+
+
+        // Header-Element zusammenbauen: Bild links, Infos rechts (zeilenweise)
+        if (!empty($imageData)) {
+            $infoColumn = [
+                'type'  => 'ColumnLayout',
+                'items' => [
+                    ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
+                    ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
+                    ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
+                    ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
+                    ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
+                    ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
+                ],
+            ];
+
+            $deviceHeaderElement = [
+                'type'  => 'RowLayout',
+                'items' => [
+                    [
+                        'type'  => 'Image',
+                        'name'  => 'DeviceImage',
+                        'image' => $imageData
+                        // width/height optional, Bild ist physisch verkleinert
+                    ],
+                    $infoColumn,
+                ],
+            ];
+        } else {
+            // Fallback ohne Bild: nur Infos untereinander
+            $deviceHeaderElement = [
+                'type'  => 'ColumnLayout',
+                'items' => [
+                    ['type' => 'Label', 'name' => 'DevLine1', 'caption' => $lines[0]],
+                    ['type' => 'Label', 'name' => 'DevLine2', 'caption' => $lines[1]],
+                    ['type' => 'Label', 'name' => 'DevLine3', 'caption' => $lines[2]],
+                    ['type' => 'Label', 'name' => 'DevLine4', 'caption' => $lines[3]],
+                    ['type' => 'Label', 'name' => 'DevLine5', 'caption' => $lines[4]],
+                    ['type' => 'Label', 'name' => 'DevLine6', 'caption' => $lines[5]],
+                ],
+            ];
+        }
+
+        $form = [
+            'elements' => [
+                [
+                    'type'    => 'Label',
+                    'caption' => ''
+                ],
+                [
+                    'type'    => 'Label',
+                    'name'    => 'WebhookFull',
+                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
+                ],
+                [
+                    'type'    => 'CheckBox',
+                    'name'    => 'InstanceStatus',
+                    'caption' => 'Instanz aktivieren'
+                ],
+                [
+                    'type'    => 'ValidationTextBox',
+                    'name'    => 'CameraIP',
+                    'caption' => 'Kamera IP'
+                ],
+                [
+                    'type'    => 'ValidationTextBox',
+                    'name'    => 'Username',
+                    'caption' => 'Benutzername'
+                ],
+                [
+                    'type'    => 'PasswordTextBox',
+                    'name'    => 'Password',
+                    'caption' => 'Passwort'
+                ],
+                [
+                    'type'    => 'Select',
+                    'name'    => 'StreamType',
+                    'caption' => 'Stream-Typ',
+                    'options' => [
+                        ['caption' => 'Mainstream', 'value' => 'main'],
+                        ['caption' => 'Substream',  'value' => 'sub'],
+                    ],
+                ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'API-Funktionen',
+                    'items'   => [
+                        ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
+                        [
+                            'type'    => 'Button',
+                            'caption' => 'API-Version Cache zurücksetzen',
+                            'onClick' => "IPS_RequestAction(\$id, 'ResetApiCache', true); echo 'Cache gelöscht.';"
+                        ],
+                    ],
+                ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Bewegungserkennung/Aufnahmen',
+                    'items'   => [
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'EnablePolling',
+                            'caption' => 'Polling aktivieren (für Kameras ohne Webhook-Unterstützung)'
+                        ],
+                        [
+                            'type'    => 'NumberSpinner',
+                            'name'    => 'PollingInterval',
+                            'caption' => 'Polling-Intervall',
+                            'suffix'  => 'Sekunden',
+                            'minimum' => 2,
+                            'maximum' => 3600
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowTestElements',
+                            'caption' => 'Test-Funktion Bewegungserkennung (Aktivierbar im Kamerainterface/Webhook)'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowVisitorElements',
+                            'caption' => 'Besucher-Erkennung aktivieren (für Doorbell)'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowMoveVariables',
+                            'caption' => 'Intelligente Bewegungserkennung'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowSnapshots',
+                            'caption' => 'Schnappschüsse anzeigen'
+                        ],
+                        [
+                            'type'    => 'CheckBox',
+                            'name'    => 'ShowArchives',
+                            'caption' => 'Bildarchive anzeigen'
+                        ],
+                        [
+                            'type'    => 'NumberSpinner',
+                            'name'    => 'MaxArchiveImages',
+                            'caption' => 'Maximale Anzahl Archivbilder',
+                            'minimum' => 1,
+                            'suffix'  => 'Bilder'
+                        ],
+                    ],
+                ],
+            ],
+
+                'actions' => [
+
+                $deviceHeaderElement,
+
+                [
+                    'type'    => 'Label',
+                    'name'    => 'FirmwareCheck',
+                    'caption' => $firmwareCheckMessage
+                ],
+
+                [
+                    'type'    => 'Label',
+                    'caption' => ''
+                ],
+                [
+                    'type'  => 'RowLayout',
+                    'items' => [
+                        [
+                                'type'   => 'Image',
+                                'onClick'=> "echo 'https://paypal.me/mbstern';",
+                                'image'=> "data:image/jpeg;base64,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"
+                        ],
+                        [
+                            'type'    => 'Label',
+                            'caption' => "Sag danke und unterstütze den Modulentwickler: paypal.me/mbstern"
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        return json_encode($form);
+    }
+
+    // ---------------------------
+    // Firmware und Gerätecheck
+    // ---------------------------
+
+    // 1) Reiner Check: holt README, parst, vergleicht -> gibt Info-Array zurück (oder null bei Fehler)
+    private function FirmwareCheck(array $dev): ?array
+    {
+        $firm = trim((string)($dev['firmVer'] ?? ''));
+        if ($firm === '') {
+            return null;
+        }
+
+        $readme = $this->fetchFirmwareReadme();
+        if ($readme === null || $readme === '') {
+            return null;
+        }
+
+        return $this->findLatestFirmwareForInstalled($readme, $firm);
+    }
+
+    // 2) Reine Darstellung fürs Formular (kein SetValue, keine Seiteneffekte)
+    private function FirmwareCheckMessage(array $dev, ?array $info): string
+    {
+        $firm = trim((string)($dev['firmVer'] ?? ''));
+        $buildDay = trim((string)($dev['buildDay'] ?? ''));
+        if (stripos($buildDay, 'build ') === 0) {
+            $buildDay = trim(substr($buildDay, 6));
+        }
+
+        if ($firm === '') {
+            return 'ℹ️ Firmware: unbekannt – Online-Firmwareprüfung nicht möglich (keine Firmwareangabe).';
+        }
+
+        $base = 'ℹ️ Firmware: ' . $firm;
+        if ($buildDay !== '') {
+            $base .= ' (Build ' . $buildDay . ')';
+        }
+
+        if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
+            return $base . ' – Online-Firmwareprüfung nicht möglich.';
+        }
+
+        if (!$info['installed_found']) {
+            return $base . ' – Firmware im README nicht gefunden.';
+        }
+
+        if (empty($info['is_newer'])) {
+            return 'Es wurde keine neuere Firmware gefunden.';
+        }
+
+        $latest = (string)($info['latest_version'] ?? '');
+        $url    = (string)($info['download_url'] ?? '');
+
+        if ($latest !== '' && $url !== '') {
+            return 'Neue Firmware gefunden: ' . $latest . ' – Download: ' . $url;
+        }
+
+        return 'Neue Firmware gefunden.';
+    }
+
+    private function fetchFirmwareReadme(): ?string
+    {
+        // ggf. anpassen, wenn du eine eigene Kopie nutzt
+        $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
+
+        $opts = [
+            'http' => [
+                'method'        => 'GET',
+                'timeout'       => 10,
+                'ignore_errors' => true
+            ],
+            // falls es ein TLS-Problem gibt, testweise Peer-Check aus:
+            'ssl'  => [
+                'verify_peer'      => false,
+                'verify_peer_name' => false
             ]
         ];
 
-        array_splice($form['elements'], 0, 0, $head);
-        return json_encode($form);
+        $this->SendDebug('FirmwareCheck', 'Lade Firmware-README von ' . $url, 0);
+        $result = @Sys_GetURLContent($url);
+
+        if ($result === false || $result === '') {
+            $err = error_get_last();
+            $this->SendDebug(
+                'FirmwareCheck',
+                'Fehler beim Laden des Firmware-README: ' . ($err['message'] ?? 'unbekannt'),
+                0
+            );
+            return null;
+        }
+
+        return $result;
     }
+
+    private function findLatestFirmwareForInstalled(string $readme, string $firmVer): ?array
+    {
+        $firmVer = trim($firmVer);
+        if ($firmVer === '') {
+            return null;
+        }
+
+        // Wir suchen mit führendem "v", weil die README-Tabellen so aussehen:
+        // [v3.0.0.3471_2406116464](...)
+        $searchVer = $firmVer;
+        if ($searchVer[0] !== 'v') {
+            $searchVer = 'v' . $searchVer;
+        }
+
+        // 1) Position der installierten Firmware im gesamten README finden
+        $posInstalled = strpos($readme, $searchVer);
+        if ($posInstalled === false) {
+            // Firmware kommt nirgendwo im README vor
+            return [
+                'installed_found'   => false,
+                'installed_version' => $searchVer,
+                'latest_version'    => null,
+                'download_url'      => null,
+                'is_newer'          => false
+            ];
+        }
+
+        // 2) Start des passenden Abschnitts (### IPC_...) nach oben suchen
+        $before       = substr($readme, 0, $posInstalled);
+        $sectionStart = strrpos($before, "\n  ### ");
+        if ($sectionStart === false) {
+            // Fallback: kein Abschnitts-Header gefunden → gesamte Datei verwenden (sollte nicht vorkommen)
+            $sectionText = $readme;
+        } else {
+            $sectionText = substr($readme, $sectionStart);
+
+            // Bis zum nächsten Abschnitt (nächste ###) begrenzen
+            $nextHeadingPos = strpos($sectionText, "\n  ### ", 6);
+            if ($nextHeadingPos !== false) {
+                $sectionText = substr($sectionText, 0, $nextHeadingPos);
+            }
+        }
+
+        // 3) Nur in diesem Abschnitt die Firmware-Tabelle parsen
+        $lines   = preg_split("/\r\n|\r|\n/", $sectionText);
+        $entries = [];
+
+        foreach ($lines as $line) {
+            // Zeilen wie:
+            // [v3.0.0.3471_2406116464](https://...) | 2024-06-11 | ...
+            if (preg_match('/\[(v[^\]]+)\]\(([^)]+)\)\s*\|/u', $line, $m)) {
+                $entries[] = [
+                    'version' => $m[1],
+                    'url'     => $m[2]
+                ];
+            }
+        }
+
+        if ($entries === []) {
+            // Im Abschnitt keine Firmware-Zeilen → besser ein "not found" zurückgeben
+            return [
+                'installed_found'   => false,
+                'installed_version' => $searchVer,
+                'latest_version'    => null,
+                'download_url'      => null,
+                'is_newer'          => false
+            ];
+        }
+
+        // 4) In dieser Tabelle die installierte Version und die neueste Version bestimmen
+        $installedFound = false;
+        $latest         = null;
+
+        foreach ($entries as $entry) {
+            if ($entry['version'] === $searchVer) {
+                $installedFound = true;
+            }
+
+            if ($latest === null || $this->compareFirmwareStrings($entry['version'], $latest['version']) > 0) {
+                $latest = $entry;
+            }
+        }
+
+        // Falls aus irgendeinem Grund kein "latest" gesetzt ist, lieber ein defensives Ergebnis zurückgeben
+        if ($latest === null) {
+            return [
+                'installed_found'   => $installedFound,
+                'installed_version' => $searchVer,
+                'latest_version'    => null,
+                'download_url'      => null,
+                'is_newer'          => false
+            ];
+        }
+
+        return [
+            'installed_found'   => $installedFound,
+            'installed_version' => $searchVer,
+            'latest_version'    => $latest['version'],
+            'download_url'      => $latest['url'],
+            'is_newer'          => $installedFound
+                                && $this->compareFirmwareStrings($latest['version'], $searchVer) > 0
+        ];
+    }
+
+    private function UpdateFirmwareVariables(?array $info): void
+    {
+        $enableFwVars = $this->ReadPropertyBoolean('EnableFirmwareVariables');
+        if (!$enableFwVars) {
+            return;
+        }
+
+        if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
+            // generischer Fehler
+            $this->SetValue('FirmwareUpdateAvailable', false);
+            $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
+            return;
+        }
+
+        if (!$info['installed_found']) {
+            $this->SetValue('FirmwareUpdateAvailable', false);
+            $this->SetValue('FirmwareDownloadUrl', 'Firmware im README nicht gefunden');
+            return;
+        }
+
+        // Ab hier: passende Tabelle gefunden
+        $latest = $info['latest_version'] ?? null;
+        $url    = $info['download_url'] ?? null;
+        $isNewer = $info['is_newer'] ?? false;
+
+        if (!$isNewer || $latest === null || $url === null) {
+            $this->SetValue('FirmwareUpdateAvailable', false);
+            $this->SetValue('FirmwareDownloadUrl', 'Keine neuere Firmware vorhanden');
+        } else {
+            $this->SetValue('FirmwareUpdateAvailable', true);
+            $this->SetValue('FirmwareDownloadUrl', sprintf('<a href="%s" target="_blank">%s</a>', $url, $url));
+        }
+    }
+
+    private function compareFirmwareStrings(string $a, string $b): int
+    {
+        // führendes "v" ignorieren
+        if ($a !== '' && $a[0] === 'v') {
+            $a = substr($a, 1);
+        }
+        if ($b !== '' && $b[0] === 'v') {
+            $b = substr($b, 1);
+        }
+
+        // Hauptversion und Build trennen: 3.0.0.3471_2406116464
+        [$va, $ba] = array_pad(explode('_', $a, 2), 2, '');
+        [$vb, $bb] = array_pad(explode('_', $b, 2), 2, '');
+
+        $partsA = array_map('intval', explode('.', $va));
+        $partsB = array_map('intval', explode('.', $vb));
+
+        $len = max(count($partsA), count($partsB));
+        for ($i = 0; $i < $len; $i++) {
+            $pa = $partsA[$i] ?? 0;
+            $pb = $partsB[$i] ?? 0;
+            if ($pa === $pb) {
+                continue;
+            }
+            return $pa <=> $pb;
+        }
+
+        // gleiche Hauptversion → Build vergleichen
+        $baInt = ctype_digit($ba) ? (int)$ba : 0;
+        $bbInt = ctype_digit($bb) ? (int)$bb : 0;
+        return $baInt <=> $bbInt;
+    }
+
+    public function FirmwareCheckTimer(): void
+    {
+        if (!$this->isActive() || !$this->ReadPropertyBoolean('EnableFirmwareVariables')) {
+            $this->SetTimerInterval('FirmwareCheckTimer', 0);
+            return;
+        }
+
+        $dev = $this->apiGetDevInfoFresh();
+        if (!is_array($dev)) {
+            $dev = [];
+        }
+
+        $info = $this->FirmwareCheck($dev);
+        $this->UpdateFirmwareVariables($info);
+
+        $this->WriteAttributeInteger('FirmwareLastCheckTs', time());
+    }
+
+    private function apiGetDevInfoFresh(): array
+    {
+        $attr     = 'DevInfoCache';
+        $now      = time();
+        $cameraIP = $this->ReadPropertyString('CameraIP');
+
+        // Frische Abfrage
+        $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO', /*suppress*/ true);
+        $this->SendDebug('DEVINFO', 'RAW: ' . print_r($res, true), 0);
+
+        $devInfo = [];
+        if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
+            $devInfo = $res[0]['value']['DevInfo'] ?? [];
+        }
+
+        // Cache aktualisieren
+        $this->WriteAttributeString($attr, json_encode([
+            'ts'      => $now,
+            'ip'      => $cameraIP,
+            'devInfo' => $devInfo,
+        ]));
+
+        return $devInfo;
+    }
+
+    private function getModelImageBase64(array $dev): ?string
+    {
+        if (empty($dev['model'])) {
+            return null;
+        }
+
+        // Modellname aus DevInfo, evtl. "(IPC)" o.ä. abschneiden
+        $modelName = preg_replace('/\s*\(.*$/', '', $dev['model']);
+
+        // einfacher Cache nach Modellname
+        $cacheAttr = 'ModelImageCache';
+        $rawCache  = $this->ReadAttributeString($cacheAttr);
+        $cache     = @json_decode($rawCache, true);
+        if (!is_array($cache)) {
+            $cache = [];
+        }
+
+        if (isset($cache[$modelName]['image']) && is_string($cache[$modelName]['image'])) {
+            return $cache[$modelName]['image'];
+        }
+
+        // URL nach Reolink-Muster aufbauen
+        $encodedModel = rawurlencode($modelName);
+        $url          = 'https://home-cdn.reolink.us/wp-content/assets/app/model-images/' .
+                        $encodedModel . '/product.png';
+
+        $this->SendDebug('ModelImage', 'Lade Bild von: ' . $url, 0);
+
+        $imgData = @file_get_contents($url);
+        if ($imgData === false || $imgData === '') {
+            $this->SendDebug('ModelImage', 'Download fehlgeschlagen', 0);
+            return null;
+        }
+
+        // Bild nach Download massiv verkleinern (z.B. 10x kleiner)
+        if (function_exists('imagecreatefromstring')) {
+            $src = imagecreatefromstring($imgData);
+            if ($src !== false) {
+                $srcWidth  = imagesx($src);
+                $srcHeight = imagesy($src);
+
+                $factor = 4;
+                $newWidth  = max(1, (int)($srcWidth / $factor));
+                $newHeight = max(1, (int)($srcHeight / $factor));
+
+                $dst = imagescale($src, $newWidth, $newHeight, IMG_BILINEAR_FIXED);
+
+                if ($dst !== false) {
+                    imagealphablending($dst, false);
+                    imagesavealpha($dst, true);
+
+                    ob_start();
+                    imagepng($dst, null, 9); // <<< Kompression!
+                    $imgData = ob_get_clean();
+
+                    imagedestroy($dst);
+                }
+                imagedestroy($src);
+            }
+        } else {
+            $this->SendDebug('ModelImage', 'GD/Image-Funktionen nicht verfügbar, kein Resize möglich', 0);
+        }
+
+        // verkleinertes Bild in Base64 wandeln
+        $base64 = 'data:image/png;base64,' . base64_encode($imgData);
+
+        // im Attribut cachen
+        $cache[$modelName] = [
+            'image' => $base64
+        ];
+        $this->WriteAttributeString($cacheAttr, json_encode($cache));
+
+        return $base64;
+    }
+
+    private function apiGetDevInfoCached(bool $forceFresh = false): array
+    {
+        $attr     = 'DevInfoCache';
+        $now      = time();
+        $cameraIP = $this->ReadPropertyString('CameraIP');
+
+        // 1) Cache lesen (nur wenn nicht "forceFresh")
+        if (!$forceFresh) {
+            $raw = @$this->ReadAttributeString($attr);
+            if (is_string($raw) && $raw !== '') {
+                $obj = @json_decode($raw, true);
+                if (
+                    is_array($obj)
+                    && isset($obj['ts'], $obj['devInfo'], $obj['ip'])
+                ) {
+                    // Nur benutzen, wenn IP noch gleich und Cache < 1h
+                    if (
+                        $obj['ip'] === $cameraIP
+                        && ($now - (int)$obj['ts']) < 3600
+                        && !empty($obj['devInfo'])
+                    ) {
+                        return (array)$obj['devInfo'];
+                    }
+                }
+            }
+        }
+
+        // 2) Frische Abfrage
+        $res = $this->apiCall([['cmd' => 'GetDevInfo']], 'DEVINFO', /*suppress*/ true);
+
+        $this->SendDebug('DEVINFO', 'RAW: ' . print_r($res, true), 0);
+
+        $devInfo = [];
+        if (is_array($res) && isset($res[0]['code']) && $res[0]['code'] === 0) {
+            $devInfo = $res[0]['value']['DevInfo'] ?? [];
+        }
+
+        $this->SendDebug('DevInfo', 'Parsed: ' . print_r($devInfo, true), 0);
+
+        // Nur cachen, wenn wirklich etwas drin ist
+        if (!empty($devInfo)) {
+            $this->WriteAttributeString($attr, json_encode([
+                'ts'      => $now,
+                'ip'      => $cameraIP,
+                'devInfo' => $devInfo
+            ]));
+        }
+
+        return $devInfo;
+    }
+
+    // ---------------------------
+    // API-Fähigkeiten für Formular & Cache
+    // ---------------------------
+
+    private function getApiSupportFlags(): array
+    {
+        $ability = $this->apiGetAbilityCached();
+        if (empty($ability)) {
+            // Noch keine Ability (kein Token / keine Verbindung) -> nichts einschränken
+            return [];
+        }
+
+        $chn = $ability['abilityChn'][0] ?? [];
+
+        // Grobe Feature-Erkennung aus Ability
+        $support = [
+            // Spotlight / Weißlicht-LED
+            'EnableApiWhiteLed' => (($chn['floodLight']['ver'] ?? 0) > 0)
+                                || (($chn['whiteLed']['ver'] ?? 0) > 0),
+
+            // IR-Licht
+            'EnableApiIR'       => (($chn['irLights']['ver'] ?? 0) > 0)
+                                || (($chn['led']['ver'] ?? 0) > 0),
+
+            // E-Mail-Alarm
+            'EnableApiEmail'    => (int)($ability['supportEmailEnable'] ?? 0) === 1,
+
+            // FTP
+            'EnableApiFTP'      => (($chn['ftp']['ver'] ?? 0) > 0),
+
+            // Motion-Detection / Sensitivity
+            'EnableApiSensitivity' =>
+                                    (($chn['alarmMd']['ver'] ?? 0) > 0)
+                                || (($chn['md']['ver'] ?? 0) > 0),
+
+            // Sirene / AudioAlarm
+            'EnableApiSiren'    => (($chn['AudioAlarm']['ver'] ?? 0) > 0)
+                                || (($chn['audioAlarm']['ver'] ?? 0) > 0),
+
+            // Recording
+            'EnableApiRecord'   => (($chn['recCfg']['ver'] ?? 0) > 0),
+
+            // PTZ
+            'EnableApiPTZ'      => (($chn['ptz']['ver'] ?? 0) > 0),
+        ];
+
+        // Feincheck: apiProbe pro Domain (füllt auch deinen ApiVersionCache!)
+        $probeMap = [
+            'EnableApiEmail'  => ['domain' => 'email',  'cmdV20' => 'GetEmailV20',      'cmdLegacy' => 'GetEmail',       'action' => 0],
+            'EnableApiFTP'    => ['domain' => 'ftp',    'cmdV20' => 'GetFtpV20',        'cmdLegacy' => 'GetFtp',         'action' => 0],
+            'EnableApiRecord' => ['domain' => 'record', 'cmdV20' => 'GetRecV20',        'cmdLegacy' => 'GetRec',         'action' => 1],
+            'EnableApiSiren'  => ['domain' => 'alarm',  'cmdV20' => 'GetAudioAlarmV20', 'cmdLegacy' => 'GetAudioAlarm',  'action' => 1],
+            // WhiteLed nutzt bei dir sowieso nur GetWhiteLed, apiProbe ist hier im Prinzip nur "ping"
+            'EnableApiWhiteLed' => ['domain' => 'spot', 'cmdV20' => 'GetWhiteLed',      'cmdLegacy' => 'GetWhiteLed',    'action' => 0],
+        ];
+
+        foreach ($probeMap as $propName => $p) {
+            // Wenn Ability schon sagt „geht nicht“, spar dir den Probe
+            if (isset($support[$propName]) && $support[$propName] === false) {
+                continue;
+            }
+
+            $ver = $this->apiProbe($p['domain'], $p['cmdV20'], $p['cmdLegacy'], $p['action']);
+            if ($ver === 'unsupported') {
+                $support[$propName] = false;
+            } elseif (!isset($support[$propName])) {
+                $support[$propName] = true;
+            }
+            // Wichtig: apiProbe schreibt hier bereits in deinen ApiVersionCache rein.
+        }
+
+        return $support;
+    }
+
+    private function buildApiFeatureMatrix(): array
+    {
+        $ability = $this->apiGetAbilityCached();
+        if (empty($ability)) {
+            return [];
+        }
+        $chn = $ability['abilityChn'][0] ?? [];
+
+        $rows = [];
+
+        $defs = [
+            'Email' => [
+                'prop'   => 'EnableApiEmail',
+                'label'  => 'E-Mail Alarm',
+                'domain' => 'email',
+                'cmdV20' => 'GetEmailV20',
+                'cmdLegacy' => 'GetEmail',
+                'action' => 0,
+                'supported' => (int)($ability['supportEmailEnable'] ?? 0) === 1
+            ],
+            'FTP' => [
+                'prop'   => 'EnableApiFTP',
+                'label'  => 'FTP Upload',
+                'domain' => 'ftp',
+                'cmdV20' => 'GetFtpV20',
+                'cmdLegacy' => 'GetFtp',
+                'action' => 0,
+                'supported' => (($chn['ftp']['ver'] ?? 0) > 0)
+            ],
+            'Record' => [
+                'prop'   => 'EnableApiRecord',
+                'label'  => 'Aufnahme / Record',
+                'domain' => 'record',
+                'cmdV20' => 'GetRecV20',
+                'cmdLegacy' => 'GetRec',
+                'action' => 1,
+                'supported' => (($chn['recCfg']['ver'] ?? 0) > 0)
+            ],
+            'Siren' => [
+                'prop'   => 'EnableApiSiren',
+                'label'  => 'Sirene / AudioAlarm',
+                'domain' => 'alarm',
+                'cmdV20' => 'GetAudioAlarmV20',
+                'cmdLegacy' => 'GetAudioAlarm',
+                'action' => 1,
+                'supported' => (($chn['AudioAlarm']['ver'] ?? 0) > 0)
+                            || (($chn['audioAlarm']['ver'] ?? 0) > 0)
+            ],
+            'WhiteLed' => [
+                'prop'   => 'EnableApiWhiteLed',
+                'label'  => 'Spotlight / Weißlicht',
+                'domain' => 'spot',
+                'cmdV20' => 'GetWhiteLed',
+                'cmdLegacy' => 'GetWhiteLed',
+                'action' => 0,
+                'supported' => (($chn['floodLight']['ver'] ?? 0) > 0)
+                            || (($chn['whiteLed']['ver'] ?? 0) > 0)
+            ],
+        ];
+
+        foreach ($defs as $key => $d) {
+            $supported = $d['supported'];
+
+            if (!$supported) {
+                $rows[] = [
+                    'label'     => $d['label'],
+                    'supported' => 'nein',
+                    'version'   => '-',
+                ];
+                continue;
+            }
+
+            // Erst versuchen, Version aus Cache zu holen
+            $ver = $this->apiVersionGet($d['domain']);
+            if ($ver === null) {
+                // Falls noch nicht probiert, einmalig apiProbe
+                $ver = $this->apiProbe($d['domain'], $d['cmdV20'], $d['cmdLegacy'], $d['action']);
+            }
+
+            $rows[] = [
+                'label'     => $d['label'],
+                'supported' => 'ja',
+                'version'   => ($ver === 'v20') ? 'V20' :
+                            (($ver === 'legacy') ? 'Legacy' :
+                            (($ver === 'unsupported') ? '–' : '?')),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function enrichFormWithApiSupport(array $form): array
+    {
+        $support = $this->getApiSupportFlags();
+        if (empty($support)) {
+            // Noch keine Infos -> nichts ausblenden
+            return $form;
+        }
+
+        if (!isset($form['elements']) || !is_array($form['elements'])) {
+            return $form;
+        }
+
+        foreach ($form['elements'] as &$el) {
+            if (($el['type'] ?? '') !== 'ExpansionPanel') {
+                continue;
+            }
+            if (($el['caption'] ?? '') !== 'API-Funktionen') {
+                continue;
+            }
+            if (!isset($el['items']) || !is_array($el['items'])) {
+                continue;
+            }
+
+            foreach ($el['items'] as &$item) {
+                $name = $item['name'] ?? null;
+                if ($name === null) {
+                    continue;
+                }
+                if (!array_key_exists($name, $support)) {
+                    continue;
+                }
+
+                if ($support[$name] === false) {
+                    // Variante A: ausblenden
+                    $item['visible'] = false;
+
+                    // Variante B (stattdessen, wenn du lieber alles siehst, aber deaktiviert):
+                    // $item['enabled'] = false;
+                    // $item['caption'] .= ' (nicht unterstützt)';
+                }
+            }
+            unset($item);
+        }
+        unset($el);
+
+        // Optional: Feature-Matrix anhängen
+        $rows = $this->buildApiFeatureMatrix();
+        if (!empty($rows)) {
+            $form['elements'][] = [
+                'type'    => 'List',
+                'name'    => 'ApiFeatureMatrix',
+                'caption' => 'Erkannte API-Funktionen',
+                'columns' => [
+                    [ 'caption' => 'Funktion',    'name' => 'label',     'width' => '250px' ],
+                    [ 'caption' => 'Unterstützt', 'name' => 'supported', 'width' => '100px' ],
+                    [ 'caption' => 'Version',     'name' => 'version',   'width' => '100px' ],
+                ],
+                'values'  => $rows,
+            ];
+        }
+
+        return $form;
+    }
+
 
     private function RegisterHook(): string
     {
@@ -976,6 +1865,16 @@ class Reolink extends IPSModule
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
         }
+
+        // -------- Firmwarevariablen--------
+        if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
+            $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware vorhanden", "~Switch", 12);
+            $this->RegisterVariableString("FirmwareDownloadUrl", "Firmware Download", "~HTMLBox", 13);
+
+        } else {
+            $this->UnregisterVariable("FirmwareUpdateAvailable");
+            $this->UnregisterVariable("FirmwareDownloadUrl");
+        }
     }
 
     // ---------------------------
@@ -1041,8 +1940,10 @@ class Reolink extends IPSModule
                 curl_close($ch);
                 $this->dbg('TOKEN', 'cURL-Fehler', $err);
                 $this->LogMessage("Reolink/TOKEN: cURL-Fehler beim Login: $err", KL_ERROR);
+                $this->WriteAttributeInteger('LastTokenErrorTs', time());
                 return;
             }
+
             curl_close($ch);
 
             $this->dbg('TOKEN', 'RAW', $this->redactDeep($response));
@@ -1052,11 +1953,14 @@ class Reolink extends IPSModule
             if (!is_string($token) || $token === "") {
                 $this->dbg('TOKEN', 'Ungueltige Antwort (kein Token)', $responseData);
                 $this->LogMessage("Reolink/TOKEN: Fehler beim Abrufen des Tokens: ".$response, KL_ERROR);
+                $this->WriteAttributeInteger('LastTokenErrorTs', time());
                 return;
             }
 
+
             $this->WriteAttributeString("ApiToken", $token);
             $this->WriteAttributeInteger("ApiTokenExpiresAt", time() + 3600 - 5);
+            $this->WriteAttributeInteger('LastTokenErrorTs', 0); // Fehler-Flag zurücksetzen
             $this->SetTimerInterval("TokenRenewalTimer", 3000 * 1000);
             $this->dbg('TOKEN', 'Token gespeichert; Erneuerungstimer gesetzt');
         } finally {
@@ -1069,43 +1973,74 @@ class Reolink extends IPSModule
 
     public function ExecuteApiRequests(bool $force = false)
     {
-        if (!$this->isActive()) return;
+        // Instanz aktiv?
+        if (!$this->isActive()) {
+            return;
+        }
 
-         $this->UpdateOnlineStatus();
-         
-        if (!$this->apiEnsureToken()) return;
-      
+        // Online-Status aktualisieren (z.B. Ping / Erreichbarkeit)
+        $this->UpdateOnlineStatus();
+
+        // Wenn Kamera als offline markiert ist, keine API-Requests ausführen
+        $onlineId = @$this->GetIDForIdent('KameraOnline');
+        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
+            $this->dbg('API', 'Abgebrochen: Kamera offline, keine API-Requests');
+            return;
+        }
+
+        // Ohne gültigen Token machen alle weiteren API-Aufrufe keinen Sinn
+        if (!$this->apiEnsureToken()) {
+            return;
+        }
+
         $sem = "REOCAM_{$this->InstanceID}_Exec";
         if (function_exists('IPS_SemaphoreEnter')) {
             if (!IPS_SemaphoreEnter($sem, 2000)) {
                 return;
             }
         }
+
         try {
             $last = (int)($this->ReadAttributeInteger('ExecLastTs') ?? 0);
             $now  = time();
+
+            // Minimalabstand zwischen zwei Läufen (1 Sekunde)
             if (!$force && ($now - $last) < 1) {
                 return;
             }
             $this->WriteAttributeInteger('ExecLastTs', $now);
 
+            // -------------------------------------------------
+            // DevInfo-Cache alle 10 Minuten aktualisieren
+            // (damit z.B. nach Firmware-Downgrade/-Upgrade die Daten
+            //  im Formular und für den Firmwarecheck frisch sind)
+            // -------------------------------------------------
+            $lastDev = (int)$this->ReadAttributeInteger('DevInfoLastRefresh');
+            if (($now - $lastDev) > 600) { // 600 Sekunden = 10 Minuten
+                $this->apiGetDevInfoCached(true); // holt frische Daten und schreibt Cache
+                $this->WriteAttributeInteger('DevInfoLastRefresh', $now);
+            }
+
+            // -------------------------------------------------
+            // API-abhängige Features nach Konfiguration
+            // -------------------------------------------------
             if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-                $this->UpdateWhiteLedStatus(); 
+                $this->UpdateWhiteLedStatus();
             }
             if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-                $this->EmailApply(null, null, null);    
+                $this->EmailApply(null, null, null);
             }
             if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-                $this->CreateOrUpdatePTZHtml(false);    
+                $this->CreateOrUpdatePTZHtml(false);
             }
             if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-                $this->UpdateFtpStatus();               
+                $this->UpdateFtpStatus();
             }
             if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-                $this->UpdateMdSensitivityStatus();    
+                $this->UpdateMdSensitivityStatus();
             }
             if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-                $this->UpdateSirenStatus();             
+                $this->UpdateSirenStatus();
             }
             if ($this->ReadPropertyBoolean("EnableApiRecord")) {
                 $this->UpdateRecStatus();
@@ -1115,7 +2050,9 @@ class Reolink extends IPSModule
             }
 
         } finally {
-            if (function_exists('IPS_SemaphoreLeave')) IPS_SemaphoreLeave($sem);
+            if (function_exists('IPS_SemaphoreLeave')) {
+                IPS_SemaphoreLeave($sem);
+            }
         }
     }
 
@@ -1128,7 +2065,6 @@ class Reolink extends IPSModule
     private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
     {
         $this->dbg($topic, "HTTP POST", ['url' => $url]);
-
         $this->dbg($topic, "REQUEST", $payload);
 
         $ch = curl_init($url);
@@ -1138,15 +2074,30 @@ class Reolink extends IPSModule
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload)
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+
+            // >>> wichtige Timeouts <<<
+            CURLOPT_CONNECTTIMEOUT => 5,  // Sekunden für Verbindungsaufbau
+            CURLOPT_TIMEOUT        => 8,  // maximale Gesamtdauer
+            // wenn du es noch aggressiver willst:
+            // CURLOPT_CONNECTTIMEOUT_MS => 3000,
+            // CURLOPT_TIMEOUT_MS        => 5000,
         ]);
+
         $raw = curl_exec($ch);
         if ($raw === false) {
-            $err = curl_error($ch);
+            $errno = curl_errno($ch);
+            $err   = curl_error($ch);
+            $info  = curl_getinfo($ch);
             curl_close($ch);
+
             if (!$suppressError) {
-                $this->dbg($topic, "cURL error", $err);
-                $this->LogMessage("Reolink/$topic: cURL-Fehler: $err", KL_ERROR);
+                $this->dbg($topic, "cURL error", [
+                    'errno' => $errno,
+                    'error' => $err,
+                    'info'  => $info
+                ]);
+                $this->LogMessage("Reolink/$topic: cURL-Fehler: [$errno] $err", KL_ERROR);
             }
             return null;
         }
@@ -1160,12 +2111,35 @@ class Reolink extends IPSModule
 
     private function apiEnsureToken(): bool
     {
-        if (!$this->isActive()) return false;
+        if (!$this->isActive()) {
+            return false;
+        }
+
+        // Wenn es eine KameraOnline-Variable gibt und sie FALSE ist:
+        // => gar nicht erst versuchen, einen Token zu holen.
+        $onlineId = @$this->GetIDForIdent('KameraOnline');
+        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
+            $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
+            return false;
+        }
+
         $token = $this->ReadAttributeString("ApiToken");
         $exp   = (int)$this->ReadAttributeInteger("ApiTokenExpiresAt");
-        if ($token === "" || time() >= ($exp - 30)) {
+        $now   = time();
+
+        // Token fehlt oder läuft in Kürze ab
+        if ($token === "" || $now >= ($exp - 30)) {
+
+            // Login-Backoff: wenn der letzte Fehler < 60s her ist, NICHT erneut versuchen
+            $lastError = (int)$this->ReadAttributeInteger('LastTokenErrorTs');
+            if ($lastError !== 0 && ($now - $lastError) < 60) {
+                $this->dbg('TOKEN', 'Letzter Login-Fehler < 60s her – überspringe neuen Versuch');
+                return false;
+            }
+
             $this->GetToken();
         }
+
         return $this->ReadAttributeString("ApiToken") !== "";
     }
 
