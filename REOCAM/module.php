@@ -925,7 +925,7 @@ class Reolink extends IPSModule
                 $srcWidth  = imagesx($src);
                 $srcHeight = imagesy($src);
 
-                $factor = 4;
+                $factor = 5;
                 $newWidth  = max(1, (int)($srcWidth / $factor));
                 $newHeight = max(1, (int)($srcHeight / $factor));
 
