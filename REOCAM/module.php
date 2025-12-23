@@ -370,7 +370,6 @@ class Reolink extends IPSModule
             'Build: '     . $build,
             'Seriennr.: ' . ($dev['serial']  ?? 'n/a'),
             'Detail: '    . ($dev['detail']    ?? 'n/a'),
-            'ExactType: ' . ($dev['exactType'] ?? 'n/a'),
         ];
 
         // Bild holen (Base64, bereits verkleinert)
