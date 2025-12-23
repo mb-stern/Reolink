@@ -549,10 +549,6 @@ class Reolink extends IPSModule
                     'caption' => ''
                 ],
                 [
-    'type'    => 'Label',
-    'caption' => str_repeat('─', 60)
-],
-                [
                     'type'  => 'RowLayout',
                     'items' => [
                         [
