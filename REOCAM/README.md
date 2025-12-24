@@ -75,6 +75,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 |------|---------------|
 | **Webhook** | Wird automatisch erzeugt. Dieser Pfad muss exakt im Kamera-Menü unter *Push → Webhook* eingetragen werden. |
 | **Instanz aktivieren** | Deaktiviert die Instanz temporär, um Fehlermeldungen zu vermeiden. |
+| **Instanz aktivieren** | Kommunikation kann zwischen http und https gewählt werden. |
 | **IP-Adresse** | IP-Adresse der Kamera. |
 | **Benutzername** | Benutzername für den Zugriff. |
 | **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
