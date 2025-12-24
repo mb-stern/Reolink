@@ -1658,10 +1658,10 @@ class Reolink extends IPSModule
 
     private function GetSnapshotURL(): string
     {
-        $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
-        return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
+        $base = $this->apiBase(); // http(s)://IP
+        return $base . "/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
     // ---------------------------
@@ -2065,16 +2065,17 @@ class Reolink extends IPSModule
 
     private function apiBase(): string
     {
-        $ip = $this->ReadPropertyString('CameraIP');
+        // IP der Kamera
+        $ip = trim($this->ReadPropertyString('CameraIP'));
 
         // Checkbox im Formular: HTTPS verwenden
         $useHttps = $this->ReadPropertyBoolean('UseHttps');
 
-        if ($useHttps) {
-            return 'https://' . $ip;
-        }
+        $scheme = $useHttps ? 'https' : 'http';
 
-        return 'http://' . $ip;
+        // Basis-URL OHNE /api.cgi
+        // => http(s)://IP
+        return sprintf('%s://%s', $scheme, $ip);
     }
 
     private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
@@ -2160,13 +2161,21 @@ class Reolink extends IPSModule
 
     private function apiCall(array $cmdPayload, string $topic = 'API', bool $suppressError = false): ?array
     {
-        if (!$this->isActive()) return null;
-        if (!$this->apiEnsureToken()) return null;
+        if (!$this->isActive()) {
+            return null;
+        }
+        if (!$this->apiEnsureToken()) {
+            return null;
+        }
 
         $token = $this->ReadAttributeString("ApiToken");
-        $url   = $this->apiBase() . "?token={$token}";
+
+        // NEU: /api.cgi hier anhängen
+        $url   = $this->apiBase() . "/api.cgi?token={$token}";
         $resp  = $this->apiHttpPostJson($url, $cmdPayload, $topic, $suppressError);
-        if (!$resp) return null;
+        if (!$resp) {
+            return null;
+        }
 
         if (isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) {
             return $resp;
@@ -2178,19 +2187,15 @@ class Reolink extends IPSModule
             $this->GetToken();
             $token2 = $this->ReadAttributeString("ApiToken");
             if ($token2) {
-                $url2 = $this->apiBase() . "?token={$token2}";
+                // RETRY-URL ebenfalls mit /api.cgi
+                $url2  = $this->apiBase() . "/api.cgi?token={$token2}";
                 $resp2 = $this->apiHttpPostJson($url2, $cmdPayload, $topic, $suppressError);
-                if (is_array($resp2) && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) {
+                if ($resp2 && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) {
                     return $resp2;
                 }
-                $resp = $resp2;
             }
         }
 
-        if (!$suppressError) {
-            $this->dbg($topic, "API FAIL", $resp);
-            $this->LogMessage("Reolink/$topic: API-Befehl fehlgeschlagen: ".json_encode($resp), KL_ERROR);
-        }
         return null;
     }
 
