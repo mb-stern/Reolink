@@ -1619,15 +1619,32 @@ class Reolink extends IPSModule
 
         $snapshotUrl = $this->GetSnapshotURL();
         $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . $mediaID . ".jpg";
-        $imageData = @file_get_contents($snapshotUrl);
-        if ($imageData !== false) {
+
+        $this->dbg('SNAPSHOT', 'Abrufen', ['url' => $snapshotUrl]);
+
+        // Snapshot mit cURL holen (HTTPS mit Self-Signed zulassen)
+        $ch = curl_init($snapshotUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT        => 8,
+        ]);
+        $imageData = curl_exec($ch);
+        if ($imageData === false) {
+            $err = curl_error($ch);
+            $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
+            curl_close($ch);
+            $this->dbg('SNAPSHOT', "Archivbild fehlgeschlagen", ['boolean' => $booleanIdent]);
+        } else {
+            curl_close($ch);
+
             IPS_SetMediaFile($mediaID, $archiveImagePath, false);
             IPS_SetMediaContent($mediaID, base64_encode($imageData));
             IPS_SendMediaEvent($mediaID);
             $this->dbg('SNAPSHOT', 'Archivbild erstellt', ['boolean' => $booleanIdent, 'mediaID' => $mediaID]);
             $this->PruneArchive($categoryID, $booleanIdent);
-        } else {
-            $this->dbg('SNAPSHOT', "Archivbild fehlgeschlagen", ['boolean' => $booleanIdent]);
         }
     }
 
@@ -1660,8 +1677,7 @@ class Reolink extends IPSModule
     {
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
-        $base = $this->apiBase(); // http(s)://IP
-        return $base . "/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
+        return $this->apiBase() . "/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
     }
 
     // ---------------------------
