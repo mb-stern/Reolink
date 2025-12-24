@@ -75,6 +75,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 |------|---------------|
 | **Webhook** | Wird automatisch erzeugt. Dieser Pfad muss exakt im Kamera-Menü unter *Push → Webhook* eingetragen werden. |
 | **Instanz aktivieren** | Deaktiviert die Instanz temporär, um Fehlermeldungen zu vermeiden. |
+| **Instanz aktivieren** | Kommunikation kann zwischen HTTP und HTTPS gewählt werden. |
 | **IP-Adresse** | IP-Adresse der Kamera. |
 | **Benutzername** | Benutzername für den Zugriff. |
 | **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
@@ -153,10 +154,11 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
-### Version 2.13 (23.12.2025)
+### Version 2.13 (24.12.2025)
 - Kamera-Infos und Produktbild werden im Konfigurationsformular angezeigt.
 - Die aktuelle Firmware wird auf https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md (inoffiziell) geprüft und eine neuere Version kann direkt im Konfigurationsformualer oder in der entsprechenden Variable heruntergeladen werden.
 - Timeout-Problem bei fehlerhafter Verbindungen behoben.
+- Die Kommunikation mit der Kamera kann von http auf https umgeschaltet werden.
 
 ### Version 2.12 (09.11.2025)
 - Fehler beim setzen der Sensitivität behoben.

@@ -35,7 +35,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
-
+        $this->RegisterPropertyBoolean("UseHttps", false);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -439,6 +439,11 @@ class Reolink extends IPSModule
                     'type'    => 'CheckBox',
                     'name'    => 'InstanceStatus',
                     'caption' => 'Instanz aktivieren'
+                ],
+                [
+                    'type'    => 'CheckBox',
+                    'name'    => 'UseHttps',
+                    'caption' => 'HTTPS verwenden'
                 ],
                 [
                     'type'    => 'ValidationTextBox',
@@ -1509,8 +1514,28 @@ class Reolink extends IPSModule
         $filePath = IPS_GetKernelDir() . "media/" . $fileName;
 
         $this->dbg('SNAPSHOT', 'Abrufen', ['url' => $snapshotUrl]);
-        $imageData = @file_get_contents($snapshotUrl);
-        if ($imageData !== false) {
+
+        // Snapshot per cURL holen – funktioniert für HTTP und HTTPS
+        $ch = curl_init($snapshotUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT        => 8,
+
+            // für HTTPS mit selbstsigniertem Zertifikat
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+        ]);
+
+        $imageData = curl_exec($ch);
+        if ($imageData === false) {
+            $err = curl_error($ch);
+            $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
+            curl_close($ch);
+            $this->dbg('SNAPSHOT', "Fehler beim Abrufen", ['boolean' => $booleanIdent]);
+        } else {
+            curl_close($ch);
+
             IPS_SetMediaFile($mediaID, $filePath, false);
             IPS_SetMediaContent($mediaID, base64_encode($imageData));
             IPS_SendMediaEvent($mediaID);
@@ -1521,8 +1546,6 @@ class Reolink extends IPSModule
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID);
             }
-        } else {
-            $this->dbg('SNAPSHOT', "Fehler beim Abrufen", ['boolean' => $booleanIdent]);
         }
     }
 
@@ -1614,15 +1637,32 @@ class Reolink extends IPSModule
 
         $snapshotUrl = $this->GetSnapshotURL();
         $archiveImagePath = IPS_GetKernelDir() . "media/" . $booleanIdent . "_" . $mediaID . ".jpg";
-        $imageData = @file_get_contents($snapshotUrl);
-        if ($imageData !== false) {
+
+        $this->dbg('SNAPSHOT', 'Abrufen', ['url' => $snapshotUrl]);
+
+        // Snapshot mit cURL holen (HTTPS mit Self-Signed zulassen)
+        $ch = curl_init($snapshotUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT        => 8,
+        ]);
+        $imageData = curl_exec($ch);
+        if ($imageData === false) {
+            $err = curl_error($ch);
+            $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
+            curl_close($ch);
+            $this->dbg('SNAPSHOT', "Archivbild fehlgeschlagen", ['boolean' => $booleanIdent]);
+        } else {
+            curl_close($ch);
+
             IPS_SetMediaFile($mediaID, $archiveImagePath, false);
             IPS_SetMediaContent($mediaID, base64_encode($imageData));
             IPS_SendMediaEvent($mediaID);
             $this->dbg('SNAPSHOT', 'Archivbild erstellt', ['boolean' => $booleanIdent, 'mediaID' => $mediaID]);
             $this->PruneArchive($categoryID, $booleanIdent);
-        } else {
-            $this->dbg('SNAPSHOT', "Archivbild fehlgeschlagen", ['boolean' => $booleanIdent]);
         }
     }
 
@@ -1656,7 +1696,18 @@ class Reolink extends IPSModule
         $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
-        return "http://$cameraIP/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
+
+        // Gleiche Logik wie bei apiBase(): HTTP oder HTTPS je nach Checkbox
+        $useHttps = $this->ReadPropertyBoolean('UseHttps');
+        $scheme   = $useHttps ? 'https' : 'http';
+
+        return sprintf(
+            '%s://%s/cgi-bin/api.cgi?cmd=Snap&user=%s&password=%s&width=1024&height=768',
+            $scheme,
+            $cameraIP,
+            $username,
+            $password
+        );
     }
 
     // ---------------------------
@@ -1669,11 +1720,10 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("PollingTimer", 0);
             return;
         }
-        $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
 
-        $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
+        $url = $this->apiBase() . "/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
         $this->dbg('POLLING', 'Abruf', ['url' => $url]);
 
         $response = @file_get_contents($url);
@@ -1898,9 +1948,9 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             return;
         }
-        $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
+        $cameraIP = trim($this->ReadPropertyString('CameraIP'));
         if ($cameraIP === "" || $username === "" || $password === "") {
             $this->dbg('TOKEN', 'Abgebrochen: Unvollständige Einstellungen');
             return;
@@ -1915,7 +1965,7 @@ class Reolink extends IPSModule
 
         $this->WriteAttributeBoolean("TokenRefreshing", true);
         try {
-            $url = "http://{$cameraIP}/api.cgi?cmd=Login";
+            $url = $this->apiBase() . "/api.cgi?cmd=Login";
             $payload = [[
                 "cmd"   => "Login",
                 "param" => ["User" => [
@@ -2061,8 +2111,17 @@ class Reolink extends IPSModule
 
     private function apiBase(): string
     {
-        $ip = $this->ReadPropertyString("CameraIP");
-        return "http://{$ip}/api.cgi";
+        // IP der Kamera
+        $ip = trim($this->ReadPropertyString('CameraIP'));
+
+        // Checkbox im Formular: HTTPS verwenden
+        $useHttps = $this->ReadPropertyBoolean('UseHttps');
+
+        $scheme = $useHttps ? 'https' : 'http';
+
+        // Basis-URL OHNE /api.cgi
+        // => http(s)://IP
+        return sprintf('%s://%s', $scheme, $ip);
     }
 
     private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
@@ -2148,13 +2207,21 @@ class Reolink extends IPSModule
 
     private function apiCall(array $cmdPayload, string $topic = 'API', bool $suppressError = false): ?array
     {
-        if (!$this->isActive()) return null;
-        if (!$this->apiEnsureToken()) return null;
+        if (!$this->isActive()) {
+            return null;
+        }
+        if (!$this->apiEnsureToken()) {
+            return null;
+        }
 
         $token = $this->ReadAttributeString("ApiToken");
-        $url   = $this->apiBase() . "?token={$token}";
+
+        // NEU: /api.cgi hier anhängen
+        $url   = $this->apiBase() . "/api.cgi?token={$token}";
         $resp  = $this->apiHttpPostJson($url, $cmdPayload, $topic, $suppressError);
-        if (!$resp) return null;
+        if (!$resp) {
+            return null;
+        }
 
         if (isset($resp[0]['code']) && (int)$resp[0]['code'] === 0) {
             return $resp;
@@ -2166,19 +2233,15 @@ class Reolink extends IPSModule
             $this->GetToken();
             $token2 = $this->ReadAttributeString("ApiToken");
             if ($token2) {
-                $url2 = $this->apiBase() . "?token={$token2}";
+                // RETRY-URL ebenfalls mit /api.cgi
+                $url2  = $this->apiBase() . "/api.cgi?token={$token2}";
                 $resp2 = $this->apiHttpPostJson($url2, $cmdPayload, $topic, $suppressError);
-                if (is_array($resp2) && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) {
+                if ($resp2 && isset($resp2[0]['code']) && (int)$resp2[0]['code'] === 0) {
                     return $resp2;
                 }
-                $resp = $resp2;
             }
         }
 
-        if (!$suppressError) {
-            $this->dbg($topic, "API FAIL", $resp);
-            $this->LogMessage("Reolink/$topic: API-Befehl fehlgeschlagen: ".json_encode($resp), KL_ERROR);
-        }
         return null;
     }
 
