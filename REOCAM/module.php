@@ -538,15 +538,12 @@ class Reolink extends IPSModule
             ],
 
                 'actions' => [
-
-                $deviceHeaderElement,
-
                 [
                     'type'    => 'Label',
                     'name'    => 'FirmwareCheck',
                     'caption' => $firmwareCheckMessage
                 ],
-
+                $deviceHeaderElement,
                 [
                     'type'    => 'Label',
                     'caption' => ''
