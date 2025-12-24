@@ -35,7 +35,7 @@ class Reolink extends IPSModule
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
-
+        $this->RegisterPropertyBoolean("UseHttps", false);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -439,6 +439,11 @@ class Reolink extends IPSModule
                     'type'    => 'CheckBox',
                     'name'    => 'InstanceStatus',
                     'caption' => 'Instanz aktivieren'
+                ],
+                [
+                    'type'    => 'CheckBox',
+                    'name'    => 'UseHttps',
+                    'caption' => 'HTTPS verwenden'
                 ],
                 [
                     'type'    => 'ValidationTextBox',
@@ -1669,11 +1674,10 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("PollingTimer", 0);
             return;
         }
-        $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
 
-        $url = "http://$cameraIP/cgi-bin/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
+        $url = $this->apiBase() . "/api.cgi?cmd=GetAiState&rs=&user=$username&password=$password";
         $this->dbg('POLLING', 'Abruf', ['url' => $url]);
 
         $response = @file_get_contents($url);
@@ -1898,7 +1902,6 @@ class Reolink extends IPSModule
             $this->SetTimerInterval("TokenRenewalTimer", 0);
             return;
         }
-        $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
         if ($cameraIP === "" || $username === "" || $password === "") {
@@ -1915,7 +1918,7 @@ class Reolink extends IPSModule
 
         $this->WriteAttributeBoolean("TokenRefreshing", true);
         try {
-            $url = "http://{$cameraIP}/api.cgi?cmd=Login";
+            $url = $this->apiBase() . "/api.cgi?cmd=Login";
             $payload = [[
                 "cmd"   => "Login",
                 "param" => ["User" => [
@@ -2061,8 +2064,16 @@ class Reolink extends IPSModule
 
     private function apiBase(): string
     {
-        $ip = $this->ReadPropertyString("CameraIP");
-        return "http://{$ip}/api.cgi";
+        $ip = $this->ReadPropertyString('CameraIP');
+
+        // Checkbox im Formular: HTTPS verwenden
+        $useHttps = $this->ReadPropertyBoolean('UseHttps');
+
+        if ($useHttps) {
+            return 'https://' . $ip;
+        }
+
+        return 'http://' . $ip;
     }
 
     private function apiHttpPostJson(string $url, array $payload, string $topic = 'API', bool $suppressError = false): ?array
