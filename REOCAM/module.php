@@ -1514,8 +1514,28 @@ class Reolink extends IPSModule
         $filePath = IPS_GetKernelDir() . "media/" . $fileName;
 
         $this->dbg('SNAPSHOT', 'Abrufen', ['url' => $snapshotUrl]);
-        $imageData = @file_get_contents($snapshotUrl);
-        if ($imageData !== false) {
+
+        // Snapshot per cURL holen – funktioniert für HTTP und HTTPS
+        $ch = curl_init($snapshotUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT        => 8,
+
+            // für HTTPS mit selbstsigniertem Zertifikat
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+        ]);
+
+        $imageData = curl_exec($ch);
+        if ($imageData === false) {
+            $err = curl_error($ch);
+            $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
+            curl_close($ch);
+            $this->dbg('SNAPSHOT', "Fehler beim Abrufen", ['boolean' => $booleanIdent]);
+        } else {
+            curl_close($ch);
+
             IPS_SetMediaFile($mediaID, $filePath, false);
             IPS_SetMediaContent($mediaID, base64_encode($imageData));
             IPS_SendMediaEvent($mediaID);
@@ -1526,8 +1546,6 @@ class Reolink extends IPSModule
                 $archiveCategoryID = $this->CreateOrGetArchiveCategory($booleanIdent);
                 $this->CreateArchiveSnapshot($booleanIdent, $archiveCategoryID);
             }
-        } else {
-            $this->dbg('SNAPSHOT', "Fehler beim Abrufen", ['boolean' => $booleanIdent]);
         }
     }
 
@@ -1675,9 +1693,21 @@ class Reolink extends IPSModule
 
     private function GetSnapshotURL(): string
     {
+        $cameraIP = $this->ReadPropertyString("CameraIP");
         $username = urlencode($this->ReadPropertyString("Username"));
         $password = urlencode($this->ReadPropertyString("Password"));
-        return $this->apiBase() . "/cgi-bin/api.cgi?cmd=Snap&user=$username&password=$password&width=1024&height=768";
+
+        // Gleiche Logik wie bei apiBase(): HTTP oder HTTPS je nach Checkbox
+        $useHttps = $this->ReadPropertyBoolean('UseHttps');
+        $scheme   = $useHttps ? 'https' : 'http';
+
+        return sprintf(
+            '%s://%s/cgi-bin/api.cgi?cmd=Snap&user=%s&password=%s&width=1024&height=768',
+            $scheme,
+            $cameraIP,
+            $username,
+            $password
+        );
     }
 
     // ---------------------------
