@@ -1904,6 +1904,7 @@ class Reolink extends IPSModule
         }
         $username = $this->ReadPropertyString("Username");
         $password = $this->ReadPropertyString("Password");
+        $cameraIP = trim($this->ReadPropertyString('CameraIP'));
         if ($cameraIP === "" || $username === "" || $password === "") {
             $this->dbg('TOKEN', 'Abgebrochen: Unvollständige Einstellungen');
             return;
