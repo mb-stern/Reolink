@@ -2487,20 +2487,31 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
 
+        // --- FIX: $hook immer definieren (Strict: nur lesen, nicht registrieren) ---
+        $hook = $this->ReadAttributeString("CurrentHook");
+        if ($hook === "") {
+            // Fallback (sollte nach Create() nicht passieren, verhindert aber Warning)
+            $hook = "/hook/reolink_" . $this->InstanceID;
+            $this->WriteAttributeString("CurrentHook", $hook);
+        }
+        $hookUrl = $this->BuildWebhookFullUrl($hook);
+
         $presets = [];
         if (!$reloadPresets) {
             $cached = $this->ReadAttributeString("PtzPresetsCache");
             if (is_string($cached) && $cached !== "") {
                 $tmp = @json_decode($cached, true);
-                if (is_array($tmp)) $presets = $tmp;
+                if (is_array($tmp)) {
+                    $presets = $tmp;
+                }
             }
         }
         if (empty($presets)) {
-            $presets = $this->getPresetList(); 
+            $presets = $this->getPresetList();
             $this->WriteAttributeString("PtzPresetsCache", json_encode($presets, JSON_UNESCAPED_UNICODE));
         }
 
-        $zInfo = $this->getZoomInfo(); 
+        $zInfo = $this->getZoomInfo();
         $zMin = is_array($zInfo) ? ($zInfo['min'] ?? 0) : 0;
         $zMax = is_array($zInfo) ? ($zInfo['max'] ?? 27) : 27;
         $zPos = is_array($zInfo) ? ($zInfo['pos'] ?? $zMin) : $zMin;
@@ -2512,18 +2523,22 @@ class Reolink extends IPSModuleStrict
                 $pid   = (int)$p['id'];
                 $title = htmlspecialchars((string)$p['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 $rows .= '<div class="preset-row" data-preset="'.$pid.'">'.
-                        '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
-                        '<div class="icons">'.
-                        '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
-                        '<button class="icon del" data-preset="'.$pid.'" title="Löschen" aria-label="Löschen">🗑</button>'.
-                        '</div>'.
-                        '</div>';
+                    '<button class="preset" data-preset="'.$pid.'" title="'.$title.'">'.$title.'</button>'.
+                    '<div class="icons">'.
+                    '<button class="icon rename" data-preset="'.$pid.'" title="Umbenennen" aria-label="Umbenennen">✎</button>'.
+                    '<button class="icon del" data-preset="'.$pid.'" title="Löschen" aria-label="Löschen">🗑</button>'.
+                    '</div>'.
+                    '</div>';
             }
         } else {
             $rows = '<div class="no-presets">Keine Presets gefunden.</div>';
         }
 
         $btn = 42; $gap = 6;
+
+        // Wichtig: wir verwenden die *vollständige* URL, nicht den Hook-Pfad
+        $base = htmlspecialchars($hookUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
         $html = <<<HTML
     <div id="ptz-wrap" style="font-family:system-ui,Segoe UI,Roboto,Arial; overflow:hidden;">
     <style>
@@ -2546,26 +2561,31 @@ class Reolink extends IPSModuleStrict
     #ptz-wrap .new button{ height:36px; padding:6px 10px; }
     #ptz-wrap .hint{ font-size:14px; opacity:.75; }
     </style>
+
     <div class="grid">
     <button data-dir="up" class="dir up" title="Hoch" aria-label="Hoch">▲</button>
     <button data-dir="left" class="dir left" title="Links" aria-label="Links">◀</button>
     <button data-dir="right" class="dir right" title="Rechts" aria-label="Rechts">▶</button>
     <button data-dir="down" class="dir down" title="Runter" aria-label="Runter">▼</button>
     </div>
+
     <div class="section-title">Zoom</div>
     <div class="zoomline" style="margin:6px 0 12px; text-align:center;">
     <input type="range" id="ptz-zoom" min="{$zMin}" max="{$zMax}" step="1" value="{$zPos}" style="width:220px;">
     </div>
+
     <div class="section-title">Presets</div>
     <div class="presets"> {$rows} </div>
+
     <div class="section-title">Neues Preset</div>
     <div class="new">
     <input type="text" id="ptz-new-name" maxlength="32" placeholder="Name eingeben …"/>
     <button id="ptz-new-save" title="Aktuelle Position als neues Preset speichern">Speichern</button>
     </div>
+
     <script>
     (function(){
-    var base = "{$hook}";
+    var base = "{$base}";
     var wrap = document.getElementById("ptz-wrap");
     var msg  = document.getElementById("ptz-msg");
     var nameIn   = document.getElementById("ptz-new-name");
