@@ -5,11 +5,6 @@ class Reolink extends IPSModule
 {
     public function Create(): void
     {
-        //Webhook registrieren
-        $hookPath = '/hook/reolink_' . $this->InstanceID;
-        $this->RegisterHook($hookPath); // SDK-Funktion -> WebHookControl
-        $this->WriteAttributeString('CurrentHook', $hookPath);
-
         // Basis
         $this->RegisterPropertyString("CameraIP", "");
         $this->RegisterPropertyString("Username", "");
@@ -59,6 +54,11 @@ class Reolink extends IPSModule
         $this->RegisterAttributeInteger('DevInfoLastRefresh', 0);
         $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
+
+        //Webhook registrieren
+        $hookPath = '/hook/reolink_' . $this->InstanceID;
+        $this->RegisterHook($hookPath); // SDK-Funktion -> WebHookControl
+        $this->WriteAttributeString('CurrentHook', $hookPath);
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
@@ -149,7 +149,7 @@ class Reolink extends IPSModule
 
     }
 
-    public function RequestAction(string $Ident, mixed $Value): void
+    public function RequestAction($Ident, $Value)
     {
         if (!$this->isActive()) {
             $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
@@ -175,21 +175,19 @@ class Reolink extends IPSModule
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
-            case 'IRLights':
-            {
+            case "IRLights":
                 $ok = $this->IR_SetModeInt((int)$Value);
                 if ($ok) {
-                    $this->SetValue('IRLights', (int)$Value);
+                    $this->SetValue("IRLights", (int)$Value);
                 } else {
-                    $this->UpdateIrStatus(); 
+                    $this->UpdateIrStatus();
                 }
                 break;
-            }
 
             case "EmailNotify":
                 $ok = $this->EmailApply((bool)$Value, null, null);
                 if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
-                else     { $this->EmailApply(null, null, null); } // zurücklesen
+                else     { $this->EmailApply(null, null, null); }
                 break;
 
             case "EmailInterval":
@@ -209,45 +207,45 @@ class Reolink extends IPSModule
                 if ($ok) {
                     SetValue($this->GetIDForIdent($Ident), (bool)$Value);
                 } else {
-                    $this->UpdateFtpStatus(); 
+                    $this->UpdateFtpStatus();
                 }
                 break;
 
-            case 'MdSensitivity':
-                $lvl = max(1, min(50, (int)$Value)); 
+            case "MdSensitivity":
+                $lvl = max(1, min(50, (int)$Value));
                 $ok = $this->SetMdSensitivity($lvl);
                 if ($ok) {
-                    $this->SetValue('MdSensitivity', $lvl);
+                    $this->SetValue("MdSensitivity", $lvl);
                 }
                 break;
 
-            case 'SirenEnabled':
+            case "SirenEnabled":
                 $ok = $this->SetSirenEnabled((bool)$Value);
                 if ($ok) {
-                    $this->SetValue('SirenEnabled', (bool)$Value);
+                    $this->SetValue("SirenEnabled", (bool)$Value);
                 }
                 break;
 
-            case 'SirenAction':
+            case "SirenAction":
                 $val = (int)$Value;
                 $ok = false;
-                if ($val === 0) {                 
+                if ($val === 0) {
                     $ok = $this->SirenManualSwitch(false);
-                } elseif ($val === 100) {       
+                } elseif ($val === 100) {
                     $ok = $this->SirenManualSwitch(true);
-                } elseif ($val >= 1 && $val <= 5) { 
+                } elseif ($val >= 1 && $val <= 5) {
                     $ok = $this->SirenPlayTimes($val);
                 }
-                if ($ok) { $this->SetValue('SirenAction', 0); }
+                if ($ok) { $this->SetValue("SirenAction", 0); }
                 break;
 
-            case 'RecEnabled':
+            case "RecEnabled":
                 $ok = $this->SetRecEnabled((bool)$Value);
-                if ($ok) { $this->SetValue('RecEnabled', (bool)$Value); }
+                if ($ok) { $this->SetValue("RecEnabled", (bool)$Value); }
                 else     { $this->UpdateRecStatus(); }
                 break;
 
-            case 'ResetApiCache':
+            case "ResetApiCache":
                 $this->ResetApiCache();
                 return;
 
