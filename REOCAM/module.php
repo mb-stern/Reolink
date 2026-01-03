@@ -148,7 +148,7 @@ class Reolink extends IPSModuleStrict
 
     }
 
-    public function RequestAction($Ident, $Value)
+    public function RequestAction(string $Ident, mixed $Value): void
     {
         if (!$this->isActive()) {
             $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
@@ -158,69 +158,61 @@ class Reolink extends IPSModuleStrict
         switch ($Ident) {
             case "WhiteLed":
                 $ok = $this->SetWhiteLed((bool)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                if ($ok) { $this->SetValue("WhiteLed", (bool)$Value); }
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
             case "Mode":
                 $ok = $this->SetMode((int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                if ($ok) { $this->SetValue("Mode", (int)$Value); }
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
             case "Bright":
                 $ok = $this->SetBrightness((int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                if ($ok) { $this->SetValue("Bright", (int)$Value); }
                 else     { $this->UpdateWhiteLedStatus(); }
                 break;
 
             case "IRLights":
                 $ok = $this->IR_SetModeInt((int)$Value);
-                if ($ok) {
-                    $this->SetValue("IRLights", (int)$Value);
-                } else {
-                    $this->UpdateIrStatus();
-                }
+                if ($ok) { $this->SetValue("IRLights", (int)$Value); }
+                else     { $this->UpdateIrStatus(); }
                 break;
 
             case "EmailNotify":
                 $ok = $this->EmailApply((bool)$Value, null, null);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (bool)$Value); }
+                if ($ok) { $this->SetValue("EmailNotify", (bool)$Value); }
                 else     { $this->EmailApply(null, null, null); }
                 break;
 
             case "EmailInterval":
                 $ok = $this->EmailApply(null, (int)$Value, null);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                if ($ok) { $this->SetValue("EmailInterval", (int)$Value); }
                 else     { $this->EmailApply(null, null, null); }
                 break;
 
             case "EmailContent":
                 $ok = $this->EmailApply(null, null, (int)$Value);
-                if ($ok) { SetValue($this->GetIDForIdent($Ident), (int)$Value); }
+                if ($ok) { $this->SetValue("EmailContent", (int)$Value); }
                 else     { $this->EmailApply(null, null, null); }
                 break;
 
             case "FTPEnabled":
                 $ok = $this->FtpApply((bool)$Value);
-                if ($ok) {
-                    SetValue($this->GetIDForIdent($Ident), (bool)$Value);
-                } else {
-                    $this->UpdateFtpStatus();
-                }
+                if ($ok) { $this->SetValue("FTPEnabled", (bool)$Value); }
+                else     { $this->UpdateFtpStatus(); }
                 break;
 
             case "MdSensitivity":
                 $lvl = max(1, min(50, (int)$Value));
-                $ok = $this->SetMdSensitivity($lvl);
-                if ($ok) {
+                if ($this->SetMdSensitivity($lvl)) {
                     $this->SetValue("MdSensitivity", $lvl);
                 }
                 break;
 
             case "SirenEnabled":
-                $ok = $this->SetSirenEnabled((bool)$Value);
-                if ($ok) {
+                if ($this->SetSirenEnabled((bool)$Value)) {
                     $this->SetValue("SirenEnabled", (bool)$Value);
                 }
                 break;
@@ -228,25 +220,24 @@ class Reolink extends IPSModuleStrict
             case "SirenAction":
                 $val = (int)$Value;
                 $ok = false;
-                if ($val === 0) {
-                    $ok = $this->SirenManualSwitch(false);
-                } elseif ($val === 100) {
-                    $ok = $this->SirenManualSwitch(true);
-                } elseif ($val >= 1 && $val <= 5) {
-                    $ok = $this->SirenPlayTimes($val);
-                }
+                if ($val === 0)        $ok = $this->SirenManualSwitch(false);
+                elseif ($val === 100)  $ok = $this->SirenManualSwitch(true);
+                elseif ($val >= 1 && $val <= 5) $ok = $this->SirenPlayTimes($val);
+
                 if ($ok) { $this->SetValue("SirenAction", 0); }
                 break;
 
             case "RecEnabled":
-                $ok = $this->SetRecEnabled((bool)$Value);
-                if ($ok) { $this->SetValue("RecEnabled", (bool)$Value); }
-                else     { $this->UpdateRecStatus(); }
+                if ($this->SetRecEnabled((bool)$Value)) {
+                    $this->SetValue("RecEnabled", (bool)$Value);
+                } else {
+                    $this->UpdateRecStatus();
+                }
                 break;
 
             case "ResetApiCache":
                 $this->ResetApiCache();
-                return;
+                break;
 
             default:
                 throw new Exception("Invalid Ident");
