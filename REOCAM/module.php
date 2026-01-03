@@ -97,10 +97,6 @@ class Reolink extends IPSModuleStrict
 
         $this->SetStatus(102);
 
-        $this->EnsureProfiles();
-
-        $this->EnsureVariables();
-
         // Stream / Motion / Snapshots / Archive / Test / Besucher (deine bestehende Logik)
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
 
@@ -276,102 +272,6 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function EnsureProfiles(): void
-    {
-        $ensure = function (string $name, int $type, callable $init): void {
-            $name = $this->NormalizeProfile($name);
-
-            if (!IPS_VariableProfileExists($name)) {
-                IPS_CreateVariableProfile($name, $type);
-            }
-            $init($name);
-        };
-
-        // WhiteLED Modus (Beispiel – Werte/Labels ggf. an deine API anpassen)
-        $ensure('Reolink.WhiteLedMode', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 0, 2, 1);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileText($p, '', '');
-            IPS_SetVariableProfileAssociation($p, 0, 'Aus', '', -1);
-            IPS_SetVariableProfileAssociation($p, 1, 'Auto', '', -1);
-            IPS_SetVariableProfileAssociation($p, 2, 'An', '', -1);
-        });
-
-        // Brightness 0..100 (oder 0..255 – je nach Kamera/API)
-        $ensure('Reolink.Brightness', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 0, 100, 1);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileText($p, '', ' %');
-        });
-
-        // IR Mode 0..2 (Beispiel)
-        $ensure('Reolink.IRMode', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 0, 2, 1);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileAssociation($p, 0, 'Auto', '', -1);
-            IPS_SetVariableProfileAssociation($p, 1, 'Aus',  '', -1);
-            IPS_SetVariableProfileAssociation($p, 2, 'An',   '', -1);
-        });
-
-        // Email Interval (Beispiel)
-        $ensure('Reolink.EmailInterval', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 0, 3600, 1);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileText($p, '', ' s');
-        });
-
-        // Email Content (Beispiel)
-        $ensure('Reolink.EmailContent', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 0, 3, 1);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileAssociation($p, 0, 'Text', '', -1);
-            IPS_SetVariableProfileAssociation($p, 1, 'Bild', '', -1);
-            IPS_SetVariableProfileAssociation($p, 2, 'Video', '', -1);
-            IPS_SetVariableProfileAssociation($p, 3, 'Alles', '', -1);
-        });
-
-        // Motion Sensitivity (Beispiel 1..50)
-        $ensure('Reolink.MdSensitivity', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 1, 50, 1);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileText($p, '', '');
-        });
-
-        // Siren Action (dein RequestAction nutzt 0, 100 und 1..5)
-        $ensure('Reolink.SirenAction', VARIABLETYPE_INTEGER, function (string $p): void {
-            IPS_SetVariableProfileValues($p, 0, 100, 0);
-            IPS_SetVariableProfileDigits($p, 0);
-            IPS_SetVariableProfileAssociation($p, 0, 'Stop', '', -1);
-            IPS_SetVariableProfileAssociation($p, 100, 'Start', '', -1);
-            IPS_SetVariableProfileAssociation($p, 1, '1x', '', -1);
-            IPS_SetVariableProfileAssociation($p, 2, '2x', '', -1);
-            IPS_SetVariableProfileAssociation($p, 3, '3x', '', -1);
-            IPS_SetVariableProfileAssociation($p, 4, '4x', '', -1);
-            IPS_SetVariableProfileAssociation($p, 5, '5x', '', -1);
-        });
-    }
-
-    private function NormalizeProfile(string $profile): string
-    {
-        $profile = trim($profile);
-        if ($profile === '') return '';
-
-        // Standardprofile (~Switch etc.) unverändert
-        if ($profile[0] === '~') return $profile;
-
-        // Wenn schon #… kommt, unverändert
-        if ($profile[0] === '#') return $profile;
-
-        // IPSModuleStrict erwartet für Custom-Profile sehr wahrscheinlich #Prefix
-        return '#' . $profile;
-    }
-
-    private function ProfileExists(string $profile): bool
-    {
-        $profile = $this->NormalizeProfile($profile);
-        return $profile !== '' && IPS_VariableProfileExists($profile);
-    }
-
     private function EnsureVariables(): void
     {
         // Online-Status (wenn du sowas hast – ansonsten weglassen)
@@ -427,8 +327,6 @@ class Reolink extends IPSModuleStrict
 
     private function EnsureBool(string $ident, string $name, string $profile, int $pos, bool $default, bool $action): void
     {
-        $profile = $this->NormalizeProfile($profile);
-
         $created = $this->RegisterVariableBoolean($ident, $name, $profile, $pos);
         if ($action) {
             $this->EnableAction($ident);
@@ -440,8 +338,6 @@ class Reolink extends IPSModuleStrict
 
     private function EnsureInt(string $ident, string $name, string $profile, int $pos, int $default, bool $action): void
     {
-        $profile = $this->NormalizeProfile($profile);
-
         $created = $this->RegisterVariableInteger($ident, $name, $profile, $pos);
         if ($action) {
             $this->EnableAction($ident);
@@ -453,8 +349,6 @@ class Reolink extends IPSModuleStrict
 
     private function EnsureString(string $ident, string $name, string $profile, int $pos, string $default, bool $action): void
     {
-        $profile = $this->NormalizeProfile($profile);
-
         $created = $this->RegisterVariableString($ident, $name, $profile, $pos);
         if ($action) {
             $this->EnableAction($ident);
@@ -2118,14 +2012,14 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        if (@$this->GetIDForIdent('KameraOnline') === 0) {
+        if ($this->GetIDForIdent('KameraOnline') === 0) {
             $created = $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             if ($created) {
                 $this->SetValue('KameraOnline', false);
             }
         }
 
-        // -------- Firmwarevariablen --------
+        // -------- Firmwarevariablen--------
         if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
             $created = $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware vorhanden", "~Switch", 12);
             if ($created) {
@@ -2139,7 +2033,7 @@ class Reolink extends IPSModuleStrict
         } else {
             $this->UnregisterVariable("FirmwareUpdateAvailable");
             $this->UnregisterVariable("FirmwareDownloadUrl");
-        }
+        }       
     }
 
     // ---------------------------
