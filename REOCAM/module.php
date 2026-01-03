@@ -276,6 +276,81 @@ class Reolink extends IPSModuleStrict
         }
     }
 
+    private function EnsureProfiles(): void
+    {
+        $ensure = function (string $name, int $type, callable $init): void {
+            $name = $this->NormalizeProfile($name);
+
+            if (!IPS_VariableProfileExists($name)) {
+                IPS_CreateVariableProfile($name, $type);
+            }
+            $init($name);
+        };
+
+        // WhiteLED Modus (Beispiel – Werte/Labels ggf. an deine API anpassen)
+        $ensure('Reolink.WhiteLedMode', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 0, 2, 1);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileText($p, '', '');
+            IPS_SetVariableProfileAssociation($p, 0, 'Aus', '', -1);
+            IPS_SetVariableProfileAssociation($p, 1, 'Auto', '', -1);
+            IPS_SetVariableProfileAssociation($p, 2, 'An', '', -1);
+        });
+
+        // Brightness 0..100 (oder 0..255 – je nach Kamera/API)
+        $ensure('Reolink.Brightness', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 0, 100, 1);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileText($p, '', ' %');
+        });
+
+        // IR Mode 0..2 (Beispiel)
+        $ensure('Reolink.IRMode', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 0, 2, 1);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileAssociation($p, 0, 'Auto', '', -1);
+            IPS_SetVariableProfileAssociation($p, 1, 'Aus',  '', -1);
+            IPS_SetVariableProfileAssociation($p, 2, 'An',   '', -1);
+        });
+
+        // Email Interval (Beispiel)
+        $ensure('Reolink.EmailInterval', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 0, 3600, 1);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileText($p, '', ' s');
+        });
+
+        // Email Content (Beispiel)
+        $ensure('Reolink.EmailContent', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 0, 3, 1);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileAssociation($p, 0, 'Text', '', -1);
+            IPS_SetVariableProfileAssociation($p, 1, 'Bild', '', -1);
+            IPS_SetVariableProfileAssociation($p, 2, 'Video', '', -1);
+            IPS_SetVariableProfileAssociation($p, 3, 'Alles', '', -1);
+        });
+
+        // Motion Sensitivity (Beispiel 1..50)
+        $ensure('Reolink.MdSensitivity', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 1, 50, 1);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileText($p, '', '');
+        });
+
+        // Siren Action (dein RequestAction nutzt 0, 100 und 1..5)
+        $ensure('Reolink.SirenAction', VARIABLETYPE_INTEGER, function (string $p): void {
+            IPS_SetVariableProfileValues($p, 0, 100, 0);
+            IPS_SetVariableProfileDigits($p, 0);
+            IPS_SetVariableProfileAssociation($p, 0, 'Stop', '', -1);
+            IPS_SetVariableProfileAssociation($p, 100, 'Start', '', -1);
+            IPS_SetVariableProfileAssociation($p, 1, '1x', '', -1);
+            IPS_SetVariableProfileAssociation($p, 2, '2x', '', -1);
+            IPS_SetVariableProfileAssociation($p, 3, '3x', '', -1);
+            IPS_SetVariableProfileAssociation($p, 4, '4x', '', -1);
+            IPS_SetVariableProfileAssociation($p, 5, '5x', '', -1);
+        });
+    }
+
     private function EnsureVariables(): void
     {
         // Online-Status (wenn du sowas hast – ansonsten weglassen)
