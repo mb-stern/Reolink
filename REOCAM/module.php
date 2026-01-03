@@ -58,7 +58,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
 
         // Hook-Adresse (ohne /hook/)
-        $address = 'reocam_' . $this->InstanceID;   
+        $address = 'reolink_' . $this->InstanceID;   
         $this->RegisterHook($address);
         $this->WriteAttributeString('CurrentHook', '/hook/' . $address);
 
