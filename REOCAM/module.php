@@ -324,7 +324,7 @@ class Reolink extends IPSModuleStrict
     // Webhook + Formular
     // ---------------------------
 
-   public function GetConfigurationForm()
+   public function GetConfigurationForm(): string
     {
         // Webhook ermitteln/registrieren
         $hookPath = $this->ReadAttributeString('CurrentHook');
