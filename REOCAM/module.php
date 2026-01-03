@@ -329,6 +329,9 @@ class Reolink extends IPSModuleStrict
         // DevInfo für das Formular IMMER frisch von der Kamera holen
         $dev = $this->apiGetDevInfoFresh();
 
+        $hook = $this->ReadAttributeString('CurrentHook');
+        $webhookFull = $this->BuildWebhookFullUrl($hook);
+
         // Fallback, falls die Abfrage schiefgeht
         if (!is_array($dev)) {
             $dev = [];
