@@ -1831,6 +1831,7 @@ class Reolink extends IPSModuleStrict
 
             if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
                 IPS_CreateVariableProfile("REOCAM.SirenAction", 1); // Integer
+                }
                 IPS_SetVariableProfileValues("REOCAM.SirenAction", 0, 100, 0);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 100, "Start (manuell)", "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 0,   "Stop",            "", -1);
@@ -1839,7 +1840,7 @@ class Reolink extends IPSModuleStrict
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 3,   "3× abspielen",    "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 4,   "4× abspielen",    "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 5,   "5× abspielen",    "", -1);
-            }
+            
             $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 5);
             $this->EnableAction("SirenAction");
 
