@@ -57,7 +57,10 @@ class Reolink extends IPSModuleStrict
         $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
 
-
+        // Hook-Adresse (ohne /hook/)
+        $address = 'reolink_' . $this->InstanceID;   
+        $this->RegisterHook($address);
+        $this->WriteAttributeString('CurrentHook', '/hook/' . $address);
 
         // Timer
         $this->RegisterTimer("Person_Reset",   0, 'REOCAM_ResetMoveTimer($_IPS[\'TARGET\'], "Person");');
