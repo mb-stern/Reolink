@@ -98,10 +98,6 @@ class Reolink extends IPSModuleStrict
         $this->SetStatus(102);
 
         $hookPath = $this->ReadAttributeString("CurrentHook");
-        if ($hookPath === "") {
-            $hookPath = $this->RegisterHook();
-            $this->dbg('WEBHOOK', 'Hook init', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
-        }
 
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
@@ -328,9 +324,6 @@ class Reolink extends IPSModuleStrict
     {
         // Webhook ermitteln/registrieren
         $hookPath = $this->ReadAttributeString('CurrentHook');
-        if ($hookPath === '') {
-            $hookPath = $this->RegisterHook();
-        }
         $webhookFull = $this->BuildWebhookFullUrl($hookPath);
 
         // DevInfo für das Formular IMMER frisch von der Kamera holen
@@ -1225,41 +1218,6 @@ class Reolink extends IPSModuleStrict
         }
 
         return $form;
-    }
-
-
-    private function RegisterHook(): string
-    {
-        $hookBase = '/hook/reolink_';
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        if ($hookPath === "") {
-            $hookPath = $hookBase . $this->InstanceID;
-            $this->WriteAttributeString("CurrentHook", $hookPath);
-        }
-
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-        if (count($ids) === 0) {
-            $this->dbg('WEBHOOK', 'Keine WebHook-Control-Instanz gefunden');
-            return $hookPath;
-        }
-        $hookInstanceID = $ids[0];
-
-        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-        if (!is_array($hooks)) $hooks = [];
-
-        foreach ($hooks as $hook) {
-            if (($hook['Hook'] ?? '') === $hookPath && ($hook['TargetID'] ?? 0) === $this->InstanceID) {
-                $this->dbg('WEBHOOK', 'Bereits registriert', ['path' => $hookPath]);
-                return $hookPath;
-            }
-        }
-
-        $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
-        IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-        IPS_ApplyChanges($hookInstanceID);
-
-        $this->dbg('WEBHOOK', 'Registriert', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
-        return $hookPath;
     }
 
     private function getLocalIPv4(string $probe='8.8.8.8:53'): string {
@@ -2529,10 +2487,7 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         }
         $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") {
-            $hook = $this->RegisterHook();
-        }
-
+       
         $presets = [];
         if (!$reloadPresets) {
             $cached = $this->ReadAttributeString("PtzPresetsCache");
