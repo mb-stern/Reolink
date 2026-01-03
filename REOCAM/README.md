@@ -50,7 +50,7 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 
 ## 2. Voraussetzungen
 
-- IP-Symcon **ab Version 7.0**  
+- IP-Symcon **ab Version 8.2**  
 - Kamera muss **HTTP / HTTPS-Zugriff** zulassen  
 - Im Kameramenü unter *Push Notifications → Webhook* muss ein Eintrag möglich sein  
 - Aktuellste Firmware über das [Reolink Download-Center](https://reolink.com/de/download-center)  
@@ -80,7 +80,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Benutzername** | Benutzername für den Zugriff. |
 | **Passwort** | Passwort für den Zugriff. **Sonderzeichen wie + & @ : / ? # [ ] dürfen nicht verwendet werden**, da Reolink diese in URLs nicht korrekt verarbeitet. Verwende ausschließlich alphanumerische Zeichen. |
 | **Stream-Typ** | Auswahl zwischen *Mainstream* und *Substream*. Achtung: *Mainstream* ist oft H.265-codiert und kann von IP-Symcon nicht direkt angezeigt werden. |
-| **API-Funktionen** | Aktivien der API-Funktionen für LED-Scheinwerfer, IR-Beleuchtung, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
+| **API-Funktionen** | Aktivieren der API-Funktionen für LED-Scheinwerfer, IR-Beleuchtung, E-Mail Alarm und PTZ-Steuerung, FTP-Upload, Sirene, Kameraaufzeichnung und Sensitivität der Bewegungserkennung. Eine Rücksetzung des API-Versins Cache ist möglich, falls die Firmware der Kamera nach einem Update die neue API unterstützt|
 | **Polling aktivieren** | Nur aktivieren, wenn die Kamera keinen Webhook unterstützt. |
 | **Intelligente Bewegungserkennung** | Erstellt Variablen für Personen, Tiere, Fahrzeuge, Bewegung und Besucher. |
 | **Schnappschüsse anzeigen** | Zeigt den letzten Schnappschuss jeder Erkennungsart. |
@@ -153,6 +153,10 @@ Je nach Konfiguration werden automatisch angelegt:
 ---
 
 ## 9. Versionen
+
+### Version 2.14 (03.01.2026)
+- Umbau auf IPSModuleStrict und Kompatibilität hochgezogen auf 8.2.
+- Verbesserung der Variablenprofile zur Darstellung einer Auswahlliste
 
 ### Version 2.13 (24.12.2025)
 - Kamera-Infos und Produktbild werden im Konfigurationsformular angezeigt.
