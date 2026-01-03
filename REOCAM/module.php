@@ -351,6 +351,27 @@ class Reolink extends IPSModuleStrict
         });
     }
 
+    private function NormalizeProfile(string $profile): string
+    {
+        $profile = trim($profile);
+        if ($profile === '') return '';
+
+        // Standardprofile (~Switch etc.) unverändert
+        if ($profile[0] === '~') return $profile;
+
+        // Wenn schon #… kommt, unverändert
+        if ($profile[0] === '#') return $profile;
+
+        // IPSModuleStrict erwartet für Custom-Profile sehr wahrscheinlich #Prefix
+        return '#' . $profile;
+    }
+
+    private function ProfileExists(string $profile): bool
+    {
+        $profile = $this->NormalizeProfile($profile);
+        return $profile !== '' && IPS_VariableProfileExists($profile);
+    }
+
     private function EnsureVariables(): void
     {
         // Online-Status (wenn du sowas hast – ansonsten weglassen)
@@ -406,6 +427,8 @@ class Reolink extends IPSModuleStrict
 
     private function EnsureBool(string $ident, string $name, string $profile, int $pos, bool $default, bool $action): void
     {
+        $profile = $this->NormalizeProfile($profile);
+
         $created = $this->RegisterVariableBoolean($ident, $name, $profile, $pos);
         if ($action) {
             $this->EnableAction($ident);
@@ -417,6 +440,8 @@ class Reolink extends IPSModuleStrict
 
     private function EnsureInt(string $ident, string $name, string $profile, int $pos, int $default, bool $action): void
     {
+        $profile = $this->NormalizeProfile($profile);
+
         $created = $this->RegisterVariableInteger($ident, $name, $profile, $pos);
         if ($action) {
             $this->EnableAction($ident);
@@ -428,6 +453,8 @@ class Reolink extends IPSModuleStrict
 
     private function EnsureString(string $ident, string $name, string $profile, int $pos, string $default, bool $action): void
     {
+        $profile = $this->NormalizeProfile($profile);
+
         $created = $this->RegisterVariableString($ident, $name, $profile, $pos);
         if ($action) {
             $this->EnableAction($ident);
