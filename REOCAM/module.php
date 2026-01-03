@@ -1726,7 +1726,7 @@ class Reolink extends IPSModuleStrict
             if (!IPS_VariableProfileExists("REOCAM.IR")) {
                 IPS_CreateVariableProfile("REOCAM.IR", 1); 
             }
-            IPS_SetVariableProfileValues("REOCAM.IR", 0, 2, 1);
+            IPS_SetVariableProfileValues("REOCAM.IR", 0, 2, 0);
             IPS_SetVariableProfileAssociation("REOCAM.IR", 0, "Aus",  "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.IR", 1, "An",   "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.IR", 2, "Auto", "", -1);
@@ -1742,7 +1742,7 @@ class Reolink extends IPSModuleStrict
             if (!IPS_VariableProfileExists("REOCAM.WLED")) {
                 IPS_CreateVariableProfile("REOCAM.WLED", 1); 
             }
-            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 1);
+            IPS_SetVariableProfileValues("REOCAM.WLED", 0, 2, 0);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 0, "Aus", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 1, "Automatisch", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.WLED", 2, "Zeitabhängig", "", -1);
@@ -1766,7 +1766,7 @@ class Reolink extends IPSModuleStrict
             if (!IPS_VariableProfileExists("REOCAM.EmailInterval")) {
                 IPS_CreateVariableProfile("REOCAM.EmailInterval", 1);
             }
-            IPS_SetVariableProfileValues("REOCAM.EmailInterval", 30, 1800, 1);
+            IPS_SetVariableProfileValues("REOCAM.EmailInterval", 30, 1800, 0);
             IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 30,   "30 Sek.",    "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 60,   "1 Minute",   "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.EmailInterval", 300,  "5 Minuten",  "", -1);
@@ -1776,7 +1776,7 @@ class Reolink extends IPSModuleStrict
             if (!IPS_VariableProfileExists("REOCAM.EmailContent")) {
                 IPS_CreateVariableProfile("REOCAM.EmailContent", 1);
             }
-            IPS_SetVariableProfileValues("REOCAM.EmailContent", 0, 3, 1);
+            IPS_SetVariableProfileValues("REOCAM.EmailContent", 0, 3, 0);
             IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 0, "Text",             "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 1, "Bild (ohne Text)", "", -1);
             IPS_SetVariableProfileAssociation("REOCAM.EmailContent", 2, "Text + Bild",      "", -1);
@@ -1831,7 +1831,7 @@ class Reolink extends IPSModuleStrict
 
             if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
                 IPS_CreateVariableProfile("REOCAM.SirenAction", 1); // Integer
-                IPS_SetVariableProfileValues("REOCAM.SirenAction", 0, 100, 1);
+                IPS_SetVariableProfileValues("REOCAM.SirenAction", 0, 100, 0);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 100, "Start (manuell)", "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 0,   "Stop",            "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 1,   "1× abspielen",    "", -1);
