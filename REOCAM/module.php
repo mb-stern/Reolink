@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    public function Create()
+    public function Create(): void
     {
         parent::Create();
 
