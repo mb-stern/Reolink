@@ -97,12 +97,8 @@ class Reolink extends IPSModuleStrict
 
         $this->SetStatus(102);
 
-        // Profile (falls vorhanden)
-        if (method_exists($this, 'EnsureProfiles')) {
-            $this->EnsureProfiles();
-        }
+        $this->EnsureProfiles();
 
-        // === STRICT: Variablen zentral sicher anlegen (created bool + SetValue by Ident) ===
         $this->EnsureVariables();
 
         // Stream / Motion / Snapshots / Archive / Test / Besucher (deine bestehende Logik)
