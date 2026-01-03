@@ -149,7 +149,7 @@ class Reolink extends IPSModuleStrict
 
     }
 
-    public function RequestAction($Ident, $Value)
+    public function RequestAction(string $Ident, mixed $Value): void
     {
         if (!$this->isActive()) {
             $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
