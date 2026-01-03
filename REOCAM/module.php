@@ -80,12 +80,15 @@ class Reolink extends IPSModuleStrict
         $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
             $this->SetStatus(104);
+
             foreach ([
-                "Person_Reset","Tier_Reset","Fahrzeug_Reset","Bewegung_Reset",
-                "Test_Reset","Besucher_Reset","PollingTimer","ApiRequestTimer","TokenRenewalTimer","FirmwareCheckTimer"
+                "Person_Reset", "Tier_Reset", "Fahrzeug_Reset", "Bewegung_Reset",
+                "Test_Reset", "Besucher_Reset",
+                "PollingTimer", "ApiRequestTimer", "TokenRenewalTimer", "FirmwareCheckTimer"
             ] as $t) {
                 $this->SetTimerInterval($t, 0);
             }
+
             $this->WriteAttributeString("ApiToken", "");
             $this->WriteAttributeInteger("ApiTokenExpiresAt", 0);
             $this->WriteAttributeBoolean("TokenRefreshing", false);
@@ -94,13 +97,46 @@ class Reolink extends IPSModuleStrict
 
         $this->SetStatus(102);
 
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
-        if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
-        if (!$this->ReadPropertyBoolean("ShowSnapshots")) { $this->RemoveSnapshots(); }
-        if ($this->ReadPropertyBoolean("ShowArchives")) { $this->CreateOrUpdateArchives(); } else { $this->RemoveArchives(); }
-        if ($this->ReadPropertyBoolean("ShowTestElements")) { $this->CreateTestElements(); } else { $this->RemoveTestElements(); }
-        if ($this->ReadPropertyBoolean("ShowVisitorElements")) { $this->CreateVisitorElements(); } else { $this->RemoveVisitorElements(); }
+        // Profile (falls vorhanden)
+        if (method_exists($this, 'EnsureProfiles')) {
+            $this->EnsureProfiles();
+        }
 
+        // === STRICT: Variablen zentral sicher anlegen (created bool + SetValue by Ident) ===
+        $this->EnsureVariables();
+
+        // Stream / Motion / Snapshots / Archive / Test / Besucher (deine bestehende Logik)
+        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+
+        if ($this->ReadPropertyBoolean("ShowMoveVariables")) {
+            $this->CreateMoveVariables();
+        } else {
+            $this->RemoveMoveVariables();
+        }
+
+        if (!$this->ReadPropertyBoolean("ShowSnapshots")) {
+            $this->RemoveSnapshots();
+        }
+
+        if ($this->ReadPropertyBoolean("ShowArchives")) {
+            $this->CreateOrUpdateArchives();
+        } else {
+            $this->RemoveArchives();
+        }
+
+        if ($this->ReadPropertyBoolean("ShowTestElements")) {
+            $this->CreateTestElements();
+        } else {
+            $this->RemoveTestElements();
+        }
+
+        if ($this->ReadPropertyBoolean("ShowVisitorElements")) {
+            $this->CreateVisitorElements();
+        } else {
+            $this->RemoveVisitorElements();
+        }
+
+        // Polling Timer
         if ($this->ReadPropertyBoolean("EnablePolling")) {
             $interval = max(1, (int)$this->ReadPropertyInteger("PollingInterval"));
             $this->SetTimerInterval("PollingTimer", $interval * 1000);
@@ -109,34 +145,35 @@ class Reolink extends IPSModuleStrict
         }
 
         // API-Schalter
-        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
-        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
+        $enableWhiteLed    = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableIR          = $this->ReadPropertyBoolean("EnableApiIR");
+        $enableEmail       = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ         = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enableFTP         = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSensitivity = $this->ReadPropertyBoolean("EnableApiSensitivity");
+        $enableSiren       = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableRecord      = $this->ReadPropertyBoolean("EnableApiRecord");
 
         $anyFeatureOn = (
             $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
             $enableFTP || $enableSensitivity || $enableSiren || $enableRecord
         );
 
-
+        // Bestehende API-Variablen-Funktion darf bleiben,
+        // aber: drinnen MUSS Strict-Muster gelten (RegisterVariable => bool, SetValue by Ident).
         $this->CreateOrUpdateApiVariablesUnified();
 
         // Firmware-Check-Timer: einmal pro Tag
         if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
-            // Timer für spätere automatische Checks
             $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
-
             $this->FirmwareCheckTimer();
         } else {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
         }
 
-        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
+        // Online-Check läuft immer
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
+
         if ($anyFeatureOn) {
             $this->GetToken();
             $this->ExecuteApiRequests(true);
@@ -145,7 +182,6 @@ class Reolink extends IPSModuleStrict
         }
 
         $this->UpdateOnlineStatus();
-
     }
 
     public function RequestAction(string $Ident, mixed $Value): void
@@ -244,6 +280,92 @@ class Reolink extends IPSModuleStrict
         }
     }
 
+    private function EnsureVariables(): void
+    {
+        // Online-Status (wenn du sowas hast – ansonsten weglassen)
+        if (@$this->GetIDForIdent("KameraOnline") === 0) {
+            // nur als Beispiel – wenn Ident bei dir anders heißt, anpassen
+        }
+
+        // PTZ HTML (nur wenn Feature aktiv)
+        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
+            $this->EnsureString("PTZ_HTML", "PTZ", "~HTMLBox", 8, "", false);
+        }
+
+        // Firmware Variablen (read-only, keine Action)
+        if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
+            $this->EnsureBool("FirmwareUpdateAvailable", "Firmware Update verfügbar", "~Alert", 200, false, false);
+            $this->EnsureString("FirmwareDownloadUrl", "Firmware Download URL", "", 201, "", false);
+        }
+
+        // API Variablen (nur anlegen – Werte kommen später aus API)
+        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
+            $this->EnsureBool("WhiteLed", "White LED", "~Switch", 10, false, true);
+            $this->EnsureInt("Mode", "White LED Modus", "Reolink.WhiteLedMode", 11, 0, true);
+            $this->EnsureInt("Bright", "White LED Helligkeit", "Reolink.Brightness", 12, 0, true);
+        }
+
+        if ($this->ReadPropertyBoolean("EnableApiIR")) {
+            $this->EnsureInt("IRLights", "IR-Licht", "Reolink.IRMode", 13, 0, true);
+        }
+
+        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
+            $this->EnsureBool("EmailNotify", "E-Mail Benachrichtigung", "~Switch", 20, false, true);
+            $this->EnsureInt("EmailInterval", "E-Mail Intervall", "Reolink.EmailInterval", 21, 0, true);
+            $this->EnsureInt("EmailContent", "E-Mail Inhalt", "Reolink.EmailContent", 22, 0, true);
+        }
+
+        if ($this->ReadPropertyBoolean("EnableApiFTP")) {
+            $this->EnsureBool("FTPEnabled", "FTP Upload", "~Switch", 30, false, true);
+        }
+
+        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
+            $this->EnsureInt("MdSensitivity", "Bewegungsempfindlichkeit", "Reolink.MdSensitivity", 40, 25, true);
+        }
+
+        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
+            $this->EnsureBool("SirenEnabled", "Sirene aktiv", "~Switch", 50, false, true);
+            $this->EnsureInt("SirenAction", "Sirene Aktion", "Reolink.SirenAction", 51, 0, true);
+        }
+
+        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
+            $this->EnsureBool("RecEnabled", "Aufnahme", "~Switch", 60, false, true);
+        }
+    }
+
+    private function EnsureBool(string $ident, string $name, string $profile, int $pos, bool $default, bool $action): void
+    {
+        $created = $this->RegisterVariableBoolean($ident, $name, $profile, $pos);
+        if ($action) {
+            $this->EnableAction($ident);
+        }
+        if ($created) {
+            $this->SetValue($ident, $default);
+        }
+    }
+
+    private function EnsureInt(string $ident, string $name, string $profile, int $pos, int $default, bool $action): void
+    {
+        $created = $this->RegisterVariableInteger($ident, $name, $profile, $pos);
+        if ($action) {
+            $this->EnableAction($ident);
+        }
+        if ($created) {
+            $this->SetValue($ident, $default);
+        }
+    }
+
+    private function EnsureString(string $ident, string $name, string $profile, int $pos, string $default, bool $action): void
+    {
+        $created = $this->RegisterVariableString($ident, $name, $profile, $pos);
+        if ($action) {
+            $this->EnableAction($ident);
+        }
+        if ($created) {
+            $this->SetValue($ident, $default);
+        }
+    }
+
     public function SetInstanceStatus(bool $value): bool
     {
         IPS_SetProperty($this->InstanceID, 'InstanceStatus', $value);
@@ -252,7 +374,6 @@ class Reolink extends IPSModuleStrict
 
         return $result;
     }
-
 
     private function isActive(): bool
     {
