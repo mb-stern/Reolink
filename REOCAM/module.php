@@ -1,7 +1,6 @@
 <?php
-declare(strict_types=1);
 
-class Reolink extends IPSModule
+class Reolink extends IPSModuleStrict
 {
     public function Create(): void
     {
