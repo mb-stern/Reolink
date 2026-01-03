@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 class Reolink extends IPSModule
 {
-    public function Create()
+    public function Create(): void
     {
-        parent::Create();
+        //Webhook registrieren
+        $hookPath = '/hook/reolink_' . $this->InstanceID;
+        $this->RegisterHook($hookPath); // SDK-Funktion -> WebHookControl
+        $this->WriteAttributeString('CurrentHook', $hookPath);
 
         // Basis
         $this->RegisterPropertyString("CameraIP", "");
@@ -71,7 +74,7 @@ class Reolink extends IPSModule
 
     }
 
-    public function ApplyChanges()
+    public function ApplyChanges(): void
     {
         parent::ApplyChanges();
 
@@ -91,12 +94,6 @@ class Reolink extends IPSModule
         }
 
         $this->SetStatus(102);
-
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        if ($hookPath === "") {
-            $hookPath = $this->RegisterHook();
-            $this->dbg('WEBHOOK', 'Hook init', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
-        }
 
         $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
@@ -152,7 +149,7 @@ class Reolink extends IPSModule
 
     }
 
-    public function RequestAction($Ident, $Value)
+    public function RequestAction(string $Ident, mixed $Value): void
     {
         if (!$this->isActive()) {
             $this->dbg("UI", "Instanz inaktiv – Aktion verworfen", $Ident);
@@ -339,15 +336,8 @@ class Reolink extends IPSModule
     // Webhook + Formular
     // ---------------------------
 
-   public function GetConfigurationForm()
+    public function GetConfigurationForm(): string
     {
-        // Webhook ermitteln/registrieren
-        $hookPath = $this->ReadAttributeString('CurrentHook');
-        if ($hookPath === '') {
-            $hookPath = $this->RegisterHook();
-        }
-        $webhookFull = $this->BuildWebhookFullUrl($hookPath);
-
         // DevInfo für das Formular IMMER frisch von der Kamera holen
         $dev = $this->apiGetDevInfoFresh();
 
@@ -1242,41 +1232,6 @@ class Reolink extends IPSModule
         return $form;
     }
 
-
-    private function RegisterHook(): string
-    {
-        $hookBase = '/hook/reolink_';
-        $hookPath = $this->ReadAttributeString("CurrentHook");
-        if ($hookPath === "") {
-            $hookPath = $hookBase . $this->InstanceID;
-            $this->WriteAttributeString("CurrentHook", $hookPath);
-        }
-
-        $ids = IPS_GetInstanceListByModuleID('{015A6EB8-D6E5-4B93-B496-0D3F77AE9FE1}');
-        if (count($ids) === 0) {
-            $this->dbg('WEBHOOK', 'Keine WebHook-Control-Instanz gefunden');
-            return $hookPath;
-        }
-        $hookInstanceID = $ids[0];
-
-        $hooks = json_decode(IPS_GetProperty($hookInstanceID, 'Hooks'), true);
-        if (!is_array($hooks)) $hooks = [];
-
-        foreach ($hooks as $hook) {
-            if (($hook['Hook'] ?? '') === $hookPath && ($hook['TargetID'] ?? 0) === $this->InstanceID) {
-                $this->dbg('WEBHOOK', 'Bereits registriert', ['path' => $hookPath]);
-                return $hookPath;
-            }
-        }
-
-        $hooks[] = ['Hook' => $hookPath, 'TargetID' => $this->InstanceID];
-        IPS_SetProperty($hookInstanceID, 'Hooks', json_encode($hooks));
-        IPS_ApplyChanges($hookInstanceID);
-
-        $this->dbg('WEBHOOK', 'Registriert', ['path' => $hookPath, 'full' => $this->BuildWebhookFullUrl($hookPath)]);
-        return $hookPath;
-    }
-
     private function getLocalIPv4(string $probe='8.8.8.8:53'): string {
         $ip = '127.0.0.1';
         if ($sock = @stream_socket_client('udp://'.$probe, $e1, $e2, 1)) {
@@ -1296,7 +1251,7 @@ class Reolink extends IPSModule
         return "http://{$host}:{$port}{$hookPath}";
     }
 
-    public function ProcessHookData()
+    public function ProcessHookData(): void
     {
         if (!$this->ReadPropertyBoolean("InstanceStatus") || $this->GetStatus() !== 102) {
             while (ob_get_level() > 0) { @ob_end_clean(); }
@@ -2542,10 +2497,6 @@ class Reolink extends IPSModule
     {
         if (!@$this->GetIDForIdent("PTZ_HTML")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
-        }
-        $hook = $this->ReadAttributeString("CurrentHook");
-        if ($hook === "") {
-            $hook = $this->RegisterHook();
         }
 
         $presets = [];
