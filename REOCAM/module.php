@@ -2015,7 +2015,7 @@ class Reolink extends IPSModuleStrict
         if ($this->GetIDForIdent('KameraOnline') === 0) {
             $created = $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             if ($created) {
-                $this->SetValue('Kamera online', false);
+                $this->SetValue('Kameraonline', false);
             }
         }
 
