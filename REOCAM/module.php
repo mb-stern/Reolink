@@ -1298,52 +1298,36 @@ class Reolink extends IPSModuleStrict
         if (!isset($data['alarm']['type'])) return;
         $type = $data['alarm']['type'];
 
-        $showMove    = $this->ReadPropertyBoolean("ShowMoveVariables");
-        $showSnap    = $this->ReadPropertyBoolean("ShowSnapshots");
-        $showTest    = $this->ReadPropertyBoolean("ShowTestElements");
-        $showVisitor = $this->ReadPropertyBoolean("ShowVisitorElements");
-
         switch ($type) {
             case "PEOPLE":
-                if ($showSnap)  $this->CreateSnapshotAtPosition("Person", 21);
-                if ($showMove)  $this->SetMoveTimer("Person");
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Person", 21);
+                $this->SetMoveTimer("Person");
                 break;
-
             case "ANIMAL":
-                if ($showSnap)  $this->CreateSnapshotAtPosition("Tier", 26);
-                if ($showMove)  $this->SetMoveTimer("Tier");
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Tier", 26);
+                $this->SetMoveTimer("Tier");
                 break;
-
             case "VEHICLE":
-                if ($showSnap)  $this->CreateSnapshotAtPosition("Fahrzeug", 31);
-                if ($showMove)  $this->SetMoveTimer("Fahrzeug");
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Fahrzeug", 31);
+                $this->SetMoveTimer("Fahrzeug");
                 break;
-
             case "MD":
-                if ($showSnap)  $this->CreateSnapshotAtPosition("Bewegung", 36);
-                if ($showMove)  $this->SetMoveTimer("Bewegung");
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Bewegung", 36);
+                $this->SetMoveTimer("Bewegung");
                 break;
-
             case "VISITOR":
-                if ($showSnap)     $this->CreateSnapshotAtPosition("Besucher", 41);
-                if ($showVisitor)  $this->SetMoveTimer("Besucher");
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Besucher", 41);
+                $this->SetMoveTimer("Besucher");
                 break;
-
             case "TEST":
-                if ($showSnap)  $this->CreateSnapshotAtPosition("Test", 46);
-                if ($showTest)  $this->SetMoveTimer("Test");
+                if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Test", 46);
+                if ($this->ReadPropertyBoolean("ShowTestElements")) $this->SetMoveTimer("Test");
                 break;
         }
     }
 
     private function SetMoveTimer(string $ident)
     {
-        $vid = @$this->GetIDForIdent($ident);
-        if ($vid === false || !IPS_ObjectExists($vid) || !IPS_VariableExists($vid)) {
-            $this->dbg('POLLING', "SetMoveTimer übersprungen – Variable fehlt", ['ident'=>$ident]);
-            return;
-        }
-
         $timerName = $ident . "_Reset";
         $this->dbg('POLLING', "Setze '$ident' auf true");
         $this->SetValue($ident, true);
@@ -1352,13 +1336,6 @@ class Reolink extends IPSModuleStrict
 
     public function ResetMoveTimer(string $ident): void
     {
-        $vid = @$this->GetIDForIdent($ident);
-        if ($vid === false || !IPS_ObjectExists($vid) || !IPS_VariableExists($vid)) {
-            // Timer trotzdem aus, falls er läuft
-            $this->SetTimerInterval($ident . "_Reset", 0);
-            return;
-        }
-
         $timerName = $ident . "_Reset";
         $this->dbg('POLLING', "Reset '$ident' → false");
         $this->SetValue($ident, false);
@@ -1371,11 +1348,13 @@ class Reolink extends IPSModuleStrict
         $this->RegisterVariableBoolean("Tier",     "Tier",               "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug",           "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Besucher", "Besucher",           "~Motion", 40);
+        $this->RegisterVariableBoolean("Test",     "Test",               "~Motion", 45);
     }
 
     private function RemoveMoveVariables()
     {
-        foreach (["Person","Tier","Fahrzeug","Bewegung"] as $ident) {
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
@@ -1383,10 +1362,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateTestElements()
     {
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
-
-        $mid = @$this->GetIDForIdent("Snapshot_Test");
-        if ($mid === false || !IPS_ObjectExists($mid)) {
+        if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
             $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, "Snapshot_Test");
@@ -1394,8 +1370,7 @@ class Reolink extends IPSModuleStrict
             IPS_SetMediaCached($mediaID, false);
         }
 
-        $cid = @$this->GetIDForIdent("Archive_Test");
-        if ($cid === false || !IPS_ObjectExists($cid)) {
+        if (!IPS_ObjectExists(@$this->GetIDForIdent("Archive_Test"))) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
             IPS_SetIdent($categoryID, "Archive_Test");
@@ -1422,10 +1397,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateVisitorElements()
     {
-        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 40);
-
-        $mid = @$this->GetIDForIdent("Snapshot_Besucher");
-        if ($mid === false || !IPS_ObjectExists($mid)) {
+        if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, "Snapshot_Besucher");
@@ -1433,8 +1405,7 @@ class Reolink extends IPSModuleStrict
             IPS_SetMediaCached($mediaID, false);
         }
 
-        $cid = @$this->GetIDForIdent("Archive_Besucher");
-        if ($cid === false || !IPS_ObjectExists($cid)) {
+        if (!IPS_ObjectExists(@$this->GetIDForIdent("Archive_Besucher"))) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
             IPS_SetIdent($categoryID, "Archive_Besucher");
@@ -1634,19 +1605,17 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrUpdateStream(string $ident, string $name): void
+    private function CreateOrUpdateStream(string $ident, string $name)
     {
-        $mediaID = (int)@$this->GetIDForIdent($ident);
-
-        if ($mediaID <= 0 || !IPS_ObjectExists($mediaID)) {
-            $mediaID = IPS_CreateMedia(3); // Stream
+        $mediaID = @$this->GetIDForIdent($ident);
+        if ($mediaID === false) {
+            $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
             IPS_SetPosition($mediaID, 10);
             IPS_SetMediaCached($mediaID, true);
         }
-
         IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
@@ -1885,8 +1854,7 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        $id = (int)@$this->GetIDForIdent('KameraOnline');
-        if ($id <= 0 || !IPS_ObjectExists($id)) {
+        if (@$this->GetIDForIdent('KameraOnline') === false) {
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
         }
@@ -3576,12 +3544,8 @@ class Reolink extends IPSModuleStrict
 
     private function UpdateOnlineStatus(): void
     {
-        $id = (int)@$this->GetIDForIdent('KameraOnline');
-        if ($id <= 0 || !IPS_ObjectExists($id)) {
-            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
-            $this->SetValue('KameraOnline', false);
-            $id = (int)$this->GetIDForIdent('KameraOnline');
-        }
+        $id = @$this->GetIDForIdent('KameraOnline');
+        if ($id === false) return;
 
         $ip   = trim($this->ReadPropertyString('CameraIP'));
         $user = urlencode($this->ReadPropertyString('Username'));
