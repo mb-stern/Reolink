@@ -1348,13 +1348,11 @@ class Reolink extends IPSModuleStrict
         $this->RegisterVariableBoolean("Tier",     "Tier",               "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug",           "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
-        $this->RegisterVariableBoolean("Besucher", "Besucher",           "~Motion", 40);
-        $this->RegisterVariableBoolean("Test",     "Test",               "~Motion", 45);
     }
 
     private function RemoveMoveVariables()
     {
-        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $ident) {
+        foreach (["Person","Tier","Fahrzeug","Bewegung"] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
@@ -1362,7 +1360,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateTestElements()
     {
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -1399,7 +1397,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateVisitorElements()
     {
-        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
+        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 40);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -1612,7 +1610,7 @@ class Reolink extends IPSModuleStrict
     private function CreateOrUpdateStream(string $ident, string $name)
     {
         $mediaID = @$this->GetIDForIdent($ident);
-        if ($mediaID === false) {
+        if ($mediaID === false || $mediaID == 0) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
@@ -2123,8 +2121,9 @@ class Reolink extends IPSModuleStrict
 
         // Wenn es eine KameraOnline-Variable gibt und sie FALSE ist:
         // => gar nicht erst versuchen, einen Token zu holen.
+        
         $onlineId = @$this->GetIDForIdent('KameraOnline');
-        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
+        if ($onlineId !== false && $onlineId > 0 && !GetValueBoolean($onlineId)) {
             $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
             return false;
         }
@@ -3565,7 +3564,7 @@ class Reolink extends IPSModuleStrict
 
         $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $isOnline]);
 
-        if ((bool)GetValue($id) !== $isOnline) {
+        if ($id > 0 && IPS_ObjectExists($id) && GetValue($id) !== $isOnline) {
             $this->SetValue('KameraOnline', $isOnline);
         }
     }
