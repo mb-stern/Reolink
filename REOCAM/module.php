@@ -1609,9 +1609,8 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrUpdateStream(string $ident, string $name)
+    private function CreateOrUpdateStream(string $ident, string $name): void
     {
-        $this->RegisterVariableString($ident, "Kamera Stream", "", 10);
         $mediaID = @$this->GetIDForIdent($ident);
         if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3);
