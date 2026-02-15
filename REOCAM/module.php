@@ -1348,11 +1348,13 @@ class Reolink extends IPSModuleStrict
         $this->RegisterVariableBoolean("Tier",     "Tier",               "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug",           "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Besucher", "Besucher",           "~Motion", 40);
+        $this->RegisterVariableBoolean("Test",     "Test",               "~Motion", 45);
     }
 
     private function RemoveMoveVariables()
     {
-        foreach (["Person","Tier","Fahrzeug","Bewegung"] as $ident) {
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
@@ -1360,7 +1362,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateTestElements()
     {
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -1397,7 +1399,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateVisitorElements()
     {
-        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 40);
+        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -1610,7 +1612,7 @@ class Reolink extends IPSModuleStrict
     private function CreateOrUpdateStream(string $ident, string $name)
     {
         $mediaID = @$this->GetIDForIdent($ident);
-        if ($mediaID <= 0 || !IPS_ObjectExists($mediaID)) {
+        if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
@@ -1856,12 +1858,10 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        $id = $this->GetIDForIdent('KameraOnline');
-        if ($id <= 0 || !IPS_ObjectExists($id)) {
+        if (@$this->GetIDForIdent('KameraOnline') === false) {
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
         }
-
 
         // -------- Firmwarevariablen--------
         if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
@@ -2124,7 +2124,7 @@ class Reolink extends IPSModuleStrict
         // Wenn es eine KameraOnline-Variable gibt und sie FALSE ist:
         // => gar nicht erst versuchen, einen Token zu holen.
         $onlineId = @$this->GetIDForIdent('KameraOnline');
-        if ($onlineId > 0 && IPS_ObjectExists($onlineId) && !GetValueBoolean($onlineId)) {
+        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
             $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
             return false;
         }
@@ -3548,25 +3548,25 @@ class Reolink extends IPSModuleStrict
 
     private function UpdateOnlineStatus(): void
     {
-        // Stelle sicher, dass die Variable existiert
-        $id = $this->GetIDForIdent('KameraOnline');
-        if ($id <= 0 || !IPS_ObjectExists($id)) {
-            $id = $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
-            // optional initial
-            SetValueBoolean($id, false);
-        }
+        $id = @$this->GetIDForIdent('KameraOnline');
+        if ($id === false) return;
 
-        $ip = trim($this->ReadPropertyString('CameraIP'));
+        $ip   = trim($this->ReadPropertyString('CameraIP'));
+        $user = urlencode($this->ReadPropertyString('Username'));
+        $pass = urlencode($this->ReadPropertyString('Password'));
+
         $isOnline = false;
 
-        if ($ip !== '' && function_exists('Sys_Ping')) {
-            $isOnline = (bool)@Sys_Ping($ip, 1000);
+        if ($ip !== '') {
+            if (function_exists('Sys_Ping')) {
+                $isOnline = @Sys_Ping($ip, 1000); // 1s
+            }
         }
 
         $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $isOnline]);
 
-        if (GetValueBoolean($id) !== $isOnline) {
-            SetValueBoolean($id, $isOnline);
+        if ((bool)GetValue($id) !== $isOnline) {
+            $this->SetValue('KameraOnline', $isOnline);
         }
     }
 }
