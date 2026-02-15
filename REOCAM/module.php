@@ -559,16 +559,19 @@ class Reolink extends IPSModuleStrict
     private function FirmwareCheck(array $dev): ?array
     {
         $firm = trim((string)($dev['firmVer'] ?? ''));
-        if ($firm === '') {
-            return null;
-        }
+        $this->dbg('FW', 'firmVer', ['firmVer' => $firm]);
+
+        if ($firm === '') return null;
 
         $readme = $this->fetchFirmwareReadme();
-        if ($readme === null || $readme === '') {
-            return null;
-        }
+        $this->dbg('FW', 'readme', ['ok' => is_string($readme) && $readme !== '', 'len' => is_string($readme) ? strlen($readme) : 0]);
 
-        return $this->findLatestFirmwareForInstalled($readme, $firm);
+        if ($readme === null || $readme === '') return null;
+
+        $info = $this->findLatestFirmwareForInstalled($readme, $firm);
+        $this->dbg('FW', 'info', $info);
+
+        return $info;
     }
 
     // 2) Reine Darstellung fürs Formular (kein SetValue, keine Seiteneffekte)
@@ -613,35 +616,40 @@ class Reolink extends IPSModuleStrict
 
     private function fetchFirmwareReadme(): ?string
     {
-        // ggf. anpassen, wenn du eine eigene Kopie nutzt
         $url = 'https://raw.githubusercontent.com/AT0myks/reolink-fw-archive/main/README.md';
+        $this->dbg('FirmwareCheck', 'Lade README', ['url' => $url]);
 
-        $opts = [
-            'http' => [
-                'method'        => 'GET',
-                'timeout'       => 10,
-                'ignore_errors' => true
-            ],
-            // falls es ein TLS-Problem gibt, testweise Peer-Check aus:
-            'ssl'  => [
-                'verify_peer'      => false,
-                'verify_peer_name' => false
-            ]
-        ];
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT        => 12,
+            CURLOPT_HTTPHEADER     => ['User-Agent: IP-Symcon Reolink Module'],
 
-        $this->SendDebug('FirmwareCheck', 'Lade Firmware-README von ' . $url, 0);
-        $result = @Sys_GetURLContent($url);
+            // wenn Linux TLS/CA zickt:
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+        ]);
 
-        if ($result === false || $result === '') {
-            $err = error_get_last();
-            $this->SendDebug(
-                'FirmwareCheck',
-                'Fehler beim Laden des Firmware-README: ' . ($err['message'] ?? 'unbekannt'),
-                0
-            );
+        $result = curl_exec($ch);
+        if ($result === false) {
+            $err  = curl_error($ch);
+            $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            curl_close($ch);
+            $this->dbg('FirmwareCheck', 'README cURL FAIL', ['err' => $err, 'http' => $code]);
             return null;
         }
 
+        $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+
+        if ($code >= 400 || $result === '') {
+            $this->dbg('FirmwareCheck', 'README leer/HTTP Fehler', ['http' => $code, 'len' => strlen((string)$result)]);
+            return null;
+        }
+
+        $this->dbg('FirmwareCheck', 'README OK', ['len' => strlen($result)]);
         return $result;
     }
 
@@ -1856,9 +1864,12 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
-        $this->SetValue('KameraOnline', false);
-    
+        if (@$this->GetIDForIdent('KameraOnline') === false) {
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
+            $this->SetValue('KameraOnline', false);
+        } else {
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
+        }
 
         // -------- Firmwarevariablen--------
         if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
