@@ -1856,10 +1856,11 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        $created = (@$this->GetIDForIdent('KameraOnline') === false);
-        $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
-        if ($created) {
+        if (@$this->GetIDForIdent('KameraOnline') === false) {
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
+        } else {
+            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
         }
 
         // -------- Firmwarevariablen--------
