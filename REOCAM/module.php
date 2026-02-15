@@ -1609,15 +1609,41 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrUpdateStream(string $ident, string $name)
+    private function CreateOrUpdateStream(string $ident, string $name): void
     {
-        $mediaID = IPS_CreateMedia(3);
-        IPS_SetParent($mediaID, $this->InstanceID);
-        IPS_SetIdent($mediaID, $ident);
-        IPS_SetName($mediaID, $name);
-        IPS_SetPosition($mediaID, 10);
-        IPS_SetMediaCached($mediaID, true);
-        IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
+        $this->SendDebug('STREAM', '--- CreateOrUpdateStream START ---', 0);
+        $this->SendDebug('STREAM', 'Ident: ' . $ident, 0);
+
+        $mediaID = $this->GetIDForIdent($ident);
+        $this->SendDebug('STREAM', 'GetIDForIdent Ergebnis: ' . var_export($mediaID, true), 0);
+
+        if ($mediaID > 0 && IPS_ObjectExists($mediaID)) {
+            $obj = IPS_GetObject($mediaID);
+            $this->SendDebug('STREAM', 'Objekt existiert. ObjectType: ' . $obj['ObjectType'], 0);
+        } else {
+            $this->SendDebug('STREAM', 'Medium existiert nicht -> wird neu erstellt', 0);
+
+            $mediaID = IPS_CreateMedia(3);
+            $this->SendDebug('STREAM', 'Neues Media erstellt mit ID: ' . $mediaID, 0);
+
+            IPS_SetParent($mediaID, $this->InstanceID);
+            IPS_SetIdent($mediaID, $ident);
+            IPS_SetName($mediaID, $name);
+            IPS_SetPosition($mediaID, 10);
+            IPS_SetMediaCached($mediaID, true);
+        }
+
+        $url = $this->GetStreamURL();
+        $this->SendDebug('STREAM', 'Stream URL: ' . $url, 0);
+
+        if ($mediaID > 0 && IPS_ObjectExists($mediaID)) {
+            IPS_SetMediaFile($mediaID, $url, false);
+            $this->SendDebug('STREAM', 'IPS_SetMediaFile erfolgreich gesetzt für ID: ' . $mediaID, 0);
+        } else {
+            $this->SendDebug('STREAM', 'FEHLER: mediaID ungültig (' . $mediaID . ')', 0);
+        }
+
+        $this->SendDebug('STREAM', '--- CreateOrUpdateStream END ---', 0);
     }
 
     private function GetStreamURL(): string
