@@ -154,6 +154,10 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
+### Version 2.15 (15.02.2026)
+- Fehlermeldungen behoben, dass einige Variablen nicht existieren.
+- Einige Variablen wurden doppelt registriert.
+
 ### Version 2.14 (03.01.2026)
 - Umbau auf IPSModuleStrict und Kompatibilität hochgezogen auf 8.2.
 - Verbesserung der Variablenprofile zur Darstellung einer Auswahlliste
