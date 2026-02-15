@@ -1610,7 +1610,7 @@ class Reolink extends IPSModuleStrict
     private function CreateOrUpdateStream(string $ident, string $name)
     {
         $mediaID = @$this->GetIDForIdent($ident);
-        if ($mediaID === false || $mediaID !== 0) {
+        if ($mediaID === false || $mediaID === 0) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
@@ -2122,14 +2122,11 @@ class Reolink extends IPSModuleStrict
         // Wenn es eine KameraOnline-Variable gibt und sie FALSE ist:
         // => gar nicht erst versuchen, einen Token zu holen.
         
-        /*
-
         $onlineId = @$this->GetIDForIdent('KameraOnline');
-        if ($onlineId !== false && $onlineId === 0 && !GetValueBoolean($onlineId)) {
+        if ($onlineId !== false && $onlineId !== 0 && !GetValueBoolean($onlineId)) {
             $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
             return false;
         }
-            */
 
         $token = $this->ReadAttributeString("ApiToken");
         $exp   = (int)$this->ReadAttributeInteger("ApiTokenExpiresAt");
