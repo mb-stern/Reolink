@@ -1609,41 +1609,18 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrUpdateStream(string $ident, string $name): void
+    private function CreateOrUpdateStream(string $ident, string $name)
     {
-        $this->SendDebug('STREAM', '--- CreateOrUpdateStream START ---', 0);
-        $this->SendDebug('STREAM', 'Ident: ' . $ident, 0);
-
-        $mediaID = $this->GetIDForIdent($ident);
-        $this->SendDebug('STREAM', 'GetIDForIdent Ergebnis: ' . var_export($mediaID, true), 0);
-
-        if ($mediaID > 0 && IPS_ObjectExists($mediaID)) {
-            $obj = IPS_GetObject($mediaID);
-            $this->SendDebug('STREAM', 'Objekt existiert. ObjectType: ' . $obj['ObjectType'], 0);
-        } else {
-            $this->SendDebug('STREAM', 'Medium existiert nicht -> wird neu erstellt', 0);
-
+        $mediaID = @$this->GetIDForIdent($ident);
+        if ($mediaID === false || $mediaID == 0) {
             $mediaID = IPS_CreateMedia(3);
-            $this->SendDebug('STREAM', 'Neues Media erstellt mit ID: ' . $mediaID, 0);
-
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
             IPS_SetName($mediaID, $name);
             IPS_SetPosition($mediaID, 10);
             IPS_SetMediaCached($mediaID, true);
         }
-
-        $url = $this->GetStreamURL();
-        $this->SendDebug('STREAM', 'Stream URL: ' . $url, 0);
-
-        if ($mediaID > 0 && IPS_ObjectExists($mediaID)) {
-            IPS_SetMediaFile($mediaID, $url, false);
-            $this->SendDebug('STREAM', 'IPS_SetMediaFile erfolgreich gesetzt für ID: ' . $mediaID, 0);
-        } else {
-            $this->SendDebug('STREAM', 'FEHLER: mediaID ungültig (' . $mediaID . ')', 0);
-        }
-
-        $this->SendDebug('STREAM', '--- CreateOrUpdateStream END ---', 0);
+        IPS_SetMediaFile($mediaID, $this->GetStreamURL(), false);
     }
 
     private function GetStreamURL(): string
@@ -2147,7 +2124,7 @@ class Reolink extends IPSModuleStrict
         // Wenn es eine KameraOnline-Variable gibt und sie FALSE ist:
         // => gar nicht erst versuchen, einen Token zu holen.
         $onlineId = @$this->GetIDForIdent('KameraOnline');
-        if ($onlineId !== false && !GetValueBoolean($onlineId)) {
+        if (is_int($onlineId) && $onlineId > 0 && IPS_ObjectExists($onlineId)) {
             $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
             return false;
         }
@@ -3588,8 +3565,10 @@ class Reolink extends IPSModuleStrict
 
         $this->dbg('ONLINE', 'Status geprüft', ['ip' => $ip, 'online' => $isOnline]);
 
-        if ((bool)GetValue($id) !== $isOnline) {
-            $this->SetValue('KameraOnline', $isOnline);
+        if ($id > 0 && IPS_ObjectExists($id)) {
+            if (GetValueBoolean($id) !== $isOnline) {
+                SetValueBoolean($id, $isOnline);
+            }
         }
     }
 }
