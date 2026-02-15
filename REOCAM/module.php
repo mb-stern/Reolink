@@ -751,36 +751,59 @@ class Reolink extends IPSModuleStrict
 
     private function UpdateFirmwareVariables(?array $info): void
     {
-        $enableFwVars = $this->ReadPropertyBoolean('EnableFirmwareVariables');
-        if (!$enableFwVars) {
+        if (!$this->ReadPropertyBoolean('EnableFirmwareVariables')) {
             return;
         }
+
+        $idAvail = @$this->GetIDForIdent('FirmwareUpdateAvailable');
+        $idUrl   = @$this->GetIDForIdent('FirmwareDownloadUrl');
+
+        // Wenn die Variablen (noch) nicht existieren -> nicht crashen
+        if ($idAvail === false || $idUrl === false) {
+            $this->dbg('FirmwareCheck', 'Firmware-Variablen fehlen (noch nicht angelegt?)', [
+                'FirmwareUpdateAvailable' => $idAvail,
+                'FirmwareDownloadUrl'     => $idUrl
+            ]);
+            return;
+        }
+
+        // Defaultwerte
+        $available = false;
+        $text      = 'Online-Firmwareprüfung nicht möglich.';
 
         if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
-            // generischer Fehler
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
-            return;
-        }
-
-        if (!$info['installed_found']) {
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Firmware im README nicht gefunden');
-            return;
-        }
-
-        // Ab hier: passende Tabelle gefunden
-        $latest = $info['latest_version'] ?? null;
-        $url    = $info['download_url'] ?? null;
-        $isNewer = $info['is_newer'] ?? false;
-
-        if (!$isNewer || $latest === null || $url === null) {
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Keine neuere Firmware vorhanden');
+            $text = 'Fehler bei der Auswertung der README-Datei';
+        } elseif (!$info['installed_found']) {
+            $text = 'Firmware im README nicht gefunden';
         } else {
-            $this->SetValue('FirmwareUpdateAvailable', true);
-            $this->SetValue('FirmwareDownloadUrl', sprintf('<a href="%s" target="_blank">%s</a>', $url, $url));
+            $latest = (string)($info['latest_version'] ?? '');
+            $url    = (string)($info['download_url'] ?? '');
+            $isNew  = !empty($info['is_newer']);
+
+            if ($isNew && $latest !== '' && $url !== '') {
+                $available = true;
+
+                // HTMLBox: lieber "schönen" Linktext statt URL doppelt
+                $safeUrl = htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $safeTxt = htmlspecialchars($latest, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $text    = sprintf('<a href="%s" target="_blank">%s</a>', $safeUrl, $safeTxt);
+            } else {
+                $text = 'Keine neuere Firmware vorhanden';
+            }
         }
+
+        // Nur setzen wenn geändert (reduziert Events/Schreiblast)
+        if ((bool)GetValue($idAvail) !== $available) {
+            $this->SetValue('FirmwareUpdateAvailable', $available);
+        }
+        if ((string)GetValue($idUrl) !== $text) {
+            $this->SetValue('FirmwareDownloadUrl', $text);
+        }
+
+        $this->dbg('FirmwareCheck', 'Firmware-Variablen aktualisiert', [
+            'available' => $available,
+            'text'      => strip_tags($text)
+        ]);
     }
 
     private function compareFirmwareStrings(string $a, string $b): int
