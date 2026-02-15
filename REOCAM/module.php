@@ -2125,7 +2125,7 @@ class Reolink extends IPSModuleStrict
         // => gar nicht erst versuchen, einen Token zu holen.
         
         $onlineId = @$this->GetIDForIdent('KameraOnline');
-        if ($id > 0 && IPS_ObjectExists($id) && GetValueBoolean($id) !== $isOnline) {
+        if ($onlineId !== false && $onlineId > 0 && !GetValueBoolean($onlineId)) {
             $this->dbg('TOKEN', 'Abgebrochen: Kamera offline, kein Token-Versuch');
             return false;
         }
