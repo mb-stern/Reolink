@@ -155,7 +155,7 @@ Je nach Konfiguration werden automatisch angelegt:
 ## 9. Versionen
 
 ### Version 2.15 (15.02.2026)
-- Fehlermeldungen behoben, dass einige Variablen nicht existieren.
+- Fehlermeldungen unter Linux behoben, dass einige Variablen nicht existieren.
 - Einige Variablen wurden doppelt registriert.
 
 ### Version 2.14 (03.01.2026)
