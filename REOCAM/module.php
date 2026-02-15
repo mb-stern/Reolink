@@ -1612,7 +1612,7 @@ class Reolink extends IPSModuleStrict
     private function CreateOrUpdateStream(string $ident, string $name): void
     {
         $mediaID = @$this->GetIDForIdent($ident);
-        if ($mediaID === false || $mediaID = 0) {
+        if ($mediaID === false || $mediaID === 0) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
