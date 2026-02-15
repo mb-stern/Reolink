@@ -99,7 +99,7 @@ class Reolink extends IPSModuleStrict
 
         $hookPath = $this->ReadAttributeString("CurrentHook");
 
-        $this->CreateOrUpdateStream("StreamURL", "Kamera Stream");
+        $this->CreateOrUpdateStream();
         if ($this->ReadPropertyBoolean("ShowMoveVariables")) { $this->CreateMoveVariables(); } else { $this->RemoveMoveVariables(); }
         if (!$this->ReadPropertyBoolean("ShowSnapshots")) { $this->RemoveSnapshots(); }
         if ($this->ReadPropertyBoolean("ShowArchives")) { $this->CreateOrUpdateArchives(); } else { $this->RemoveArchives(); }
@@ -1609,10 +1609,12 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrUpdateStream(string $ident, string $name): void
+    private function CreateOrUpdateStream(): void
     {
+        $ident = "StreamURL";
+        $name = "Kamera Stream"
         $mediaID = @$this->GetIDForIdent($ident);
-        if ($mediaID === false && $mediaID === 0) {
+        if ($mediaID === false) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
