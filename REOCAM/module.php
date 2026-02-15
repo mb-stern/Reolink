@@ -1614,7 +1614,7 @@ class Reolink extends IPSModuleStrict
         $ident = "StreamURL";
         $name = "Kamera Stream";
         $mediaID = @$this->GetIDForIdent($ident);
-        if ($mediaID === false) {
+        iif ($mediaID === false || $mediaID <= 0 || !IPS_MediaExists($mediaID)) {
             $mediaID = IPS_CreateMedia(3);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $ident);
