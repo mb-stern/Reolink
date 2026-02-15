@@ -1348,11 +1348,13 @@ class Reolink extends IPSModuleStrict
         $this->RegisterVariableBoolean("Tier",     "Tier",               "~Motion", 25);
         $this->RegisterVariableBoolean("Fahrzeug", "Fahrzeug",           "~Motion", 30);
         $this->RegisterVariableBoolean("Bewegung", "Bewegung allgemein", "~Motion", 35);
+        $this->RegisterVariableBoolean("Besucher", "Besucher",           "~Motion", 40);
+        $this->RegisterVariableBoolean("Test",     "Test",               "~Motion", 45);
     }
 
     private function RemoveMoveVariables()
     {
-        foreach (["Person","Tier","Fahrzeug","Bewegung"] as $ident) {
+        foreach (["Person","Tier","Fahrzeug","Bewegung","Besucher","Test"] as $ident) {
             $id = @$this->GetIDForIdent($ident);
             if ($id !== false) $this->UnregisterVariable($ident);
         }
@@ -1360,7 +1362,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateTestElements()
     {
-        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 45);
+        $this->RegisterVariableBoolean("Test", "Test", "~Motion", 50);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Test"))) {
             $mediaID = IPS_CreateMedia(1);
@@ -1397,7 +1399,7 @@ class Reolink extends IPSModuleStrict
 
     private function CreateVisitorElements()
     {
-        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 40);
+        $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 50);
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
