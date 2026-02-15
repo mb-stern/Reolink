@@ -765,9 +765,11 @@ class Reolink extends IPSModuleStrict
         }
 
         if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
-            // generischer Fehler
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
+
+            // Wenn Variablen noch gar nicht existieren (ApplyChanges läuft evtl. noch)
+            if (@$this->GetIDForIdent('FirmwareUpdateAvailable') === false || @$this->GetIDForIdent('FirmwareDownloadUrl') === false) {
+                return;
+            }
             return;
         }
 
