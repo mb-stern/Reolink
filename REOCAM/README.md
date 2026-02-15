@@ -157,6 +157,7 @@ Je nach Konfiguration werden automatisch angelegt:
 ### Version 2.15 (15.02.2026)
 - Fehlermeldungen unter Linux behoben, dass einige Variablen nicht existieren.
 - Einige Variablen wurden doppelt registriert.
+- Funktion der Firmwarevariablen unter Linux verbessert.
 
 ### Version 2.14 (03.01.2026)
 - Umbau auf IPSModuleStrict und Kompatibilität hochgezogen auf 8.2.
