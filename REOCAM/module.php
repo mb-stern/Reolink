@@ -1554,28 +1554,20 @@ class Reolink extends IPSModuleStrict
 
     private function CreateOrGetArchiveCategory(string $booleanIdent)
     {
+        $this->dbg('Bildarchiv', 'Bildarchiv erstellt');
         $archiveIdent = "Archive_" . $booleanIdent;
-        $categoryID   = @$this->GetIDForIdent($archiveIdent);
-
-        // WICHTIG: "nicht vorhanden" = id <= 1 ODER Objekt existiert nicht
-        if ($categoryID === 0 || $categoryID === false || !IPS_ObjectExists($categoryID)) {
+        $categoryID = @$this->GetIDForIdent($archiveIdent);
+        if ($categoryID === false) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
             IPS_SetIdent($categoryID, $archiveIdent);
             IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-
             $pos = [
-                'Person'   => 22,
-                'Tier'     => 27,
-                'Fahrzeug' => 32,
-                'Bewegung' => 37,
-                'Besucher' => 42,
-                'Test'     => 47,
+                "Person" => 22, "Tier" => 27, "Fahrzeug" => 32,
+                "Bewegung" => 37, "Besucher" => 42, "Test" => 47
             ][$booleanIdent] ?? 99;
-
             IPS_SetPosition($categoryID, $pos);
         }
-
         return $categoryID;
     }
 
