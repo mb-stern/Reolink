@@ -1557,7 +1557,7 @@ class Reolink extends IPSModuleStrict
         
         $archiveIdent = "Archive_" . $booleanIdent;
         $categoryID = @$this->GetIDForIdent($archiveIdent);
-        if ($categoryID === false) {
+        if ($categoryID === 0 || $categoryID === false) {
             $categoryID = IPS_CreateCategory();
             $this->dbg('Bildarchiv', 'Bildarchiv erstellt');
             IPS_SetParent($categoryID, $this->InstanceID);
