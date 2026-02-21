@@ -1552,7 +1552,7 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrGetArchiveCategory(string $booleanIdent): int
+    private function CreateOrGetArchiveCategory(string $booleanIdent)
 {
     $archiveIdent = "Archive_" . $booleanIdent;
     $categoryID   = @$this->GetIDForIdent($archiveIdent);
