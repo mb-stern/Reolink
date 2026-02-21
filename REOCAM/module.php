@@ -1552,31 +1552,52 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrGetArchiveCategory(string $booleanIdent)
-    {
-        
-        $archiveIdent = "Archive_" . $booleanIdent;
-        $categoryID = @$this->GetIDForIdent($archiveIdent);
-        $this->dbg('Bildarchiv', json_encode([
-    'value' => $categoryID,
-    'type'  => gettype($categoryID),
-    'strictFalse' => ($categoryID === false),
-    'strictZero'  => ($categoryID === 0),
-]));
-        if ($categoryID === false) {
-            $this->dbg('Bildarchiv', 'Bildarchiv erstellt');
-            $categoryID = IPS_CreateCategory();
-            IPS_SetParent($categoryID, $this->InstanceID);
-            IPS_SetIdent($categoryID, $archiveIdent);
-            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-            $pos = [
-                "Person" => 22, "Tier" => 27, "Fahrzeug" => 32,
-                "Bewegung" => 37, "Besucher" => 42, "Test" => 47
-            ][$booleanIdent] ?? 99;
-            IPS_SetPosition($categoryID, $pos);
-        }
-        return $categoryID;
+   private function CreateOrGetArchiveCategory(string $booleanIdent): int
+{
+    $archiveIdent = 'Archive_' . $booleanIdent;
+
+    // Erst mal holen, was Symcon sagt
+    $raw = @$this->GetIDForIdent($archiveIdent);
+
+    $this->dbg('BILDARCHIV', 'GetIDForIdent',
+        [
+            'ident'       => $archiveIdent,
+            'value'       => $raw,
+            'type'        => gettype($raw),
+            'is_int'      => is_int($raw),
+            'objectExists'=> is_int($raw) ? IPS_ObjectExists($raw) : null
+        ]
+    );
+
+    // Nur wenn es eine gültige int-ID gibt UND das Objekt existiert, verwenden wir sie.
+    if (is_int($raw) && $raw > 1 && IPS_ObjectExists($raw)) {
+        return $raw;
     }
+
+    // Ansonsten neu anlegen
+    $categoryID = IPS_CreateCategory();
+    $this->dbg('BILDARCHIV', 'Archiv neu angelegt', [
+        'ident' => $archiveIdent,
+        'id'    => $categoryID
+    ]);
+
+    IPS_SetParent($categoryID, $this->InstanceID);
+    IPS_SetIdent($categoryID, $archiveIdent);
+    IPS_SetName($categoryID, 'Bildarchiv ' . $booleanIdent);
+
+    $pos = [
+        'Person'   => 22,
+        'Tier'     => 27,
+        'Fahrzeug' => 32,
+        'Bewegung' => 37,
+        'Besucher' => 42,
+        'Test'     => 47,
+    ][$booleanIdent] ?? 99;
+
+    IPS_SetPosition($categoryID, $pos);
+
+    return $categoryID;
+}
 
     private function PruneArchive(int $categoryID, string $booleanIdent)
     {
