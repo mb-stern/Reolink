@@ -1416,7 +1416,7 @@ class Reolink extends IPSModuleStrict
         // Prüfen ob Push_Besucher schon existiert
         $pushID = @$this->GetIDForIdent("Push_Besucher");
 
-        $this->RegisterVariableBoolean("Push_Besucher", "Push Besucher", "~Switch", 43);
+        $this->RegisterVariableBoolean("Push_Besucher", "Besucherbenachrichtigung", "~Switch", 43);
 
         // Nur wenn sie vorher NICHT existierte → initialisieren
         if ($pushID === false) {
