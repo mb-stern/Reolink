@@ -1325,7 +1325,9 @@ class Reolink extends IPSModuleStrict
                 break;
             case "VISITOR":
                 if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Besucher", 41);
-                $this->SetMoveTimer("Besucher");
+                $pushID = @$this->GetIDForIdent("Push_Besucher");
+                $pushEnabled = ($pushID === false) ? true : GetValueBoolean($pushID);
+                if ($this->ReadPropertyBoolean("ShowVisitorElements") && $pushEnabled) $this->SetMoveTimer("Besucher");
                 break;
             case "TEST":
                 if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Test", 46);
@@ -1407,6 +1409,16 @@ class Reolink extends IPSModuleStrict
     {
         $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 40);
 
+        // Prüfen ob Push_Besucher schon existiert
+        $pushID = @$this->GetIDForIdent("Push_Besucher");
+
+        $this->RegisterVariableBoolean("Push_Besucher", "Push Besucher", "~Switch", 43);
+
+        // Nur wenn sie vorher NICHT existierte → initialisieren
+        if ($pushID === false) {
+            $this->SetValue("Push_Besucher", true);
+        }
+
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -1427,6 +1439,9 @@ class Reolink extends IPSModuleStrict
     {
         $id = @$this->GetIDForIdent("Besucher");
         if ($id) $this->UnregisterVariable("Besucher");
+
+        $id = @$this->GetIDForIdent("Push_Besucher");
+        if ($id) $this->UnregisterVariable("Push_Besucher");
 
         $mid = @$this->GetIDForIdent("Snapshot_Besucher");
         if ($mid) IPS_DeleteMedia($mid, true);
