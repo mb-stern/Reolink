@@ -1552,40 +1552,35 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrGetArchiveCategory(string $booleanIdent)
+    private function CreateOrGetArchiveCategory(string $booleanIdent): int
 {
     $archiveIdent = "Archive_" . $booleanIdent;
     $categoryID   = @$this->GetIDForIdent($archiveIdent);
 
-    // DEBUG: was liefert GetIDForIdent?
     $this->dbg('Bildarchiv', 'GetIDForIdent Ergebnis', [
         'booleanIdent' => $booleanIdent,
         'archiveIdent' => $archiveIdent,
-        'categoryID'   => $categoryID,
-        'exists'       => ($categoryID !== 0 && $categoryID !== false)
-                          ? IPS_ObjectExists($categoryID)
-                          : null
+        'rawCategoryID'=> $categoryID,
+        'type'         => gettype($categoryID)
     ]);
 
-    if ($categoryID === 0 || $categoryID === false || !IPS_ObjectExists($categoryID)) {
-        $categoryID = IPS_CreateCategory();
-        $this->dbg('Bildarchiv', 'Bildarchiv erstellt', [
-            'booleanIdent' => $booleanIdent,
-            'archiveIdent' => $archiveIdent,
-            'categoryID'   => $categoryID
-        ]);
+    // WICHTIG: erst sicherstellen, dass es eine echte int-ID > 0 ist
+    if (!is_int($categoryID) || $categoryID <= 0) {
 
+        $this->dbg('Bildarchiv', 'Kategorie wird neu erstellt');
+
+        $categoryID = IPS_CreateCategory();
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, $archiveIdent);
         IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
 
         $pos = [
-            "Person"   => 22,
-            "Tier"     => 27,
+            "Person" => 22,
+            "Tier" => 27,
             "Fahrzeug" => 32,
             "Bewegung" => 37,
             "Besucher" => 42,
-            "Test"     => 47,
+            "Test" => 47
         ][$booleanIdent] ?? 99;
 
         IPS_SetPosition($categoryID, $pos);
