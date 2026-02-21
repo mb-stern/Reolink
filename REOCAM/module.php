@@ -1552,40 +1552,52 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    private function CreateOrGetArchiveCategory(string $booleanIdent): int
+   private function CreateOrGetArchiveCategory(string $booleanIdent): int
 {
     $archiveIdent = "Archive_" . $booleanIdent;
-    $categoryID   = @$this->GetIDForIdent($archiveIdent);
+    $rawID        = @$this->GetIDForIdent($archiveIdent);
 
-    $this->dbg('Bildarchiv', 'GetIDForIdent Ergebnis', [
+    // Debug: was liefert GetIDForIdent wirklich?
+    $this->dbg('Bildarchiv', 'CreateOrGetArchiveCategory Start', [
         'booleanIdent' => $booleanIdent,
         'archiveIdent' => $archiveIdent,
-        'rawCategoryID'=> $categoryID,
-        'type'         => gettype($categoryID)
+        'rawID'        => $rawID,
+        'rawType'      => gettype($rawID),
     ]);
 
-    // WICHTIG: erst sicherstellen, dass es eine echte int-ID > 0 ist
-    if (!is_int($categoryID) || $categoryID <= 0) {
+    // Nur echte, existierende int-IDs > 0 akzeptieren
+    $categoryID = 0;
+    if (is_int($rawID) && $rawID > 0 && IPS_ObjectExists($rawID)) {
+        $categoryID = $rawID;
+    }
 
-        $this->dbg('Bildarchiv', 'Kategorie wird neu erstellt');
-
+    // Falls nichts Gültiges gefunden → neu anlegen
+    if ($categoryID === 0) {
         $categoryID = IPS_CreateCategory();
+
+        $this->dbg('Bildarchiv', 'Kategorie neu erstellt', [
+            'booleanIdent' => $booleanIdent,
+            'archiveIdent' => $archiveIdent,
+            'categoryID'   => $categoryID,
+        ]);
+
         IPS_SetParent($categoryID, $this->InstanceID);
         IPS_SetIdent($categoryID, $archiveIdent);
         IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
 
         $pos = [
-            "Person" => 22,
-            "Tier" => 27,
+            "Person"   => 22,
+            "Tier"     => 27,
             "Fahrzeug" => 32,
             "Bewegung" => 37,
             "Besucher" => 42,
-            "Test" => 47
+            "Test"     => 47,
         ][$booleanIdent] ?? 99;
 
         IPS_SetPosition($categoryID, $pos);
     }
 
+    // HIER: garantiert ein int > 0
     return $categoryID;
 }
 
