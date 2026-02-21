@@ -1552,54 +1552,26 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-   private function CreateOrGetArchiveCategory(string $booleanIdent): int
-{
-    $archiveIdent = "Archive_" . $booleanIdent;
-    $rawID        = @$this->GetIDForIdent($archiveIdent);
-
-    // Debug: was liefert GetIDForIdent wirklich?
-    $this->dbg('Bildarchiv', 'CreateOrGetArchiveCategory Start', [
-        'booleanIdent' => $booleanIdent,
-        'archiveIdent' => $archiveIdent,
-        'rawID'        => $rawID,
-        'rawType'      => gettype($rawID),
-    ]);
-
-    // Nur echte, existierende int-IDs > 0 akzeptieren
-    $categoryID = 0;
-    if (is_int($rawID) && $rawID > 0 && IPS_ObjectExists($rawID)) {
-        $categoryID = $rawID;
+    private function CreateOrGetArchiveCategory(string $booleanIdent)
+    {
+        
+        $archiveIdent = "Archive_" . $booleanIdent;
+        $categoryID = @$this->GetIDForIdent($archiveIdent);
+        $this->dbg('Bildarchiv', $categoryID);
+        if ($categoryID === 0 || $categoryID === false) {
+            $categoryID = IPS_CreateCategory();
+            $this->dbg('Bildarchiv', 'Bildarchiv erstellt');
+            IPS_SetParent($categoryID, $this->InstanceID);
+            IPS_SetIdent($categoryID, $archiveIdent);
+            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+            $pos = [
+                "Person" => 22, "Tier" => 27, "Fahrzeug" => 32,
+                "Bewegung" => 37, "Besucher" => 42, "Test" => 47
+            ][$booleanIdent] ?? 99;
+            IPS_SetPosition($categoryID, $pos);
+        }
+        return $categoryID;
     }
-
-    // Falls nichts Gültiges gefunden → neu anlegen
-    if ($categoryID === 0) {
-        $categoryID = IPS_CreateCategory();
-
-        $this->dbg('Bildarchiv', 'Kategorie neu erstellt', [
-            'booleanIdent' => $booleanIdent,
-            'archiveIdent' => $archiveIdent,
-            'categoryID'   => $categoryID,
-        ]);
-
-        IPS_SetParent($categoryID, $this->InstanceID);
-        IPS_SetIdent($categoryID, $archiveIdent);
-        IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-
-        $pos = [
-            "Person"   => 22,
-            "Tier"     => 27,
-            "Fahrzeug" => 32,
-            "Bewegung" => 37,
-            "Besucher" => 42,
-            "Test"     => 47,
-        ][$booleanIdent] ?? 99;
-
-        IPS_SetPosition($categoryID, $pos);
-    }
-
-    // HIER: garantiert ein int > 0
-    return $categoryID;
-}
 
     private function PruneArchive(int $categoryID, string $booleanIdent)
     {
