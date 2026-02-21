@@ -235,6 +235,10 @@ class Reolink extends IPSModuleStrict
                 $this->ResetApiCache();
                 break;
 
+            case "Push_Besucher":
+                $this->SetValue("Push_Besucher", (bool)$Value);
+                break;
+
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -1417,7 +1421,6 @@ class Reolink extends IPSModuleStrict
         // Nur wenn sie vorher NICHT existierte → initialisieren
         if ($pushID === false) {
             $this->SetValue("Push_Besucher", true);
-            $this->EnableAction("Push_Besucher");
         }
 
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
