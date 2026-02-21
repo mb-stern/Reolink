@@ -1553,62 +1553,25 @@ class Reolink extends IPSModuleStrict
     }
 
     private function CreateOrGetArchiveCategory(string $booleanIdent)
-{
-    $archiveIdent = "Archive_" . $booleanIdent;
-    $categoryID   = @$this->GetIDForIdent($archiveIdent);
-
-    // Debug: roher Wert + Typ
-    $this->dbg('Bildarchiv', 'GetIDForIdent', [
-        'ident'       => $archiveIdent,
-        'value'       => $categoryID,
-        'type'        => gettype($categoryID),
-        'is_int'      => is_int($categoryID),
-        'is_bool'     => is_bool($categoryID),
-        'strictFalse' => ($categoryID === false),
-        'strictZero'  => ($categoryID === 0),
-    ]);
-
-    // Robust:
-    // - Wenn es KEINE int-ID ist
-    // - ODER ID <= 1
-    // - ODER das Objekt mit der ID existiert nicht
-    if (!is_int($categoryID) || $categoryID <= 1 || !IPS_ObjectExists($categoryID)) {
-
-        $this->dbg('Bildarchiv', 'Erzeuge neue Archiv-Kategorie', [
-            'ident' => $archiveIdent,
-            'boolIdent' => $booleanIdent,
-        ]);
-
-        $categoryID = IPS_CreateCategory();
-        IPS_SetParent($categoryID, $this->InstanceID);
-        IPS_SetIdent($categoryID, $archiveIdent);
-        IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
-
-        $pos = [
-            "Person"   => 22,
-            "Tier"     => 27,
-            "Fahrzeug" => 32,
-            "Bewegung" => 37,
-            "Besucher" => 42,
-            "Test"     => 47,
-        ][$booleanIdent] ?? 99;
-
-        IPS_SetPosition($categoryID, $pos);
-
-        $this->dbg('Bildarchiv', 'Archiv-Kategorie erstellt', [
-            'id'   => $categoryID,
-            'pos'  => $pos,
-            'name' => "Bildarchiv " . $booleanIdent,
-        ]);
-    } else {
-        $this->dbg('Bildarchiv', 'Archiv-Kategorie existiert bereits', [
-            'id'   => $categoryID,
-            'ident' => $archiveIdent,
-        ]);
+    {
+        
+        $archiveIdent = "Archive_" . $booleanIdent;
+        $categoryID = $this->GetIDForIdent($archiveIdent);
+        $this->dbg('Bildarchiv', 'categoryID = ' . var_export($categoryID, true));
+        if ($categoryID === 0 || $categoryID === false) {
+            $categoryID = IPS_CreateCategory();
+            $this->dbg('Bildarchiv', 'Bildarchiv erstellt');
+            IPS_SetParent($categoryID, $this->InstanceID);
+            IPS_SetIdent($categoryID, $archiveIdent);
+            IPS_SetName($categoryID, "Bildarchiv " . $booleanIdent);
+            $pos = [
+                "Person" => 22, "Tier" => 27, "Fahrzeug" => 32,
+                "Bewegung" => 37, "Besucher" => 42, "Test" => 47
+            ][$booleanIdent] ?? 99;
+            IPS_SetPosition($categoryID, $pos);
+        }
+        return $categoryID;
     }
-
-    return $categoryID;
-}
 
     private function PruneArchive(int $categoryID, string $booleanIdent)
     {
