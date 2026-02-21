@@ -154,6 +154,9 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
+### Version 2.16 (21.02.2026)
+- Eine zusätzliche Variable zum deaktiveren der Besucher-Benachrichtigung wurde hinzugefügt.
+
 ### Version 2.15 (15.02.2026)
 - Fehlermeldungen unter Linux behoben, dass einige Variablen nicht existieren.
 - Einige Variablen wurden doppelt registriert.
