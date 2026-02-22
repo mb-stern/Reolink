@@ -156,8 +156,7 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 2.16 (22.02.2026)
 - Eine zusätzliche Variable zum deaktiveren der Besuchererkennung wurde hinzugefügt.
-- Unter Linux wurden die Kategorieen nicht beim erstellen des Moduls angelegt, sondern erst beim erneuten installieren des Moduls.
-- Unter Linux wurde der aktuelle Schnappschuss nicht erstellt, sondern nur in der jeweiligen Kategorie abgelegt.
+- Einige Fehlfunktionen unter Linux behoben, unter anderem wurden die Bilder-Kategorieen beim erstellen des Moduls nicht angelegt und der aktuelle Schnappschuss nicht erstellt.
 
 ### Version 2.15 (15.02.2026)
 - Fehlermeldungen unter Linux behoben, dass einige Variablen nicht existieren.

@@ -131,6 +131,14 @@ class Reolink extends IPSModuleStrict
 
         $this->CreateOrUpdateApiVariablesUnified();
 
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
+        if ($anyFeatureOn) {
+            $this->GetToken();
+            $this->ExecuteApiRequests(true);
+        } else {
+            $this->SetTimerInterval("TokenRenewalTimer", 0);
+        }
+
         // Firmware-Check-Timer: einmal pro Tag
         if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
             // Timer für spätere automatische Checks
@@ -139,14 +147,6 @@ class Reolink extends IPSModuleStrict
             $this->FirmwareCheckTimer();
         } else {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
-        }
-
-        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
-        if ($anyFeatureOn) {
-            $this->GetToken();
-            $this->ExecuteApiRequests(true);
-        } else {
-            $this->SetTimerInterval("TokenRenewalTimer", 0);
         }
 
         $this->UpdateOnlineStatus();
