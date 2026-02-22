@@ -565,12 +565,12 @@ class Reolink extends IPSModuleStrict
         $firm = trim((string)($dev['firmVer'] ?? ''));
         $this->dbg('FW', 'firmVer', ['firmVer' => $firm]);
 
-        if ($firm === '') return null;
+        if (!$firm) return null;
 
         $readme = $this->fetchFirmwareReadme();
         $this->dbg('FW', 'readme', ['ok' => is_string($readme) && $readme !== '', 'len' => is_string($readme) ? strlen($readme) : 0]);
 
-        if ($readme === null || $readme === '') return null;
+        if (!$readme) return null;
 
         $info = $this->findLatestFirmwareForInstalled($readme, $firm);
         $this->dbg('FW', 'info', $info);
