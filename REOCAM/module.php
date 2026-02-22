@@ -131,22 +131,20 @@ class Reolink extends IPSModuleStrict
 
         $this->CreateOrUpdateApiVariablesUnified();
 
-        // Firmware-Check-Timer: einmal pro Tag
-        if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
-            // Timer für spätere automatische Checks
-            $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
-
-            $this->FirmwareCheckTimer();
-        } else {
-            $this->SetTimerInterval('FirmwareCheckTimer', 0);
-        }
-
-        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         if ($anyFeatureOn) {
             $this->GetToken();
             $this->ExecuteApiRequests(true);
         } else {
             $this->SetTimerInterval("TokenRenewalTimer", 0);
+        }
+
+        // Firmware-Check-Timer: einmal pro Tag
+        if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
+            $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
+            $this->FirmwareCheckTimer();
+        } else {
+            $this->SetTimerInterval('FirmwareCheckTimer', 0);
         }
 
         $this->UpdateOnlineStatus();
@@ -235,6 +233,10 @@ class Reolink extends IPSModuleStrict
                 $this->ResetApiCache();
                 break;
 
+            case "Push_Besucher":
+                $this->SetValue("Push_Besucher", (bool)$Value);
+                break;
+
             default:
                 throw new Exception("Invalid Ident");
         }
@@ -282,7 +284,6 @@ class Reolink extends IPSModuleStrict
                     $out[$k] = '***';
 
                 } elseif (in_array($lk, ['user','username'], true)) {
-                    // Nur skalare Werte maskieren; bei Arrays rekursiv weitergehen
                     if (is_scalar($v) || (is_object($v) && method_exists($v, '__toString'))) {
                         $out[$k] = $this->maskMiddle((string)$v);
                     } else {
@@ -334,10 +335,9 @@ class Reolink extends IPSModuleStrict
             $dev = [];
         }
 
-        // Build-String etwas hübscher machen (ohne "build ")
         $build = $dev['buildDay'] ?? '';
         if (is_string($build) && stripos($build, 'build ') === 0) {
-            $build = trim(substr($build, 6)); // "build 2412021483" -> "2412021483"
+            $build = trim(substr($build, 6)); 
         }
         if ($build === '') {
             $build = 'n/a';
@@ -382,7 +382,6 @@ class Reolink extends IPSModuleStrict
                         'type'  => 'Image',
                         'name'  => 'DeviceImage',
                         'image' => $imageData
-                        // width/height optional, Bild ist physisch verkleinert
                     ],
                     $infoColumn,
                 ],
@@ -561,12 +560,12 @@ class Reolink extends IPSModuleStrict
         $firm = trim((string)($dev['firmVer'] ?? ''));
         $this->dbg('FW', 'firmVer', ['firmVer' => $firm]);
 
-        if ($firm === '') return null;
+        if (!$firm) return null;
 
         $readme = $this->fetchFirmwareReadme();
         $this->dbg('FW', 'readme', ['ok' => is_string($readme) && $readme !== '', 'len' => is_string($readme) ? strlen($readme) : 0]);
 
-        if ($readme === null || $readme === '') return null;
+        if (!$readme) return null;
 
         $info = $this->findLatestFirmwareForInstalled($readme, $firm);
         $this->dbg('FW', 'info', $info);
@@ -633,7 +632,7 @@ class Reolink extends IPSModuleStrict
         ]);
 
         $result = curl_exec($ch);
-        if ($result === false) {
+        if (!$result) {
             $err  = curl_error($ch);
             $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             curl_close($ch);
@@ -669,7 +668,7 @@ class Reolink extends IPSModuleStrict
 
         // 1) Position der installierten Firmware im gesamten README finden
         $posInstalled = strpos($readme, $searchVer);
-        if ($posInstalled === false) {
+        if (!$posInstalled) {
             // Firmware kommt nirgendwo im README vor
             return [
                 'installed_found'   => false,
@@ -683,7 +682,7 @@ class Reolink extends IPSModuleStrict
         // 2) Start des passenden Abschnitts (### IPC_...) nach oben suchen
         $before       = substr($readme, 0, $posInstalled);
         $sectionStart = strrpos($before, "\n  ### ");
-        if ($sectionStart === false) {
+        if (!$sectionStart) {
             // Fallback: kein Abschnitts-Header gefunden → gesamte Datei verwenden (sollte nicht vorkommen)
             $sectionText = $readme;
         } else {
@@ -764,25 +763,11 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        if ($info === null || !is_array($info) || !array_key_exists('installed_found', $info)) {
-            // generischer Fehler
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
-            return;
-        }
-
-        if (!$info['installed_found']) {
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Firmware im README nicht gefunden');
-            return;
-        }
-
-        // Ab hier: passende Tabelle gefunden
         $latest = $info['latest_version'] ?? null;
         $url    = $info['download_url'] ?? null;
         $isNewer = $info['is_newer'] ?? false;
 
-        if (!$isNewer || $latest === null || $url === null) {
+        if (!$isNewer || !$latest || !$url) {
             $this->SetValue('FirmwareUpdateAvailable', false);
             $this->SetValue('FirmwareDownloadUrl', 'Keine neuere Firmware vorhanden');
         } else {
@@ -884,12 +869,12 @@ class Reolink extends IPSModuleStrict
         $this->SendDebug('ModelImage', 'Lade Bild von: ' . $url, 0);
 
         $imgData = @file_get_contents($url);
-        if ($imgData === false || $imgData === '') {
+        if (!$imgData || $imgData === '') {
             $this->SendDebug('ModelImage', 'Download fehlgeschlagen', 0);
             return null;
         }
 
-        // Bild nach Download massiv verkleinern (z.B. 4x kleiner)
+        // Bild nach Download 4x kleiner
         if (function_exists('imagecreatefromstring')) {
             $src = @imagecreatefromstring($imgData);
             if ($src !== false) {
@@ -1057,7 +1042,7 @@ class Reolink extends IPSModuleStrict
 
         foreach ($probeMap as $propName => $p) {
             // Wenn Ability schon sagt „geht nicht“, spar dir den Probe
-            if (isset($support[$propName]) && $support[$propName] === false) {
+            if (isset($support[$propName]) && !$support[$propName]) {
                 continue;
             }
 
@@ -1196,13 +1181,9 @@ class Reolink extends IPSModuleStrict
                     continue;
                 }
 
-                if ($support[$name] === false) {
+                if (!$support[$name]) {
                     // Variante A: ausblenden
                     $item['visible'] = false;
-
-                    // Variante B (stattdessen, wenn du lieber alles siehst, aber deaktiviert):
-                    // $item['enabled'] = false;
-                    // $item['caption'] .= ' (nicht unterstützt)';
                 }
             }
             unset($item);
@@ -1325,7 +1306,9 @@ class Reolink extends IPSModuleStrict
                 break;
             case "VISITOR":
                 if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Besucher", 41);
-                $this->SetMoveTimer("Besucher");
+                $pushID = @$this->GetIDForIdent("Push_Besucher");
+                $pushEnabled = (!$pushID) ? true : GetValueBoolean($pushID);
+                if ($this->ReadPropertyBoolean("ShowVisitorElements") && $pushEnabled) $this->SetMoveTimer("Besucher");
                 break;
             case "TEST":
                 if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Test", 46);
@@ -1407,6 +1390,14 @@ class Reolink extends IPSModuleStrict
     {
         $this->RegisterVariableBoolean("Besucher", "Besucher erkannt", "~Motion", 40);
 
+        // Prüfen ob Push_Besucher schon existiert, ansonsten erstellen
+        $pushID = @$this->GetIDForIdent("Push_Besucher");
+        if (!$pushID) {
+            $this->RegisterVariableBoolean("Push_Besucher", "Besuchererkennung aktiviert", "~Switch", 43);
+            $this->SetValue("Push_Besucher", true);
+            $this->EnableAction("Push_Besucher");
+        }
+
         if (!IPS_ObjectExists(@$this->GetIDForIdent("Snapshot_Besucher"))) {
             $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
@@ -1428,6 +1419,9 @@ class Reolink extends IPSModuleStrict
         $id = @$this->GetIDForIdent("Besucher");
         if ($id) $this->UnregisterVariable("Besucher");
 
+        $id = @$this->GetIDForIdent("Push_Besucher");
+        if ($id) $this->UnregisterVariable("Push_Besucher");
+
         $mid = @$this->GetIDForIdent("Snapshot_Besucher");
         if ($mid) IPS_DeleteMedia($mid, true);
 
@@ -1448,7 +1442,7 @@ class Reolink extends IPSModuleStrict
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @$this->GetIDForIdent($snapshotIdent);
 
-        if ($mediaID === false) {
+        if (!$mediaID) {
             $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $snapshotIdent);
@@ -1477,7 +1471,7 @@ class Reolink extends IPSModuleStrict
         ]);
 
         $imageData = curl_exec($ch);
-        if ($imageData === false) {
+        if (!$imageData) {
             $err = curl_error($ch);
             $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
             curl_close($ch);
@@ -1536,7 +1530,7 @@ class Reolink extends IPSModuleStrict
     {
         $archiveIdent = "Archive_" . $booleanIdent;
         $categoryID = @$this->GetIDForIdent($archiveIdent);
-        if ($categoryID === false) {
+        if (!$categoryID) {
             $categoryID = IPS_CreateCategory();
             IPS_SetParent($categoryID, $this->InstanceID);
             IPS_SetIdent($categoryID, $archiveIdent);
@@ -1599,7 +1593,7 @@ class Reolink extends IPSModuleStrict
             CURLOPT_TIMEOUT        => 8,
         ]);
         $imageData = curl_exec($ch);
-        if ($imageData === false) {
+        if (!$imageData) {
             $err = curl_error($ch);
             $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
             curl_close($ch);
@@ -1676,7 +1670,7 @@ class Reolink extends IPSModuleStrict
         $this->dbg('POLLING', 'Abruf', ['url' => $url]);
 
         $response = @file_get_contents($url);
-        if ($response === false) {
+        if (!$response) {
             $this->dbg("POLLING", "Fehler beim Abrufen der Daten");
             return;
         }
@@ -1702,7 +1696,7 @@ class Reolink extends IPSModuleStrict
 
         $ident = $mapping[$type];
         $variableID = @$this->GetIDForIdent($ident);
-        if ($variableID === false) return;
+        if (!$variableID) return;
 
         $currentValue = (bool)GetValue($variableID);
         $newValue     = ($state == 1);
@@ -1864,7 +1858,7 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        if (@$this->GetIDForIdent('KameraOnline') === false) {
+        if (!@$this->GetIDForIdent('KameraOnline')) {
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
         } else {
@@ -1940,7 +1934,7 @@ class Reolink extends IPSModuleStrict
                 CURLOPT_TIMEOUT        => 8
             ]);
             $response = curl_exec($ch);
-            if ($response === false) {
+            if (!$response) {
                 $err = curl_error($ch);
                 curl_close($ch);
                 $this->dbg('TOKEN', 'cURL-Fehler', $err);
@@ -2099,7 +2093,7 @@ class Reolink extends IPSModuleStrict
         ]);
 
         $raw = curl_exec($ch);
-        if ($raw === false) {
+        if (!$raw) {
             $errno = curl_errno($ch);
             $err   = curl_error($ch);
             $info  = curl_getinfo($ch);
@@ -2313,7 +2307,7 @@ class Reolink extends IPSModuleStrict
         foreach ($map as $ident => $newVal) {
             if ($newVal === null) continue;
             $id = @$this->GetIDForIdent($ident);
-            if ($id === false) continue;
+            if (!$id) continue;
 
             $oldVal = GetValue($id);
             if ($oldVal !== $newVal) {
@@ -3251,7 +3245,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateMdSensitivityStatus(): void
     {
         $vid = @$this->GetIDForIdent("MdSensitivity");
-        if ($vid === false) return;
+        if (!$vid) return;
 
         $st = $this->GetMdSensitivity();
         if (!$st) return;
@@ -3357,7 +3351,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateSirenStatus(): void
     {
         $vid = @$this->GetIDForIdent("SirenEnabled");
-        if ($vid === false) return;
+        if (!$vid) return;
 
         $res = $this->alarmGet();
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
@@ -3438,7 +3432,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateRecStatus(): void
     {
         $vid = @$this->GetIDForIdent("RecEnabled");
-        if ($vid === false) return;
+        if (!$vid) return;
 
         $res = $this->recordGet();
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
@@ -3557,7 +3551,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateOnlineStatus(): void
     {
         $id = @$this->GetIDForIdent('KameraOnline');
-        if ($id === false) return;
+        if (!$id) return;
 
         $ip   = trim($this->ReadPropertyString('CameraIP'));
         $user = urlencode($this->ReadPropertyString('Username'));
