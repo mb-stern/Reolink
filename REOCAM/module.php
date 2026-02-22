@@ -1419,7 +1419,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterVariableBoolean("Push_Besucher", "Besuchererkennung", "~Switch", 43);
 
         // Nur wenn sie vorher NICHT existierte → initialisieren
-        if ($pushID === false) {
+        if (!$pushID) {
             $this->SetValue("Push_Besucher", true);
             $this->EnableAction("Push_Besucher");
         }
