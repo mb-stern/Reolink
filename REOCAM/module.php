@@ -775,13 +775,14 @@ class Reolink extends IPSModuleStrict
             $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
             return;
         }
-            */
+        
 
         if (!$info['installed_found']) {
             $this->SetValue('FirmwareUpdateAvailable', false);
             $this->SetValue('FirmwareDownloadUrl', 'Firmware im README nicht gefunden');
             return;
         }
+            */
 
         // Ab hier: passende Tabelle gefunden
         $latest = $info['latest_version'] ?? null;
