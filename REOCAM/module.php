@@ -1468,7 +1468,7 @@ class Reolink extends IPSModuleStrict
         $snapshotIdent = "Snapshot_" . $booleanIdent;
         $mediaID = @$this->GetIDForIdent($snapshotIdent);
 
-        if ($mediaID === false) {
+        if (!$mediaID) {
             $mediaID = IPS_CreateMedia(1);
             IPS_SetParent($mediaID, $this->InstanceID);
             IPS_SetIdent($mediaID, $snapshotIdent);
