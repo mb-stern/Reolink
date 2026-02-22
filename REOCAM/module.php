@@ -131,7 +131,7 @@ class Reolink extends IPSModuleStrict
 
         $this->CreateOrUpdateApiVariablesUnified();
 
-        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000); // läuft immer für Online-Check
+        $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         if ($anyFeatureOn) {
             $this->GetToken();
             $this->ExecuteApiRequests(true);
@@ -141,9 +141,7 @@ class Reolink extends IPSModuleStrict
 
         // Firmware-Check-Timer: einmal pro Tag
         if ($this->ReadPropertyBoolean('EnableFirmwareVariables')) {
-            // Timer für spätere automatische Checks
             $this->SetTimerInterval('FirmwareCheckTimer', 24 * 60 * 60 * 1000);
-
             $this->FirmwareCheckTimer();
         } else {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
@@ -286,7 +284,6 @@ class Reolink extends IPSModuleStrict
                     $out[$k] = '***';
 
                 } elseif (in_array($lk, ['user','username'], true)) {
-                    // Nur skalare Werte maskieren; bei Arrays rekursiv weitergehen
                     if (is_scalar($v) || (is_object($v) && method_exists($v, '__toString'))) {
                         $out[$k] = $this->maskMiddle((string)$v);
                     } else {
@@ -338,10 +335,9 @@ class Reolink extends IPSModuleStrict
             $dev = [];
         }
 
-        // Build-String etwas hübscher machen (ohne "build ")
         $build = $dev['buildDay'] ?? '';
         if (is_string($build) && stripos($build, 'build ') === 0) {
-            $build = trim(substr($build, 6)); // "build 2412021483" -> "2412021483"
+            $build = trim(substr($build, 6)); 
         }
         if ($build === '') {
             $build = 'n/a';
@@ -386,7 +382,6 @@ class Reolink extends IPSModuleStrict
                         'type'  => 'Image',
                         'name'  => 'DeviceImage',
                         'image' => $imageData
-                        // width/height optional, Bild ist physisch verkleinert
                     ],
                     $infoColumn,
                 ],
@@ -879,7 +874,7 @@ class Reolink extends IPSModuleStrict
             return null;
         }
 
-        // Bild nach Download massiv verkleinern (z.B. 4x kleiner)
+        // Bild nach Download 4x kleiner
         if (function_exists('imagecreatefromstring')) {
             $src = @imagecreatefromstring($imgData);
             if ($src !== false) {
@@ -1189,10 +1184,6 @@ class Reolink extends IPSModuleStrict
                 if (!$support[$name]) {
                     // Variante A: ausblenden
                     $item['visible'] = false;
-
-                    // Variante B (stattdessen, wenn du lieber alles siehst, aber deaktiviert):
-                    // $item['enabled'] = false;
-                    // $item['caption'] .= ' (nicht unterstützt)';
                 }
             }
             unset($item);
@@ -1402,10 +1393,9 @@ class Reolink extends IPSModuleStrict
         // Prüfen ob Push_Besucher schon existiert
         $pushID = @$this->GetIDForIdent("Push_Besucher");
 
-        $this->RegisterVariableBoolean("Push_Besucher", "Besuchererkennung", "~Switch", 43);
-
         // Nur wenn sie vorher NICHT existierte → initialisieren
         if (!$pushID) {
+            $this->RegisterVariableBoolean("Push_Besucher", "Besuchererkennung", "~Switch", 43);
             $this->SetValue("Push_Besucher", true);
             $this->EnableAction("Push_Besucher");
         }
