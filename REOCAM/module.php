@@ -1061,7 +1061,7 @@ class Reolink extends IPSModuleStrict
 
         foreach ($probeMap as $propName => $p) {
             // Wenn Ability schon sagt „geht nicht“, spar dir den Probe
-            if (isset($support[$propName]) && $support[$propName] === false) {
+            if (isset($support[$propName]) && !$support[$propName]) {
                 continue;
             }
 
@@ -1884,7 +1884,7 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Kamera online --------
-        if (@$this->GetIDForIdent('KameraOnline') === false) {
+        if (!@$this->GetIDForIdent('KameraOnline')) {
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
         } else {
