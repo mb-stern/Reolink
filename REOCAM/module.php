@@ -768,23 +768,6 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        /*
-        if (!$info || !is_array($info) || !array_key_exists('installed_found', $info)) {
-            // generischer Fehler
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Fehler bei der Auswertung der README-Datei');
-            return;
-        }
-        
-
-        if (!$info['installed_found']) {
-            $this->SetValue('FirmwareUpdateAvailable', false);
-            $this->SetValue('FirmwareDownloadUrl', 'Firmware im README nicht gefunden');
-            return;
-        }
-            */
-
-        // Ab hier: passende Tabelle gefunden
         $latest = $info['latest_version'] ?? null;
         $url    = $info['download_url'] ?? null;
         $isNewer = $info['is_newer'] ?? false;
