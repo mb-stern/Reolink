@@ -637,7 +637,7 @@ class Reolink extends IPSModuleStrict
         ]);
 
         $result = curl_exec($ch);
-        if ($result === false) {
+        if (!$result) {
             $err  = curl_error($ch);
             $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             curl_close($ch);
@@ -673,7 +673,7 @@ class Reolink extends IPSModuleStrict
 
         // 1) Position der installierten Firmware im gesamten README finden
         $posInstalled = strpos($readme, $searchVer);
-        if ($posInstalled === false) {
+        if (!$posInstalled) {
             // Firmware kommt nirgendwo im README vor
             return [
                 'installed_found'   => false,
@@ -687,7 +687,7 @@ class Reolink extends IPSModuleStrict
         // 2) Start des passenden Abschnitts (### IPC_...) nach oben suchen
         $before       = substr($readme, 0, $posInstalled);
         $sectionStart = strrpos($before, "\n  ### ");
-        if ($sectionStart === false) {
+        if (!$sectionStart) {
             // Fallback: kein Abschnitts-Header gefunden → gesamte Datei verwenden (sollte nicht vorkommen)
             $sectionText = $readme;
         } else {
@@ -888,7 +888,7 @@ class Reolink extends IPSModuleStrict
         $this->SendDebug('ModelImage', 'Lade Bild von: ' . $url, 0);
 
         $imgData = @file_get_contents($url);
-        if ($imgData === false || $imgData === '') {
+        if (!$imgData || $imgData === '') {
             $this->SendDebug('ModelImage', 'Download fehlgeschlagen', 0);
             return null;
         }
@@ -1200,7 +1200,7 @@ class Reolink extends IPSModuleStrict
                     continue;
                 }
 
-                if ($support[$name] === false) {
+                if (!$support[$name]) {
                     // Variante A: ausblenden
                     $item['visible'] = false;
 
@@ -1330,7 +1330,7 @@ class Reolink extends IPSModuleStrict
             case "VISITOR":
                 if ($this->ReadPropertyBoolean("ShowSnapshots")) $this->CreateSnapshotAtPosition("Besucher", 41);
                 $pushID = @$this->GetIDForIdent("Push_Besucher");
-                $pushEnabled = ($pushID === false) ? true : GetValueBoolean($pushID);
+                $pushEnabled = (!$pushID) ? true : GetValueBoolean($pushID);
                 if ($this->ReadPropertyBoolean("ShowVisitorElements") && $pushEnabled) $this->SetMoveTimer("Besucher");
                 break;
             case "TEST":
@@ -1497,7 +1497,7 @@ class Reolink extends IPSModuleStrict
         ]);
 
         $imageData = curl_exec($ch);
-        if ($imageData === false) {
+        if (!$imageData) {
             $err = curl_error($ch);
             $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
             curl_close($ch);
@@ -1619,7 +1619,7 @@ class Reolink extends IPSModuleStrict
             CURLOPT_TIMEOUT        => 8,
         ]);
         $imageData = curl_exec($ch);
-        if ($imageData === false) {
+        if (!$imageData) {
             $err = curl_error($ch);
             $this->dbg('SNAPSHOT', 'cURL-Fehler beim Abrufen', $err);
             curl_close($ch);
@@ -1696,7 +1696,7 @@ class Reolink extends IPSModuleStrict
         $this->dbg('POLLING', 'Abruf', ['url' => $url]);
 
         $response = @file_get_contents($url);
-        if ($response === false) {
+        if (!$response) {
             $this->dbg("POLLING", "Fehler beim Abrufen der Daten");
             return;
         }
@@ -1722,7 +1722,7 @@ class Reolink extends IPSModuleStrict
 
         $ident = $mapping[$type];
         $variableID = @$this->GetIDForIdent($ident);
-        if ($variableID === false) return;
+        if (!$variableID) return;
 
         $currentValue = (bool)GetValue($variableID);
         $newValue     = ($state == 1);
@@ -1960,7 +1960,7 @@ class Reolink extends IPSModuleStrict
                 CURLOPT_TIMEOUT        => 8
             ]);
             $response = curl_exec($ch);
-            if ($response === false) {
+            if (!$response) {
                 $err = curl_error($ch);
                 curl_close($ch);
                 $this->dbg('TOKEN', 'cURL-Fehler', $err);
@@ -2119,7 +2119,7 @@ class Reolink extends IPSModuleStrict
         ]);
 
         $raw = curl_exec($ch);
-        if ($raw === false) {
+        if (!$raw) {
             $errno = curl_errno($ch);
             $err   = curl_error($ch);
             $info  = curl_getinfo($ch);
@@ -2333,7 +2333,7 @@ class Reolink extends IPSModuleStrict
         foreach ($map as $ident => $newVal) {
             if ($newVal === null) continue;
             $id = @$this->GetIDForIdent($ident);
-            if ($id === false) continue;
+            if (!$id) continue;
 
             $oldVal = GetValue($id);
             if ($oldVal !== $newVal) {
@@ -3271,7 +3271,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateMdSensitivityStatus(): void
     {
         $vid = @$this->GetIDForIdent("MdSensitivity");
-        if ($vid === false) return;
+        if (!$vid) return;
 
         $st = $this->GetMdSensitivity();
         if (!$st) return;
@@ -3377,7 +3377,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateSirenStatus(): void
     {
         $vid = @$this->GetIDForIdent("SirenEnabled");
-        if ($vid === false) return;
+        if (!$vid) return;
 
         $res = $this->alarmGet();
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
@@ -3458,7 +3458,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateRecStatus(): void
     {
         $vid = @$this->GetIDForIdent("RecEnabled");
-        if ($vid === false) return;
+        if (!$vid) return;
 
         $res = $this->recordGet();
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
@@ -3577,7 +3577,7 @@ class Reolink extends IPSModuleStrict
     private function UpdateOnlineStatus(): void
     {
         $id = @$this->GetIDForIdent('KameraOnline');
-        if ($id === false) return;
+        if (!$id) return;
 
         $ip   = trim($this->ReadPropertyString('CameraIP'));
         $user = urlencode($this->ReadPropertyString('Username'));
