@@ -3596,39 +3596,31 @@ class Reolink extends IPSModuleStrict
 
     private function autoTrackingGet(): ?array
     {
-        $res = $this->apiCall([
+        return $this->apiCall([
             [
-                'cmd'    => 'GetAutoTrack',
+                'cmd'    => 'GetAiCfg',
                 'action' => 0,
                 'param'  => ['channel' => 0]
             ]
-        ], 'AUTOTRACK', true);
-
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+        ], 'AUTOTRACK/GET', true);
     }
 
     private function autoTrackingSet(bool $enabled): bool
     {
-        foreach ([0, 1] as $action) {
-            $payload = [[
-                'cmd'    => 'SetAutoTrack',
-                'action' => $action,
+        $res = $this->apiCall([
+            [
+                'cmd'    => 'SetAiCfg',
+                'action' => 0,
                 'param'  => [
-                    'AutoTrack' => [
+                    'AiCfg' => [
                         'channel' => 0,
-                        'enable'  => $enabled ? 1 : 0
+                        'aiTrack' => $enabled ? 1 : 0
                     ]
                 ]
-            ]];
+            ]
+        ], 'AUTOTRACK/SET');
 
-            $res = $this->apiCall($payload, 'AUTOTRACK-SET', true);
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                return true;
-            }
-        }
-
-        $this->dbg('AUTOTRACK-SET', 'Setzen fehlgeschlagen');
-        return false;
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     public function SetAutoTracking(bool $enabled): bool
@@ -3636,6 +3628,7 @@ class Reolink extends IPSModuleStrict
         $ok = $this->autoTrackingSet($enabled);
 
         if ($ok) {
+            IPS_Sleep(500);
             $this->UpdateAutoTrackingStatus();
         }
 
@@ -3650,16 +3643,22 @@ class Reolink extends IPSModuleStrict
         }
 
         $res = $this->autoTrackingGet();
+        $this->dbg('AUTOTRACK/GETRAW', 'Antwort', $res);
+
         if (!is_array($res)) {
             return;
         }
 
-        $node = $res[0]['value']['AutoTrack'] ?? $res[0]['initial']['AutoTrack'] ?? null;
-        if (!is_array($node) || !array_key_exists('enable', $node)) {
+        $node = $res[0]['value']['AiCfg'] 
+            ?? $res[0]['initial']['AiCfg'] 
+            ?? $res[0]['value'] 
+            ?? null;
+
+        if (!is_array($node) || !array_key_exists('aiTrack', $node)) {
             return;
         }
 
-        $enabled = ((int)$node['enable'] === 1);
+        $enabled = ((int)$node['aiTrack'] === 1);
 
         if ((bool)GetValue($id) !== $enabled) {
             $this->SetValue("AutoTracking", $enabled);
