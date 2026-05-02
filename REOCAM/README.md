@@ -154,6 +154,9 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
+### Version 2.17 (2.05.2026)
+- Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten.
+
 ### Version 2.16 (22.02.2026)
 - Eine zusätzliche Variable zum deaktivieren der Besuchererkennung wurde hinzugefügt.
 - Einige Fehlfunktionen unter Linux behoben, unter anderem wurden die Bilder-Kategorien beim erstellen des Moduls nicht angelegt und der aktuelle Schnappschuss nicht erstellt.
