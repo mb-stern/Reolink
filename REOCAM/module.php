@@ -132,6 +132,8 @@ class Reolink extends IPSModuleStrict
 
         $this->CreateOrUpdateApiVariablesUnified();
 
+        $this->UpdateOnlineStatus();
+
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         if ($anyFeatureOn) {
             $this->GetToken();
@@ -147,9 +149,6 @@ class Reolink extends IPSModuleStrict
         } else {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
         }
-
-        $this->UpdateOnlineStatus();
-
     }
 
     public function RequestAction(string $Ident, mixed $Value): void
@@ -3610,22 +3609,26 @@ class Reolink extends IPSModuleStrict
 
     private function autoTrackingSet(bool $enabled): bool
     {
-        $payload = [
-            [
+        foreach ([0, 1] as $action) {
+            $payload = [[
                 'cmd'    => 'SetAutoTrack',
-                'action' => 0,
+                'action' => $action,
                 'param'  => [
                     'AutoTrack' => [
                         'channel' => 0,
                         'enable'  => $enabled ? 1 : 0
                     ]
                 ]
-            ]
-        ];
+            ]];
 
-        $res = $this->apiCall($payload, 'AUTOTRACK-SET');
+            $res = $this->apiCall($payload, 'AUTOTRACK-SET', true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                return true;
+            }
+        }
 
-        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        $this->dbg('AUTOTRACK-SET', 'Setzen fehlgeschlagen');
+        return false;
     }
 
     public function SetAutoTracking(bool $enabled): bool
