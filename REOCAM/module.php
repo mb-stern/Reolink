@@ -468,6 +468,7 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto-Tracking'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
