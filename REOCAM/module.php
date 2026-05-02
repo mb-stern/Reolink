@@ -36,7 +36,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean("EnableApiIR", true);
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
-        $this->RegisterPropertyBoolean("EnableApiAutoTracking", true);
+        $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
