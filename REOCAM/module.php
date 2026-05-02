@@ -2069,7 +2069,6 @@ class Reolink extends IPSModuleStrict
             if ($this->ReadPropertyBoolean("EnableApiIR")) {
                 $this->UpdateIrStatus();
             }
-
             if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
                 $this->UpdateAutoTrackingStatus();
             }
@@ -3602,73 +3601,49 @@ class Reolink extends IPSModuleStrict
     // Auto-Tracking
     // ---------------------------
 
-    private function aiCfgGet(): ?array
+    private function aiCfgCall(?bool $enabled = null): ?array
     {
-        $res = $this->apiCall([
-            [
+        if ($enabled === null) {
+            $res = $this->apiCall([[
                 'cmd'    => 'GetAiCfg',
                 'action' => 0,
-                'param'  => [
-                    'channel' => 0
-                ]
+                'param'  => ['channel' => 0]
+            ]], 'AICFG', true);
+
+            return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+        }
+
+        $current = $this->aiCfgCall(null);
+        $node = is_array($current) ? ($current[0]['value'] ?? $current[0]['initial'] ?? []) : [];
+
+        $aiDetectType = is_array($node['AiDetectType'] ?? null)
+            ? $node['AiDetectType']
+            : ['people' => 1, 'vehicle' => 1, 'dog_cat' => 1, 'face' => 0];
+
+        $trackType = is_array($node['trackType'] ?? null)
+            ? $node['trackType']
+            : ['people' => 1, 'vehicle' => 0, 'dog_cat' => 0, 'face' => 0];
+
+        $payload = [[
+            'cmd'    => 'SetAiCfg',
+            'action' => 0,
+            'param'  => [
+                'channel'      => 0,
+                'aiTrack'      => $enabled ? 1 : 0,
+                'bSmartTrack'  => $enabled ? 1 : 0,
+                'trackType'    => $trackType,
+                'AiDetectType' => $aiDetectType
             ]
-        ], 'AICFG', true);
+        ]];
+
+        $res = $this->apiCall($payload, 'AICFG-SET');
 
         return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
-    private function aiCfgSetAutoTracking(bool $enabled): bool
-    {
-        $current = $this->aiCfgGet();
-
-        $aiDetectType = [
-            'people'  => 1,
-            'vehicle' => 1,
-            'dog_cat' => 1,
-            'face'    => 0
-        ];
-
-        $trackType = [
-            'people'  => $enabled ? 1 : 0,
-            'vehicle' => 0,
-            'dog_cat' => 0,
-            'face'    => 0
-        ];
-
-        if (is_array($current)) {
-            $node = $current[0]['value'] ?? $current[0]['initial'] ?? [];
-
-            if (isset($node['AiDetectType']) && is_array($node['AiDetectType'])) {
-                $aiDetectType = array_merge($aiDetectType, $node['AiDetectType']);
-            }
-
-            if (isset($node['trackType']) && is_array($node['trackType'])) {
-                $trackType = array_merge($trackType, $node['trackType']);
-            }
-        }
-
-        $payload = [
-            [
-                'cmd'    => 'SetAiCfg',
-                'action' => 0,
-                'param'  => [
-                    'channel'      => 0,
-                    'aiTrack'      => $enabled ? 1 : 0,
-                    'bSmartTrack'  => $enabled ? 1 : 0,
-                    'trackType'    => $trackType,
-                    'AiDetectType' => $aiDetectType
-                ]
-            ]
-        ];
-
-        $res = $this->apiCall($payload, 'AICFG-SET');
-
-        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
-    }
-
     public function SetAutoTracking(bool $enabled): bool
     {
-        $ok = $this->aiCfgSetAutoTracking($enabled);
+        $ok = $this->aiCfgCall($enabled) !== null;
 
         if ($ok) {
             $this->UpdateAutoTrackingStatus();
@@ -3684,7 +3659,7 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        $res = $this->aiCfgGet();
+        $res = $this->aiCfgCall(null);
         if (!is_array($res)) {
             return;
         }
