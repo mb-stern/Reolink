@@ -36,7 +36,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean("EnableApiIR", true);
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
-        $this->RegisterPropertyBoolean("EnableApiAutoTracking", true);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -123,16 +122,14 @@ class Reolink extends IPSModuleStrict
         $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
         $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
         $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
-        $enableAutoTracking = $this->ReadPropertyBoolean("EnableApiAutoTracking");
 
         $anyFeatureOn = (
-            $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ || $enableFTP || $enableSensitivity || $enableSiren || $enableRecord || $enableAutoTracking
+            $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
+            $enableFTP || $enableSensitivity || $enableSiren || $enableRecord
         );
 
 
         $this->CreateOrUpdateApiVariablesUnified();
-
-        $this->UpdateOnlineStatus();
 
         $this->SetTimerInterval("ApiRequestTimer", 10 * 1000);
         if ($anyFeatureOn) {
@@ -149,6 +146,9 @@ class Reolink extends IPSModuleStrict
         } else {
             $this->SetTimerInterval('FirmwareCheckTimer', 0);
         }
+
+        $this->UpdateOnlineStatus();
+
     }
 
     public function RequestAction(string $Ident, mixed $Value): void
@@ -235,15 +235,6 @@ class Reolink extends IPSModuleStrict
 
             case "Push_Besucher":
                 $this->SetValue("Push_Besucher", (bool)$Value);
-                break;
-
-            case "AutoTracking":
-                $ok = $this->SetAutoTracking((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdateAutoTrackingStatus();
-                }
                 break;
 
             default:
@@ -467,7 +458,6 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto-Tracking'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
@@ -1884,14 +1874,6 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariable("FirmwareUpdateAvailable");
             $this->UnregisterVariable("FirmwareDownloadUrl");
         }
-
-        // -------- Auto-Tracking --------
-        if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 14);
-            $this->EnableAction("AutoTracking");
-        } else {
-            $this->UnregisterVariable("AutoTracking");
-        }
     }
 
     // ---------------------------
@@ -2064,10 +2046,6 @@ class Reolink extends IPSModuleStrict
             }
             if ($this->ReadPropertyBoolean("EnableApiIR")) {
                 $this->UpdateIrStatus();
-            }
-
-            if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-                $this->UpdateAutoTrackingStatus();
             }
 
         } finally {
@@ -3591,77 +3569,6 @@ class Reolink extends IPSModuleStrict
 
         if ((bool)GetValue($id) !== $isOnline) {
             $this->SetValue('KameraOnline', $isOnline);
-        }
-    }
-
-    private function autoTrackingGet(): ?array
-    {
-        return $this->apiCall([
-            [
-                'cmd'    => 'GetAiCfg',
-                'action' => 0,
-                'param'  => ['channel' => 0]
-            ]
-        ], 'AUTOTRACK/GET', true);
-    }
-
-    private function autoTrackingSet(bool $enabled): bool
-    {
-        $res = $this->apiCall([
-            [
-                'cmd'    => 'SetAiCfg',
-                'action' => 0,
-                'param'  => [
-                    'AiCfg' => [
-                        'channel' => 0,
-                        'aiTrack' => $enabled ? 1 : 0
-                    ]
-                ]
-            ]
-        ], 'AUTOTRACK/SET');
-
-        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
-    }
-
-    public function SetAutoTracking(bool $enabled): bool
-    {
-        $ok = $this->autoTrackingSet($enabled);
-
-        if ($ok) {
-            IPS_Sleep(500);
-            $this->UpdateAutoTrackingStatus();
-        }
-
-        return $ok;
-    }
-
-    private function UpdateAutoTrackingStatus(): void
-    {
-        $id = @$this->GetIDForIdent("AutoTracking");
-        if (!$id) {
-            return;
-        }
-
-        $res = $this->autoTrackingGet();
-        $this->dbg('AUTOTRACK/GETRAW', 'Antwort', $res);
-
-        if (!is_array($res)) {
-            return;
-        }
-
-        $node = $res[0]['value']['AiCfg'] 
-            ?? $res[0]['initial']['AiCfg'] 
-            ?? $res[0]['value'] 
-            ?? null;
-
-        if (!is_array($node) || !array_key_exists('aiTrack', $node)) {
-            return;
-        }
-
-        $enabled = ((int)$node['aiTrack'] === 1);
-
-        if ((bool)GetValue($id) !== $enabled) {
-            $this->SetValue("AutoTracking", $enabled);
         }
     }
 }
