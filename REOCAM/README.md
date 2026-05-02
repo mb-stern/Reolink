@@ -154,7 +154,7 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
-### Version 2.17 (2.05.2026)
+### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten.
 
 ### Version 2.16 (22.02.2026)
