@@ -239,15 +239,12 @@ class Reolink extends IPSModuleStrict
                 break;
 
             case "AutoTracking":
-                $ok = $this->SetAutoTrackingEnabled((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateAutoTrackingStatus(); }
-                break;
-
-            case "AutoTrackingTarget":
-                $ok = $this->SetAutoTrackingTarget((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateAutoTrackingStatus(); }
+                $ok = $this->SetAutoTracking((bool)$Value);
+                if ($ok) {
+                    $this->SetValue($Ident, (bool)$Value);
+                } else {
+                    $this->UpdateAutoTrackingStatus();
+                }
                 break;
 
             default:
@@ -471,7 +468,6 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto Tracking'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
@@ -1889,25 +1885,12 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariable("FirmwareDownloadUrl");
         }
 
-        // -------- Auto Tracking --------
+        // -------- Auto-Tracking --------
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-            if (!IPS_VariableProfileExists("REOCAM.AutoTrackTarget")) {
-                IPS_CreateVariableProfile("REOCAM.AutoTrackTarget", 1);
-            }
-
-            IPS_SetVariableProfileValues("REOCAM.AutoTrackTarget", 0, 2, 0);
-            IPS_SetVariableProfileAssociation("REOCAM.AutoTrackTarget", 0, "Person", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.AutoTrackTarget", 1, "Fahrzeug", "", -1);
-            IPS_SetVariableProfileAssociation("REOCAM.AutoTrackTarget", 2, "Tier", "", -1);
-
-            $this->RegisterVariableBoolean("AutoTracking", "Auto Tracking", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 14);
             $this->EnableAction("AutoTracking");
-
-            $this->RegisterVariableInteger("AutoTrackingTarget", "Tracking-Ziel", "REOCAM.AutoTrackTarget", 7);
-            $this->EnableAction("AutoTrackingTarget");
         } else {
             $this->UnregisterVariable("AutoTracking");
-            $this->UnregisterVariable("AutoTrackingTarget");
         }
     }
 
@@ -3611,135 +3594,71 @@ class Reolink extends IPSModuleStrict
         }
     }
 
-    // ---------------------------
-// Auto Tracking
-// ---------------------------
-
-private function aiCfgGet(): ?array
-{
-    $res = $this->apiCall([
-        [
-            'cmd'    => 'GetAiCfg',
-            'action' => 0,
-            'param'  => ['channel' => 0]
-        ]
-    ], 'AUTOTRACK', true);
-
-    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-}
-
-private function aiCfgSet(array $aiCfg): bool
-{
-    $aiCfg['channel'] = 0;
-
-    $res = $this->apiCall([
-        [
-            'cmd'    => 'SetAiCfg',
-            'action' => 0,
-            'param'  => [
-                'AiCfg' => $aiCfg
+    private function autoTrackingGet(): ?array
+    {
+        $res = $this->apiCall([
+            [
+                'cmd'    => 'GetAutoTrack',
+                'action' => 0,
+                'param'  => ['channel' => 0]
             ]
-        ]
-    ], 'AUTOTRACK-SET');
+        ], 'AUTOTRACK', true);
 
-    return is_array($res) && (($res[0]['code'] ?? -1) === 0);
-}
-
-private function getAiCfgNode(): ?array
-{
-    $res = $this->aiCfgGet();
-    if (!is_array($res)) {
-        return null;
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
-    $node = $res[0]['value']['AiCfg']
-        ?? $res[0]['initial']['AiCfg']
-        ?? null;
+    private function autoTrackingSet(bool $enabled): bool
+    {
+        $payload = [
+            [
+                'cmd'    => 'SetAutoTrack',
+                'action' => 0,
+                'param'  => [
+                    'AutoTrack' => [
+                        'channel' => 0,
+                        'enable'  => $enabled ? 1 : 0
+                    ]
+                ]
+            ]
+        ];
 
-    return is_array($node) ? $node : null;
-}
+        $res = $this->apiCall($payload, 'AUTOTRACK-SET');
 
-public function SetAutoTrackingEnabled(bool $enabled): bool
-{
-    $cfg = $this->getAiCfgNode();
-    if (!is_array($cfg)) {
-        $this->dbg('AUTOTRACK', 'GetAiCfg fehlgeschlagen');
-        return false;
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
-    // Reolink verwendet bei vielen Modellen aiTrack = 0/1
-    $cfg['aiTrack'] = $enabled ? 1 : 0;
+    public function SetAutoTracking(bool $enabled): bool
+    {
+        $ok = $this->autoTrackingSet($enabled);
 
-    $ok = $this->aiCfgSet($cfg);
-    if ($ok) {
-        $this->UpdateAutoTrackingStatus();
+        if ($ok) {
+            $this->UpdateAutoTrackingStatus();
+        }
+
+        return $ok;
     }
-
-    return $ok;
-}
-
-public function SetAutoTrackingTarget(int $target): bool
-{
-    $cfg = $this->getAiCfgNode();
-    if (!is_array($cfg)) {
-        $this->dbg('AUTOTRACK', 'GetAiCfg fehlgeschlagen');
-        return false;
-    }
-
-    $target = max(0, min(2, $target));
-
-    // 0 = Person, 1 = Fahrzeug, 2 = Tier
-    $cfg['trackType'] = [
-        'people'  => $target === 0 ? 1 : 0,
-        'vehicle' => $target === 1 ? 1 : 0,
-        'dog_cat' => $target === 2 ? 1 : 0,
-    ];
-
-    // Manche Firmwares erwarten zusätzlich AiDetectType.
-    $cfg['AiDetectType'] = [
-        'people'  => $target === 0 ? 1 : 0,
-        'vehicle' => $target === 1 ? 1 : 0,
-        'dog_cat' => $target === 2 ? 1 : 0,
-    ];
-
-    $ok = $this->aiCfgSet($cfg);
-    if ($ok) {
-        $this->UpdateAutoTrackingStatus();
-    }
-
-    return $ok;
-}
 
     private function UpdateAutoTrackingStatus(): void
     {
-        $cfg = $this->getAiCfgNode();
-        if (!is_array($cfg)) {
+        $id = @$this->GetIDForIdent("AutoTracking");
+        if (!$id) {
             return;
         }
 
-        $enabled = ((int)($cfg['aiTrack'] ?? 0) === 1);
-
-        $id = @$this->GetIDForIdent('AutoTracking');
-        if ($id !== false && (bool)GetValue($id) !== $enabled) {
-            $this->SetValue('AutoTracking', $enabled);
+        $res = $this->autoTrackingGet();
+        if (!is_array($res)) {
+            return;
         }
 
-        $track = $cfg['trackType'] ?? $cfg['AiDetectType'] ?? [];
-
-        $target = 0;
-        if (is_array($track)) {
-            if ((int)($track['vehicle'] ?? 0) === 1) {
-                $target = 1;
-            } elseif ((int)($track['dog_cat'] ?? $track['animal'] ?? 0) === 1) {
-                $target = 2;
-            } elseif ((int)($track['people'] ?? $track['person'] ?? 0) === 1) {
-                $target = 0;
-            }
+        $node = $res[0]['value']['AutoTrack'] ?? $res[0]['initial']['AutoTrack'] ?? null;
+        if (!is_array($node) || !array_key_exists('enable', $node)) {
+            return;
         }
 
-        $id = @$this->GetIDForIdent('AutoTrackingTarget');
-        if ($id !== false && (int)GetValue($id) !== $target) {
-            $this->SetValue('AutoTrackingTarget', $target);
+        $enabled = ((int)$node['enable'] === 1);
+
+        if ((bool)GetValue($id) !== $enabled) {
+            $this->SetValue("AutoTracking", $enabled);
         }
     }
 }
