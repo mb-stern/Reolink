@@ -37,6 +37,9 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
         $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
+        $this->RegisterVariableBoolean("TrackPerson", "Tracking Person", "~Switch", 20);
+        $this->RegisterVariableBoolean("TrackVehicle", "Tracking Fahrzeug", "~Switch", 21);
+        $this->RegisterVariableBoolean("TrackAnimal", "Tracking Tier", "~Switch", 22);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -247,6 +250,21 @@ class Reolink extends IPSModuleStrict
                 } else {
                     $this->UpdateAutoTrackingStatus();
                 }
+                break;
+
+            case "AutoTrackPerson":
+                $ok = $this->SetAutoTrackingType('people', (bool)$Value);
+                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
+                break;
+
+            case "AutoTrackVehicle":
+                $ok = $this->SetAutoTrackingType('vehicle', (bool)$Value);
+                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
+                break;
+
+            case "AutoTrackAnimal":
+                $ok = $this->SetAutoTrackingType('dog_cat', (bool)$Value);
+                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
                 break;
 
             default:
@@ -1874,8 +1892,20 @@ class Reolink extends IPSModuleStrict
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
             $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 7);
             $this->EnableAction("AutoTracking");
+
+            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 7);
+            $this->EnableAction("AutoTrackPerson");
+
+            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 7);
+            $this->EnableAction("AutoTrackVehicle");
+
+            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 7);
+            $this->EnableAction("AutoTrackAnimal");
         } else {
             $this->UnregisterVariable("AutoTracking");
+            $this->UnregisterVariable("AutoTrackPerson");
+            $this->UnregisterVariable("AutoTrackVehicle");
+            $this->UnregisterVariable("AutoTrackAnimal");
         }
 
         // -------- Kamera online --------
@@ -3601,9 +3631,9 @@ class Reolink extends IPSModuleStrict
     // Auto-Tracking
     // ---------------------------
 
-    private function aiCfgCall(?bool $enabled = null): ?array
+    private function aiCfgCall(?bool $enabled = null, ?string $trackKey = null, ?bool $trackValue = null): ?array
     {
-        if ($enabled === null) {
+        if ($enabled === null && $trackKey === null) {
             $res = $this->apiCall([[
                 'cmd'    => 'GetAiCfg',
                 'action' => 0,
@@ -3613,8 +3643,13 @@ class Reolink extends IPSModuleStrict
             return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
         }
 
-        $current = $this->aiCfgCall(null);
+        $current = $this->aiCfgCall();
         $node = is_array($current) ? ($current[0]['value'] ?? $current[0]['initial'] ?? []) : [];
+
+        $masterEnabled = $enabled;
+        if ($masterEnabled === null) {
+            $masterEnabled = ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1);
+        }
 
         $aiDetectType = is_array($node['AiDetectType'] ?? null)
             ? $node['AiDetectType']
@@ -3624,13 +3659,17 @@ class Reolink extends IPSModuleStrict
             ? $node['trackType']
             : ['people' => 1, 'vehicle' => 0, 'dog_cat' => 0, 'face' => 0];
 
+        if ($trackKey !== null && in_array($trackKey, ['people', 'vehicle', 'dog_cat', 'face'], true)) {
+            $trackType[$trackKey] = $trackValue ? 1 : 0;
+        }
+
         $payload = [[
             'cmd'    => 'SetAiCfg',
             'action' => 0,
             'param'  => [
                 'channel'      => 0,
-                'aiTrack'      => $enabled ? 1 : 0,
-                'bSmartTrack'  => $enabled ? 1 : 0,
+                'aiTrack'      => $masterEnabled ? 1 : 0,
+                'bSmartTrack'  => $masterEnabled ? 1 : 0,
                 'trackType'    => $trackType,
                 'AiDetectType' => $aiDetectType
             ]
@@ -3652,14 +3691,20 @@ class Reolink extends IPSModuleStrict
         return $ok;
     }
 
-    private function UpdateAutoTrackingStatus(): void
+    public function SetAutoTrackingType(string $trackKey, bool $enabled): bool
     {
-        $id = @$this->GetIDForIdent("AutoTracking");
-        if (!$id) {
-            return;
+        $ok = $this->aiCfgCall(null, $trackKey, $enabled) !== null;
+
+        if ($ok) {
+            $this->UpdateAutoTrackingStatus();
         }
 
-        $res = $this->aiCfgCall(null);
+        return $ok;
+    }
+
+    private function UpdateAutoTrackingStatus(): void
+    {
+        $res = $this->aiCfgCall();
         if (!is_array($res)) {
             return;
         }
@@ -3669,10 +3714,20 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        $enabled = ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1);
+        $this->SetValueIfChanged("AutoTracking", ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1));
 
-        if ((bool)GetValue($id) !== $enabled) {
-            $this->SetValue("AutoTracking", $enabled);
+        $trackType = is_array($node['trackType'] ?? null) ? $node['trackType'] : [];
+
+        $this->SetValueIfChanged("AutoTrackPerson",  ((int)($trackType['people']  ?? 0) === 1));
+        $this->SetValueIfChanged("AutoTrackVehicle", ((int)($trackType['vehicle'] ?? 0) === 1));
+        $this->SetValueIfChanged("AutoTrackAnimal",  ((int)($trackType['dog_cat'] ?? 0) === 1));
+    }
+
+    private function SetValueIfChanged(string $ident, mixed $value): void
+    {
+        $id = @$this->GetIDForIdent($ident);
+        if ($id !== false && GetValue($id) !== $value) {
+            $this->SetValue($ident, $value);
         }
     }
 }
