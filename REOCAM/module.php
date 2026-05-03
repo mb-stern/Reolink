@@ -37,9 +37,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
         $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
-        $this->RegisterVariableBoolean("TrackPerson", "Tracking Person", "~Switch", 20);
-        $this->RegisterVariableBoolean("TrackVehicle", "Tracking Fahrzeug", "~Switch", 21);
-        $this->RegisterVariableBoolean("TrackAnimal", "Tracking Tier", "~Switch", 22);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -3714,7 +3711,12 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        $this->SetValueIfChanged("AutoTracking", ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1));
+        $enabled = (
+            ((int)($node['aiTrack'] ?? 0) === 1) ||
+            ((int)($node['bSmartTrack'] ?? 0) === 1)
+        );
+
+        $this->SetValueIfChanged("AutoTracking", $enabled);
 
         $trackType = is_array($node['trackType'] ?? null) ? $node['trackType'] : [];
 
