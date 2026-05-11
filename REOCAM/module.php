@@ -2587,26 +2587,29 @@ class Reolink extends IPSModuleStrict
 
     private function pushGet(): ?array
     {
-        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 0);
+        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 1);
         if ($ver === 'unsupported') {
             return null;
         }
 
         $cmd = ($ver === 'v20') ? 'GetPushV20' : 'GetPush';
 
-        $res = $this->apiCall([
-            [
-                'cmd'    => $cmd,
-                'action' => 0,
-                'param'  => ['channel' => 0]
-            ]
-        ], 'PUSH', true);
+        $res = $this->apiCall([[
+            'cmd'    => $cmd,
+            'action' => 1,
+            'param'  => ($ver === 'v20') ? ['channel' => 0] : []
+        ]], 'PUSH', true);
 
         return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
     private function pushSet(bool $enabled): bool
     {
+        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 1);
+        if ($ver === 'unsupported') {
+            return false;
+        }
+
         $current = $this->pushGet();
         if (!is_array($current)) {
             return false;
@@ -2617,26 +2620,38 @@ class Reolink extends IPSModuleStrict
             return false;
         }
 
-        $value = $enabled ? '1' : '0';
-        $len = 168; // oft 7 Tage * 24 Stunden
+        if ($ver === 'v20') {
+            $push['enable'] = $enabled ? 1 : 0;
+            $push['schedule']['channel'] = 0;
 
-        if (isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
-            foreach ($push['schedule']['table'] as $key => $table) {
-                $push['schedule']['table'][$key] = str_repeat($value, strlen((string)$table));
+            if (!isset($push['schedule']['table']) || !is_array($push['schedule']['table'])) {
+                $push['schedule']['table'] = ['MD' => str_repeat($enabled ? '1' : '0', 168)];
+            } else {
+                foreach ($push['schedule']['table'] as $key => $table) {
+                    $push['schedule']['table'][$key] = str_repeat($enabled ? '1' : '0', strlen((string)$table));
+                }
             }
+
+            $res = $this->apiCall([[
+                'cmd'   => 'SetPushV20',
+                'param' => ['Push' => $push]
+            ]], 'PUSH-SET-V20');
+
+            return is_array($res) && (($res[0]['code'] ?? -1) === 0);
         }
 
-        $push['enable'] = $enabled ? 1 : 0;
-        $push['schedule']['channel'] = 0;
+        $push['schedule']['enable'] = $enabled ? 1 : 0;
 
-        $res = $this->apiCall([
-            [
-                'cmd'   => 'SetPushV20',
-                'param' => [
-                    'Push' => $push
-                ]
-            ]
-        ], 'PUSH-SET-V20');
+        if (!isset($push['schedule']['table']) || !is_string($push['schedule']['table'])) {
+            $push['schedule']['table'] = str_repeat($enabled ? '1' : '0', 168);
+        } else {
+            $push['schedule']['table'] = str_repeat($enabled ? '1' : '0', strlen($push['schedule']['table']));
+        }
+
+        $res = $this->apiCall([[
+            'cmd'   => 'SetPush',
+            'param' => ['Push' => $push]
+        ]], 'PUSH-SET');
 
         return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
@@ -2654,7 +2669,7 @@ class Reolink extends IPSModuleStrict
 
     private function UpdatePushStatus(): void
     {
-        $id = @$this->GetIDForIdent("PushEnabled");
+        $id = @$this->GetIDForIdent("PushNotify");
         if (!$id) {
             return;
         }
@@ -2669,27 +2684,30 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        // Achtung:
-        // Bei dieser Kamera bleibt enable offenbar auch bei "Push aus" auf 1.
-        // Der echte Aus-Zustand ist daran erkennbar, dass der Schedule nur 0 enthält.
-        $globalEnable = ((int)($push['enable'] ?? 0) === 1);
+        $enabled = false;
 
-        $table = $push['schedule']['table'] ?? [];
-        $hasActiveSchedule = false;
+        if (array_key_exists('enable', $push)) {
+            $enabled = ((int)$push['enable'] === 1);
+        } elseif (isset($push['schedule']['enable'])) {
+            $enabled = ((int)$push['schedule']['enable'] === 1);
+        }
 
+        $table = $push['schedule']['table'] ?? null;
         if (is_array($table)) {
+            $hasActiveSchedule = false;
             foreach ($table as $row) {
                 if (is_string($row) && strpos($row, '1') !== false) {
                     $hasActiveSchedule = true;
                     break;
                 }
             }
+            $enabled = $enabled && $hasActiveSchedule;
+        } elseif (is_string($table)) {
+            $enabled = $enabled && (strpos($table, '1') !== false);
         }
 
-        $enabled = $globalEnable && $hasActiveSchedule;
-
         if ((bool)GetValue($id) !== $enabled) {
-            $this->SetValue("PushEnabled", $enabled);
+            $this->SetValue("PushNotify", $enabled);
         }
     }
 
