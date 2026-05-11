@@ -1851,7 +1851,7 @@ class Reolink extends IPSModuleStrict
 
         // -------- Push-Benachrichtigung --------
         if ($this->ReadPropertyBoolean("EnableApiPush")) {
-            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 15);
+            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 8);
             $this->EnableAction("PushNotify");
         } else {
             $this->UnregisterVariable("PushNotify");
