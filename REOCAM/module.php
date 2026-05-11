@@ -38,6 +38,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean("UseHttps", false);
         $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
         $this->RegisterPropertyBoolean("EnableApiMdAlarm", true);
+        $this->RegisterPropertyBoolean("EnableApiPush", true);
         
 
         // Archiv
@@ -127,11 +128,12 @@ class Reolink extends IPSModuleStrict
         $enableRecord       = $this->ReadPropertyBoolean("EnableApiRecord");
         $enableAutoTracking = $this->ReadPropertyBoolean("EnableApiAutoTracking");
         $enableMdAlarm      = $this->ReadPropertyBoolean("EnableApiMdAlarm");
+        $enablePush         = $this->ReadPropertyBoolean("EnableApiPush");
 
         $anyFeatureOn = (
             $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
             $enableFTP || $enableSensitivity || $enableSiren || $enableRecord ||
-            $enableAutoTracking || $enableMdAlarm
+            $enableAutoTracking || $enableMdAlarm || $enablePush
         );
 
 
@@ -273,6 +275,15 @@ class Reolink extends IPSModuleStrict
                     $this->SetValue($Ident, (bool)$Value);
                 } else {
                     $this->UpdateMdAlarmStatus();
+                }
+                break;
+
+            case "PushNotify":
+                $ok = $this->SetPushNotify((bool)$Value);
+                if ($ok) {
+                    $this->SetValue($Ident, (bool)$Value);
+                } else {
+                    $this->UpdatePushStatus();
                 }
                 break;
 
@@ -492,13 +503,14 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiPush',           'caption' => 'Push-Benachrichtigung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto-Tracking'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiMdAlarm', 'caption' => 'Bewegungserkennung Ein/Aus'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking',   'caption' => 'Auto-Tracking'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiMdAlarm',        'caption' => 'Bewegungserkennung'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
@@ -1837,6 +1849,14 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariable("EmailContent");
         }
 
+        // -------- Push-Benachrichtigung --------
+        if ($this->ReadPropertyBoolean("EnableApiPush")) {
+            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 15);
+            $this->EnableAction("PushNotify");
+        } else {
+            $this->UnregisterVariable("PushNotify");
+        }
+
         // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
@@ -2123,6 +2143,10 @@ class Reolink extends IPSModuleStrict
 
             if ($this->ReadPropertyBoolean("EnableApiMdAlarm")) {
                 $this->UpdateMdAlarmStatus();
+            }
+
+            if ($this->ReadPropertyBoolean("EnableApiPush")) {
+                $this->UpdatePushStatus();
             }
 
         } finally {
@@ -2554,6 +2578,118 @@ class Reolink extends IPSModuleStrict
         $id = @$this->GetIDForIdent('EmailContent');
         if ($id !== false && $st['contentMode'] !== null && (int)GetValue($id) !== (int)$st['contentMode']) {
             $this->SetValue('EmailContent', (int)$st['contentMode']);
+        }
+    }
+
+    // ---------------------------
+    // Push-Benachrichtigung
+    // ---------------------------
+
+    private function pushGet(): ?array
+    {
+        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 0);
+        if ($ver === 'unsupported') {
+            return null;
+        }
+
+        $cmd = ($ver === 'v20') ? 'GetPushV20' : 'GetPush';
+
+        $res = $this->apiCall([
+            [
+                'cmd'    => $cmd,
+                'action' => 0,
+                'param'  => ['channel' => 0]
+            ]
+        ], 'PUSH', true);
+
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    }
+
+    private function pushSet(bool $enabled): bool
+    {
+        $ver = $this->apiProbe('push', 'SetPushV20', 'SetPush', 0);
+        if ($ver === 'unsupported') {
+            return false;
+        }
+
+        $cmd = ($ver === 'v20') ? 'SetPushV20' : 'SetPush';
+
+        $payloads = [
+            [
+                'Push' => [
+                    'channel' => 0,
+                    'enable'  => $enabled ? 1 : 0
+                ]
+            ],
+            [
+                'Push' => [
+                    'channel'  => 0,
+                    'schedule' => [
+                        'enable' => $enabled ? 1 : 0
+                    ]
+                ]
+            ]
+        ];
+
+        foreach ($payloads as $param) {
+            $res = $this->apiCall([
+                [
+                    'cmd'    => $cmd,
+                    'action' => 0,
+                    'param'  => $param
+                ]
+            ], 'PUSH-SET', true);
+
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function SetPushNotify(bool $enabled): bool
+    {
+        $ok = $this->pushSet($enabled);
+
+        if ($ok) {
+            $this->UpdatePushStatus();
+        }
+
+        return $ok;
+    }
+
+    private function UpdatePushStatus(): void
+    {
+        $id = @$this->GetIDForIdent("PushNotify");
+        if (!$id) {
+            return;
+        }
+
+        $res = $this->pushGet();
+        if (!is_array($res)) {
+            return;
+        }
+
+        $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
+        if (!is_array($push)) {
+            return;
+        }
+
+        $enabled = null;
+
+        if (array_key_exists('enable', $push)) {
+            $enabled = ((int)$push['enable'] === 1);
+        } elseif (isset($push['schedule']['enable'])) {
+            $enabled = ((int)$push['schedule']['enable'] === 1);
+        }
+
+        if ($enabled === null) {
+            return;
+        }
+
+        if ((bool)GetValue($id) !== $enabled) {
+            $this->SetValue("PushNotify", $enabled);
         }
     }
 
@@ -3398,7 +3534,7 @@ class Reolink extends IPSModuleStrict
             $this->SetValue("MdAlarmEnabled", $enabled);
         }
     }
-    
+
     private function UpdateMdSensitivityStatus(): void
     {
         $vid = @$this->GetIDForIdent("MdSensitivity");
