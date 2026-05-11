@@ -2654,13 +2654,13 @@ class Reolink extends IPSModuleStrict
 
     private function UpdatePushStatus(): void
     {
-        $id = @$this->GetIDForIdent("PushNotify");
+        $id = @$this->GetIDForIdent("PushEnabled");
         if (!$id) {
             return;
         }
 
         $res = $this->pushGet();
-        if (!is_array($res)) {
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
             return;
         }
 
@@ -2671,18 +2671,23 @@ class Reolink extends IPSModuleStrict
 
         $enabled = null;
 
+        // V20: globaler Push-Schalter
         if (array_key_exists('enable', $push)) {
             $enabled = ((int)$push['enable'] === 1);
-        } elseif (isset($push['schedule']['enable'])) {
+        }
+
+        // Legacy/Fallback: älteres Schema
+        if ($enabled === null && isset($push['schedule']['enable'])) {
             $enabled = ((int)$push['schedule']['enable'] === 1);
         }
 
         if ($enabled === null) {
+            $this->dbg('PUSH', 'Kein Push-enable gefunden', $push);
             return;
         }
 
         if ((bool)GetValue($id) !== $enabled) {
-            $this->SetValue("PushNotify", $enabled);
+            $this->SetValue("PushEnabled", $enabled);
         }
     }
 
