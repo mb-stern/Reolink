@@ -2660,29 +2660,47 @@ class Reolink extends IPSModuleStrict
         }
 
         $res = $this->pushGet();
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+        if (!is_array($res)) {
             return;
         }
 
-        $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
+        $push = null;
+
+        // Variante 1:
+        if (isset($res[0]['value']['Push'])) {
+            $push = $res[0]['value']['Push'];
+        }
+
+        // Variante 2:
+        elseif (isset($res[0]['initial']['Push'])) {
+            $push = $res[0]['initial']['Push'];
+        }
+
+        // Variante 3:
+        elseif (isset($res['Push'])) {
+            $push = $res['Push'];
+        }
+
+        // Variante 4:
+        else {
+            $push = $res;
+        }
+
         if (!is_array($push)) {
             return;
         }
 
         $enabled = null;
 
-        // V20: globaler Push-Schalter
-        if (array_key_exists('enable', $push)) {
+        if (isset($push['enable'])) {
             $enabled = ((int)$push['enable'] === 1);
         }
-
-        // Legacy/Fallback: älteres Schema
-        if ($enabled === null && isset($push['schedule']['enable'])) {
+        elseif (isset($push['schedule']['enable'])) {
             $enabled = ((int)$push['schedule']['enable'] === 1);
         }
 
         if ($enabled === null) {
-            $this->dbg('PUSH', 'Kein Push-enable gefunden', $push);
+            $this->dbg('PUSH', 'Kein enable gefunden', $push);
             return;
         }
 
