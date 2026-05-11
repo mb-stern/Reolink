@@ -2587,77 +2587,95 @@ class Reolink extends IPSModuleStrict
 
     private function pushGet(): ?array
     {
-        foreach (['GetPushV20', 'GetPush'] as $cmd) {
-            $res = $this->apiCall([
-                [
-                    'cmd'    => $cmd,
-                    'action' => 0,
-                    'param'  => ['channel' => 0]
-                ]
-            ], 'PUSH', true);
-
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                return $res;
-            }
+        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 0);
+        if ($ver === 'unsupported') {
+            return null;
         }
 
-        return null;
+        $cmd = ($ver === 'v20') ? 'GetPushV20' : 'GetPush';
+
+        $res = $this->apiCall([
+            [
+                'cmd'    => $cmd,
+                'action' => 0,
+                'param'  => ['channel' => 0]
+            ]
+        ], 'PUSH', true);
+
+        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
 
     private function pushSet(bool $enabled): bool
     {
-        // Erst aktuellen Push-Block holen, damit Zeitplan/Tabellen erhalten bleiben
-        $current = $this->pushGet();
+        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 0);
+        if ($ver === 'unsupported') {
+            return false;
+        }
 
-        $push = [
-            'channel' => 0,
-            'enable'  => $enabled ? 1 : 0
-        ];
+        $cmd = ($ver === 'v20') ? 'SetPushV20' : 'SetPush';
 
-        if (is_array($current)) {
-            $node = $current[0]['value']['Push'] ?? $current[0]['initial']['Push'] ?? null;
+        // 20 * 20 = 400 Zeichen, Reolink-Push-Schedule-Tabelle
+        $table = str_repeat($enabled ? '1' : '0', 400);
 
-            if (is_array($node)) {
-                $push = $node;
+        if ($ver === 'v20') {
+            $payloads = [
+                // Variante 1: V20 mit schedule.enable + table
+                [
+                    'Push' => [
+                        'enable'   => 1,
+                        'schedule' => [
+                            'channel' => 0,
+                            'enable'  => $enabled ? 1 : 0,
+                            'table'   => $table
+                        ]
+                    ]
+                ],
+
+                // Variante 2: V20 mit enable direkt
+                [
+                    'Push' => [
+                        'enable'   => $enabled ? 1 : 0,
+                        'schedule' => [
+                            'channel' => 0,
+                            'enable'  => $enabled ? 1 : 0,
+                            'table'   => $table
+                        ]
+                    ]
+                ],
+            ];
+        } else {
+            $payloads = [
+                [
+                    'Push' => [
+                        'schedule' => [
+                            'enable' => $enabled ? 1 : 0,
+                            'table'  => $table
+                        ]
+                    ]
+                ],
+                [
+                    'Push' => [
+                        'enable' => $enabled ? 1 : 0
+                    ]
+                ],
+            ];
+        }
+
+        foreach ($payloads as $param) {
+            $res = $this->apiCall([
+                [
+                    'cmd'    => $cmd,
+                    'action' => 0,
+                    'param'  => $param
+                ]
+            ], 'PUSH-SET', true);
+
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                return true;
             }
         }
 
-        // Hauptschalter setzen
-        $push['channel'] = 0;
-        $push['enable']  = $enabled ? 1 : 0;
-
-        // Wichtig: Falls schedule vorhanden ist, auch dort enable setzen
-        if (isset($push['schedule']) && is_array($push['schedule'])) {
-            $push['schedule']['enable'] = $enabled ? 1 : 0;
-            $push['schedule']['channel'] = 0;
-        }
-
-        // 1. Versuch: V20
-        $res = $this->apiCall([
-            [
-                'cmd'   => 'SetPushV20',
-                'param' => [
-                    'Push' => $push
-                ]
-            ]
-        ], 'PUSH-SET-V20', true);
-
-        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-            return true;
-        }
-
-        // 2. Versuch: Legacy
-        $res = $this->apiCall([
-            [
-                'cmd'    => 'SetPush',
-                'action' => 0,
-                'param'  => [
-                    'Push' => $push
-                ]
-            ]
-        ], 'PUSH-SET', true);
-
-        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        return false;
     }
 
     public function SetPushNotify(bool $enabled): bool
