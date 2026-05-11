@@ -2654,7 +2654,7 @@ class Reolink extends IPSModuleStrict
 
     private function UpdatePushStatus(): void
     {
-        $id = @$this->GetIDForIdent("PushEnabled");
+        $id = @$this->GetIDForIdent("PushNotify");
         if (!$id) {
             return;
         }
@@ -2664,48 +2664,25 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        $push = null;
-
-        // Variante 1:
-        if (isset($res[0]['value']['Push'])) {
-            $push = $res[0]['value']['Push'];
-        }
-
-        // Variante 2:
-        elseif (isset($res[0]['initial']['Push'])) {
-            $push = $res[0]['initial']['Push'];
-        }
-
-        // Variante 3:
-        elseif (isset($res['Push'])) {
-            $push = $res['Push'];
-        }
-
-        // Variante 4:
-        else {
-            $push = $res;
-        }
-
+        $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
         if (!is_array($push)) {
             return;
         }
 
         $enabled = null;
 
-        if (isset($push['enable'])) {
+        if (array_key_exists('enable', $push)) {
             $enabled = ((int)$push['enable'] === 1);
-        }
-        elseif (isset($push['schedule']['enable'])) {
+        } elseif (isset($push['schedule']['enable'])) {
             $enabled = ((int)$push['schedule']['enable'] === 1);
         }
 
         if ($enabled === null) {
-            $this->dbg('PUSH', 'Kein enable gefunden', $push);
             return;
         }
 
         if ((bool)GetValue($id) !== $enabled) {
-            $this->SetValue("PushEnabled", $enabled);
+            $this->SetValue("PushNotify", $enabled);
         }
     }
 
