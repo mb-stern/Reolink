@@ -2654,13 +2654,13 @@ class Reolink extends IPSModuleStrict
 
     private function UpdatePushStatus(): void
     {
-        $id = @$this->GetIDForIdent("PushNotify");
+        $id = @$this->GetIDForIdent("PushEnabled");
         if (!$id) {
             return;
         }
 
         $res = $this->pushGet();
-        if (!is_array($res)) {
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
             return;
         }
 
@@ -2669,20 +2669,27 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        $enabled = null;
+        // Achtung:
+        // Bei dieser Kamera bleibt enable offenbar auch bei "Push aus" auf 1.
+        // Der echte Aus-Zustand ist daran erkennbar, dass der Schedule nur 0 enthält.
+        $globalEnable = ((int)($push['enable'] ?? 0) === 1);
 
-        if (array_key_exists('enable', $push)) {
-            $enabled = ((int)$push['enable'] === 1);
-        } elseif (isset($push['schedule']['enable'])) {
-            $enabled = ((int)$push['schedule']['enable'] === 1);
+        $table = $push['schedule']['table'] ?? [];
+        $hasActiveSchedule = false;
+
+        if (is_array($table)) {
+            foreach ($table as $row) {
+                if (is_string($row) && strpos($row, '1') !== false) {
+                    $hasActiveSchedule = true;
+                    break;
+                }
+            }
         }
 
-        if ($enabled === null) {
-            return;
-        }
+        $enabled = $globalEnable && $hasActiveSchedule;
 
         if ((bool)GetValue($id) !== $enabled) {
-            $this->SetValue("PushNotify", $enabled);
+            $this->SetValue("PushEnabled", $enabled);
         }
     }
 
