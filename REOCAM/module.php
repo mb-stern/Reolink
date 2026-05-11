@@ -2607,75 +2607,38 @@ class Reolink extends IPSModuleStrict
 
     private function pushSet(bool $enabled): bool
     {
-        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 0);
-        if ($ver === 'unsupported') {
+        $current = $this->pushGet();
+        if (!is_array($current)) {
             return false;
         }
 
-        $cmd = ($ver === 'v20') ? 'SetPushV20' : 'SetPush';
-
-        // 20 * 20 = 400 Zeichen, Reolink-Push-Schedule-Tabelle
-        $table = str_repeat($enabled ? '1' : '0', 400);
-
-        if ($ver === 'v20') {
-            $payloads = [
-                // Variante 1: V20 mit schedule.enable + table
-                [
-                    'Push' => [
-                        'enable'   => 1,
-                        'schedule' => [
-                            'channel' => 0,
-                            'enable'  => $enabled ? 1 : 0,
-                            'table'   => $table
-                        ]
-                    ]
-                ],
-
-                // Variante 2: V20 mit enable direkt
-                [
-                    'Push' => [
-                        'enable'   => $enabled ? 1 : 0,
-                        'schedule' => [
-                            'channel' => 0,
-                            'enable'  => $enabled ? 1 : 0,
-                            'table'   => $table
-                        ]
-                    ]
-                ],
-            ];
-        } else {
-            $payloads = [
-                [
-                    'Push' => [
-                        'schedule' => [
-                            'enable' => $enabled ? 1 : 0,
-                            'table'  => $table
-                        ]
-                    ]
-                ],
-                [
-                    'Push' => [
-                        'enable' => $enabled ? 1 : 0
-                    ]
-                ],
-            ];
+        $push = $current[0]['value']['Push'] ?? $current[0]['initial']['Push'] ?? null;
+        if (!is_array($push)) {
+            return false;
         }
 
-        foreach ($payloads as $param) {
-            $res = $this->apiCall([
-                [
-                    'cmd'    => $cmd,
-                    'action' => 0,
-                    'param'  => $param
-                ]
-            ], 'PUSH-SET', true);
+        $value = $enabled ? '1' : '0';
+        $len = 168; // oft 7 Tage * 24 Stunden
 
-            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                return true;
+        if (isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
+            foreach ($push['schedule']['table'] as $key => $table) {
+                $push['schedule']['table'][$key] = str_repeat($value, strlen((string)$table));
             }
         }
 
-        return false;
+        $push['enable'] = $enabled ? 1 : 0;
+        $push['schedule']['channel'] = 0;
+
+        $res = $this->apiCall([
+            [
+                'cmd'   => 'SetPushV20',
+                'param' => [
+                    'Push' => $push
+                ]
+            ]
+        ], 'PUSH-SET-V20');
+
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     public function SetPushNotify(bool $enabled): bool
