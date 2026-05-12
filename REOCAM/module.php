@@ -3322,42 +3322,38 @@ class Reolink extends IPSModuleStrict
     public function SetMdAlarmEnabled(bool $enabled): bool
     {
         $state = $this->sensitivityGet();
-        if (!$state) {
-            return false;
-        }
 
-        $segments = $state['segments'];
-
-        if (empty($segments)) {
-            $segments = [[
-                'id'          => 0,
-                'beginHour'   => 0,
-                'beginMin'    => 0,
-                'endHour'     => 23,
-                'endMin'      => 59,
-                'enable'      => $enabled ? 1 : 0,
-                'priority'    => 0,
-                'sensitivity' => (int)($state['sensDef'] ?? 12)
-            ]];
-        } else {
-            foreach ($segments as &$s) {
-                $s['enable'] = $enabled ? 1 : 0;
-            }
-            unset($s);
+        $sensDef = 12;
+        if (is_array($state) && isset($state['sensDef'])) {
+            $sensDef = (int)$state['sensDef'];
         }
 
         $payload = [[
-            'cmd'   => 'SetMdAlarm',
-            'action'=> 0,
-            'param' => [
+            'cmd'    => 'SetMdAlarm',
+            'action' => 0,
+            'param'  => [
                 'MdAlarm' => [
+                    'channel'    => 0,
                     'type'       => 'md',
                     'useNewSens' => 1,
-                    'newSens'    => [
-                        'sensDef' => (int)($state['sensDef'] ?? 12),
-                        'sens'    => $segments
+                    'newSens'   => [
+                        'sensDef' => $sensDef,
+                        'sens'    => [[
+                            'id'          => 0,
+                            'beginHour'   => 0,
+                            'beginMin'    => 0,
+                            'endHour'     => 23,
+                            'endMin'      => 59,
+                            'enable'      => $enabled ? 1 : 0,
+                            'priority'    => 0,
+                            'sensitivity' => $sensDef
+                        ]]
                     ],
-                    'channel'    => 0
+                    'scope' => [
+                        'cols'  => 60,
+                        'rows'  => 33,
+                        'table' => str_repeat('1', 60 * 33)
+                    ]
                 ]
             ]
         ]];
