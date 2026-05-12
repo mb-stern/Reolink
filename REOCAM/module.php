@@ -3321,29 +3321,43 @@ class Reolink extends IPSModuleStrict
 
     public function SetMdAlarmEnabled(bool $enabled): bool
     {
-        $enableInt = $enabled ? 1 : 0;
+        $state = $this->sensitivityGet();
+        if (!$state) {
+            return false;
+        }
+
+        $segments = $state['segments'];
+
+        if (empty($segments)) {
+            $segments = [[
+                'id'          => 0,
+                'beginHour'   => 0,
+                'beginMin'    => 0,
+                'endHour'     => 23,
+                'endMin'      => 59,
+                'enable'      => $enabled ? 1 : 0,
+                'priority'    => 0,
+                'sensitivity' => (int)($state['sensDef'] ?? 12)
+            ]];
+        } else {
+            foreach ($segments as &$s) {
+                $s['enable'] = $enabled ? 1 : 0;
+            }
+            unset($s);
+        }
 
         $payload = [[
             'cmd'   => 'SetMdAlarm',
+            'action'=> 0,
             'param' => [
                 'MdAlarm' => [
-                    'channel'    => 0,
                     'type'       => 'md',
-                    'scope'      => [
-                        'cols'  => 60,
-                        'rows'  => 33,
-                        'table' => str_repeat('1', 60 * 33)
-                    ],
                     'useNewSens' => 1,
-                    'newSens'   => [
-                        'sensDef' => 12,
-                        'sens'    => [
-                            ['id'=>0, 'beginHour'=>0,  'beginMin'=>0, 'endHour'=>6,  'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
-                            ['id'=>1, 'beginHour'=>6,  'beginMin'=>0, 'endHour'=>12, 'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
-                            ['id'=>2, 'beginHour'=>12, 'beginMin'=>0, 'endHour'=>18, 'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
-                            ['id'=>3, 'beginHour'=>18, 'beginMin'=>0, 'endHour'=>23, 'endMin'=>59, 'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
-                        ]
-                    ]
+                    'newSens'    => [
+                        'sensDef' => (int)($state['sensDef'] ?? 12),
+                        'sens'    => $segments
+                    ],
+                    'channel'    => 0
                 ]
             ]
         ]];
