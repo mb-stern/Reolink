@@ -3321,38 +3321,57 @@ class Reolink extends IPSModuleStrict
 
     public function SetMdAlarmEnabled(bool $enabled): bool
     {
-        $state = $this->sensitivityGet();
+        $current = $this->apiCall([[
+            'cmd'    => 'GetMdAlarm',
+            'action' => 1,
+            'param'  => ['channel' => 0]
+        ]], 'MDALARM-GET');
 
-        $sensDef = 12;
-        if (is_array($state) && isset($state['sensDef'])) {
-            $sensDef = (int)$state['sensDef'];
+        $md = [];
+        if (is_array($current) && (($current[0]['code'] ?? -1) === 0)) {
+            $md = $current[0]['value']['MdAlarm']
+            ?? $current[0]['initial']['MdAlarm']
+            ?? [];
+        }
+
+        $scope = $md['scope'] ?? [
+            'cols'  => 60,
+            'rows'  => 33,
+            'table' => str_repeat('1', 60 * 33)
+        ];
+
+        $cols = (int)($scope['cols'] ?? 60);
+        $rows = (int)($scope['rows'] ?? 33);
+
+        if (empty($scope['table']) || strlen((string)$scope['table']) !== ($cols * $rows)) {
+            $scope['table'] = str_repeat('1', $cols * $rows);
+        }
+
+        $sensDef = (int)($md['newSens']['sensDef'] ?? 12);
+        if ($sensDef < 1 || $sensDef > 50) {
+            $sensDef = 12;
         }
 
         $payload = [[
-            'cmd'    => 'SetMdAlarm',
-            'action' => 0,
-            'param'  => [
+            'cmd'   => 'SetMdAlarm',
+            'param' => [
                 'MdAlarm' => [
                     'channel'    => 0,
                     'type'       => 'md',
+                    'scope'      => $scope,
                     'useNewSens' => 1,
                     'newSens'   => [
                         'sensDef' => $sensDef,
-                        'sens'    => [[
+                        'sens'    => [
                             'id'          => 0,
                             'beginHour'   => 0,
                             'beginMin'    => 0,
                             'endHour'     => 23,
                             'endMin'      => 59,
-                            'enable'      => $enabled ? 1 : 0,
                             'priority'    => 0,
+                            'enable'      => $enabled ? 1 : 0,
                             'sensitivity' => $sensDef
-                        ]]
-                    ],
-                    'scope' => [
-                        'cols'  => 60,
-                        'rows'  => 33,
-                        'table' => str_repeat('1', 60 * 33)
+                        ]
                     ]
                 ]
             ]
@@ -3364,6 +3383,8 @@ class Reolink extends IPSModuleStrict
 
         if ($ok) {
             $this->UpdateMdAlarmStatus();
+        } else {
+            $this->dbg('MDALARM-SET', 'SetMdAlarm fehlgeschlagen', $res);
         }
 
         return $ok;
@@ -3376,17 +3397,36 @@ class Reolink extends IPSModuleStrict
             return;
         }
 
-        $state = $this->sensitivityGet();
-        if (!$state || empty($state['segments'])) {
+        $res = $this->apiCall([[
+            'cmd'    => 'GetMdAlarm',
+            'action' => 1,
+            'param'  => ['channel' => 0]
+        ]], 'MDALARM-GET');
+
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
             return;
         }
 
+        $md = $res[0]['value']['MdAlarm']
+        ?? $res[0]['initial']['MdAlarm']
+        ?? null;
+
+        if (!is_array($md)) {
+            return;
+        }
+
+        $sens = $md['newSens']['sens'] ?? [];
+
         $enabled = false;
 
-        foreach ($state['segments'] as $segment) {
-            if ((int)($segment['enable'] ?? 1) === 1) {
-                $enabled = true;
-                break;
+        if (isset($sens['enable'])) {
+            $enabled = ((int)$sens['enable'] === 1);
+        } elseif (is_array($sens)) {
+            foreach ($sens as $segment) {
+                if (is_array($segment) && ((int)($segment['enable'] ?? 0) === 1)) {
+                    $enabled = true;
+                    break;
+                }
             }
         }
 
