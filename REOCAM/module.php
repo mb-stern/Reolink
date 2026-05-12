@@ -3321,66 +3321,28 @@ class Reolink extends IPSModuleStrict
 
     public function SetMdAlarmEnabled(bool $enabled): bool
     {
-        $enableInt  = $enabled ? 1 : 0;
-        $scopeTable = str_repeat('1', 60 * 33);
+        $enableInt = $enabled ? 1 : 0;
 
         $payload = [[
-            'cmd'    => 'SetMdAlarm',
-            'action' => 0,
-            'param'  => [
+            'cmd'   => 'SetMdAlarm',
+            'param' => [
                 'MdAlarm' => [
                     'channel'    => 0,
                     'type'       => 'md',
-                    'useNewSens' => 1,
-                    'newSens'   => [
-                        'sens' => [
-                            [
-                                'id'          => 0,
-                                'beginHour'   => 0,
-                                'beginMin'    => 0,
-                                'endHour'     => 6,
-                                'endMin'      => 0,
-                                'enable'      => $enableInt,
-                                'priority'    => 0,
-                                'sensitivity' => 12
-                            ],
-                            [
-                                'id'          => 1,
-                                'beginHour'   => 6,
-                                'beginMin'    => 0,
-                                'endHour'     => 12,
-                                'endMin'      => 0,
-                                'enable'      => $enableInt,
-                                'priority'    => 0,
-                                'sensitivity' => 12
-                            ],
-                            [
-                                'id'          => 2,
-                                'beginHour'   => 12,
-                                'beginMin'    => 0,
-                                'endHour'     => 18,
-                                'endMin'      => 0,
-                                'enable'      => $enableInt,
-                                'priority'    => 0,
-                                'sensitivity' => 12
-                            ],
-                            [
-                                'id'          => 3,
-                                'beginHour'   => 18,
-                                'beginMin'    => 0,
-                                'endHour'     => 23,
-                                'endMin'      => 59,
-                                'enable'      => $enableInt,
-                                'priority'    => 0,
-                                'sensitivity' => 12
-                            ]
-                        ],
-                        'sensDef' => 12
-                    ],
-                    'scope' => [
+                    'scope'      => [
                         'cols'  => 60,
                         'rows'  => 33,
-                        'table' => $scopeTable
+                        'table' => str_repeat('1', 60 * 33)
+                    ],
+                    'useNewSens' => 1,
+                    'newSens'   => [
+                        'sensDef' => 12,
+                        'sens'    => [
+                            ['id'=>0, 'beginHour'=>0,  'beginMin'=>0, 'endHour'=>6,  'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                            ['id'=>1, 'beginHour'=>6,  'beginMin'=>0, 'endHour'=>12, 'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                            ['id'=>2, 'beginHour'=>12, 'beginMin'=>0, 'endHour'=>18, 'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                            ['id'=>3, 'beginHour'=>18, 'beginMin'=>0, 'endHour'=>23, 'endMin'=>59, 'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                        ]
                     ]
                 ]
             ]
@@ -3392,8 +3354,6 @@ class Reolink extends IPSModuleStrict
 
         if ($ok) {
             $this->UpdateMdAlarmStatus();
-        } else {
-            $this->dbg('MDALARM-SET', 'SetMdAlarm fehlgeschlagen', $res);
         }
 
         return $ok;
