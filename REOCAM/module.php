@@ -3319,45 +3319,32 @@ class Reolink extends IPSModuleStrict
         return $this->sensitivitySet($level);
     }
 
-    public function SetMdAlarmEnabled(bool $enabled): bool
+   public function SetMdAlarmEnabled(bool $enabled): bool
     {
-        $state = $this->sensitivityGet();
-        if (!$state) {
-            return false;
-        }
-
-        $segments = $state['segments'];
-
-        if (empty($segments)) {
-            $segments = [[
-                'id'          => 0,
-                'beginHour'   => 0,
-                'beginMin'    => 0,
-                'endHour'     => 23,
-                'endMin'      => 59,
-                'enable'      => $enabled ? 1 : 0,
-                'priority'    => 0,
-                'sensitivity' => (int)($state['sensDef'] ?? 12)
-            ]];
-        } else {
-            foreach ($segments as &$s) {
-                $s['enable'] = $enabled ? 1 : 0;
-            }
-            unset($s);
-        }
+        $enableInt  = $enabled ? 1 : 0;
+        $scopeTable = str_repeat('1', 60 * 33);
 
         $payload = [[
-            'cmd'   => 'SetMdAlarm',
-            'action'=> 0,
-            'param' => [
+            'cmd'    => 'SetMdAlarm',
+            'action' => 0,
+            'param'  => [
                 'MdAlarm' => [
-                    'type'       => 'md',
+                    'channel'    => 0,
                     'useNewSens' => 1,
-                    'newSens'    => [
-                        'sensDef' => (int)($state['sensDef'] ?? 12),
-                        'sens'    => $segments
+                    'newSens'   => [
+                        'sens' => [
+                            ['id'=>0, 'beginHour'=>0,  'beginMin'=>0, 'endHour'=>6,  'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                            ['id'=>1, 'beginHour'=>6,  'beginMin'=>0, 'endHour'=>12, 'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                            ['id'=>2, 'beginHour'=>12, 'beginMin'=>0, 'endHour'=>18, 'endMin'=>0,  'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                            ['id'=>3, 'beginHour'=>18, 'beginMin'=>0, 'endHour'=>23, 'endMin'=>59, 'enable'=>$enableInt, 'priority'=>0, 'sensitivity'=>12],
+                        ],
+                        'sensDef' => 12
                     ],
-                    'channel'    => 0
+                    'scope' => [
+                        'cols'  => 60,
+                        'rows'  => 33,
+                        'table' => $scopeTable
+                    ]
                 ]
             ]
         ]];
@@ -3366,8 +3353,13 @@ class Reolink extends IPSModuleStrict
 
         $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
 
+        $this->dbg('MDALARM-SET', 'Antwort', [
+            'ok' => $ok,
+            'response' => $res
+        ]);
+
         if ($ok) {
-            $this->UpdateMdAlarmStatus();
+            $this->SetValue('MdAlarmEnabled', $enabled);
         }
 
         return $ok;
