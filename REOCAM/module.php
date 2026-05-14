@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
+    // Refactoring-Version: API zentralisiert, AI/AutoTracking zentral gemappt (v6)
+
     /**
      * Zentrale API-Definitionen.
      * versioned=true: V20/Legacy wird über apiProbe() erkannt.
@@ -141,6 +143,12 @@ class Reolink extends IPSModuleStrict
         'ir' => [
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
+        'aiCfg' => [
+            'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
+            'AutoTrackPerson'  => ['paths' => [['trackType', 'people']],     'type' => 'bool'],
+            'AutoTrackVehicle' => ['paths' => [['trackType', 'vehicle']],    'type' => 'bool'],
+            'AutoTrackAnimal'  => ['paths' => [['trackType', 'dog_cat']],    'type' => 'bool'],
+        ],
     ];
 
     /**
@@ -170,6 +178,12 @@ class Reolink extends IPSModuleStrict
         'ir' => [
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
+        'aiCfg' => [
+            'AutoTracking'     => ['method' => 'apiWriteAiCfgMasterPayloads'],
+            'AutoTrackPerson'  => ['method' => 'apiWriteAiCfgPersonPayloads'],
+            'AutoTrackVehicle' => ['method' => 'apiWriteAiCfgVehiclePayloads'],
+            'AutoTrackAnimal'  => ['method' => 'apiWriteAiCfgAnimalPayloads'],
+        ],
     ];
 
     /**
@@ -187,6 +201,10 @@ class Reolink extends IPSModuleStrict
         'SirenEnabled'  => ['domain' => 'alarm',    'type' => 'bool'],
         'RecEnabled'    => ['domain' => 'record',   'type' => 'bool'],
         'IRLights'      => ['domain' => 'ir',       'type' => 'int'],
+        'AutoTracking'  => ['domain' => 'aiCfg',    'type' => 'bool'],
+        'AutoTrackPerson'  => ['domain' => 'aiCfg', 'type' => 'bool'],
+        'AutoTrackVehicle' => ['domain' => 'aiCfg', 'type' => 'bool'],
+        'AutoTrackAnimal'  => ['domain' => 'aiCfg', 'type' => 'bool'],
     ];
 
 
@@ -204,7 +222,7 @@ class Reolink extends IPSModuleStrict
         'Siren'        => ['property' => 'EnableApiSiren',        'domain' => 'alarm'],
         'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
         'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
-        'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'method' => 'UpdateAutoTrackingStatus'],
+        'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'domain' => 'aiCfg'],
     ];
 
     public function Create(): void
@@ -390,33 +408,6 @@ class Reolink extends IPSModuleStrict
 
             case "Push_Besucher":
                 $this->SetValue("Push_Besucher", (bool)$Value);
-                break;
-
-            case "AutoTracking":
-                $ok = $this->SetAutoTracking((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdateAutoTrackingStatus();
-                }
-                break;
-
-            case "AutoTrackPerson":
-                if (!$this->SetAutoTrackingType('people', (bool)$Value)) {
-                    $this->UpdateAutoTrackingStatus();
-                }
-                break;
-
-            case "AutoTrackVehicle":
-                if (!$this->SetAutoTrackingType('vehicle', (bool)$Value)) {
-                    $this->UpdateAutoTrackingStatus();
-                }
-                break;
-
-            case "AutoTrackAnimal":
-                if (!$this->SetAutoTrackingType('dog_cat', (bool)$Value)) {
-                    $this->UpdateAutoTrackingStatus();
-                }
                 break;
 
             default:
@@ -1933,7 +1924,7 @@ class Reolink extends IPSModuleStrict
             }
             IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
 
-            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 5);
             $this->EnableAction("MdSensitivity");
         } else {
             $this->UnregisterVariable("MdSensitivity");
@@ -1941,7 +1932,7 @@ class Reolink extends IPSModuleStrict
 
         // -------- Sirene--------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
+            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 6);
             $this->EnableAction("SirenEnabled");
 
             if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
@@ -1956,7 +1947,7 @@ class Reolink extends IPSModuleStrict
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 4,   "4× abspielen",    "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 5,   "5× abspielen",    "", -1);
             
-            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 5);
+            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 6);
             $this->EnableAction("SirenAction");
 
         } else {
@@ -1966,7 +1957,7 @@ class Reolink extends IPSModuleStrict
 
         // -------- Recording / Schedule --------
         if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 6);
+            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 7);
             $this->EnableAction("RecEnabled");
         } else {
             $this->UnregisterVariable("RecEnabled");
@@ -1974,16 +1965,16 @@ class Reolink extends IPSModuleStrict
 
         // -------- Auto-Tracking --------
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 4);
             $this->EnableAction("AutoTracking");
 
-            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 4);
             $this->EnableAction("AutoTrackPerson");
 
-            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 4);
             $this->EnableAction("AutoTrackVehicle");
 
-            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 4);
             $this->EnableAction("AutoTrackAnimal");
         } else {
             $this->UnregisterVariable("AutoTracking");
@@ -3583,26 +3574,16 @@ class Reolink extends IPSModuleStrict
     }
 
     // ---------------------------
-    // Auto-Tracking
+    // Auto-Tracking / AI-Konfiguration
     // ---------------------------
 
-    private function aiCfgCall(?bool $enabled = null, ?string $trackKey = null, ?bool $trackValue = null): ?array
+    private function apiBuildAiCfgPayload(?bool $masterEnabled = null, ?string $trackKey = null, ?bool $trackValue = null): array
     {
-        if ($enabled === null && $trackKey === null) {
-            return $this->apiFeatureGet('aiCfg', 'AICFG');
-        }
+        $node = $this->apiFeatureNodeGet('aiCfg', 'AICFG') ?? [];
 
-        $current = $this->aiCfgCall();
-        $node = is_array($current) ? ($this->apiExtractNode($current, 'aiCfg') ?? []) : [];
-
-        $masterEnabled = $enabled;
         if ($masterEnabled === null) {
             $masterEnabled = ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1);
         }
-
-        $aiDetectType = is_array($node['AiDetectType'] ?? null)
-            ? $node['AiDetectType']
-            : ['people' => 1, 'vehicle' => 1, 'dog_cat' => 1, 'face' => 0];
 
         $trackType = is_array($node['trackType'] ?? null)
             ? $node['trackType']
@@ -3612,63 +3593,55 @@ class Reolink extends IPSModuleStrict
             $trackType[$trackKey] = $trackValue ? 1 : 0;
         }
 
-        $payload = [
+        return [
             'channel'      => 0,
             'aiTrack'      => $masterEnabled ? 1 : 0,
             'bSmartTrack'  => $masterEnabled ? 1 : 0,
             'trackType'    => $trackType,
-            'AiDetectType' => $aiDetectType
+            'AiDetectType' => is_array($node['AiDetectType'] ?? null)
+                ? $node['AiDetectType']
+                : ['people' => 1, 'vehicle' => 1, 'dog_cat' => 1, 'face' => 0],
         ];
+    }
 
-        return $this->apiFeatureSet('aiCfg', $payload, 'AICFG-SET') ? $this->apiFeatureGet('aiCfg', 'AICFG') : null;
+    private function apiWriteAiCfgMasterPayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload((bool)$value)];
+    }
+
+    private function apiWriteAiCfgPersonPayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload(null, 'people', (bool)$value)];
+    }
+
+    private function apiWriteAiCfgVehiclePayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload(null, 'vehicle', (bool)$value)];
+    }
+
+    private function apiWriteAiCfgAnimalPayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload(null, 'dog_cat', (bool)$value)];
     }
 
     public function SetAutoTracking(bool $enabled): bool
     {
-        $ok = $this->aiCfgCall($enabled) !== null;
-
-        if ($ok) {
-            $this->UpdateAutoTrackingStatus();
-        }
-
-        return $ok;
+        return $this->apiWriteMappedValue('aiCfg', 'AutoTracking', $enabled, 'AICFG-SET');
     }
 
     public function SetAutoTrackingType(string $trackKey, bool $enabled): bool
     {
-        $ok = $this->aiCfgCall(null, $trackKey, $enabled) !== null;
-
-        if ($ok) {
-            $this->UpdateAutoTrackingStatus();
-        }
-
-        return $ok;
+        return match ($trackKey) {
+            'people'  => $this->apiWriteMappedValue('aiCfg', 'AutoTrackPerson', $enabled, 'AICFG-SET'),
+            'vehicle' => $this->apiWriteMappedValue('aiCfg', 'AutoTrackVehicle', $enabled, 'AICFG-SET'),
+            'dog_cat' => $this->apiWriteMappedValue('aiCfg', 'AutoTrackAnimal', $enabled, 'AICFG-SET'),
+            default   => false,
+        };
     }
 
     private function UpdateAutoTrackingStatus(): void
     {
-        $res = $this->aiCfgCall();
-        if (!is_array($res)) {
-            return;
-        }
-
-        $node = $this->apiExtractNode($res, 'aiCfg');
-        if (!is_array($node)) {
-            return;
-        }
-
-        $enabled = (
-            ((int)($node['aiTrack'] ?? 0) === 1) ||
-            ((int)($node['bSmartTrack'] ?? 0) === 1)
-        );
-
-        $this->SetValueIfChanged("AutoTracking", $enabled);
-
-        $trackType = is_array($node['trackType'] ?? null) ? $node['trackType'] : [];
-
-        $this->SetValueIfChanged("AutoTrackPerson",  ((int)($trackType['people']  ?? 0) === 1));
-        $this->SetValueIfChanged("AutoTrackVehicle", ((int)($trackType['vehicle'] ?? 0) === 1));
-        $this->SetValueIfChanged("AutoTrackAnimal",  ((int)($trackType['dog_cat'] ?? 0) === 1));
+        $this->apiUpdateMappedFeature('aiCfg', 'AICFG');
     }
 
     private function SetValueIfChanged(string $ident, mixed $value): void
