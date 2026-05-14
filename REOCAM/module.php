@@ -10,6 +10,8 @@ class Reolink extends IPSModuleStrict
      */
     private const API_DEFS = [
         'email' => [
+            'prop'       => 'EnableApiEmail',
+            'label'      => 'E-Mail Alarm',
             'getV20'     => 'GetEmailV20',
             'setV20'     => 'SetEmailV20',
             'getLegacy'  => 'GetEmail',
@@ -21,6 +23,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => true,
         ],
         'ftp' => [
+            'prop'       => 'EnableApiFTP',
+            'label'      => 'FTP Upload',
             'getV20'     => 'GetFtpV20',
             'setV20'     => 'SetFtpV20',
             'getLegacy'  => 'GetFtp',
@@ -32,6 +36,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => true,
         ],
         'record' => [
+            'prop'       => 'EnableApiRecord',
+            'label'      => 'Aufnahme / Record',
             'getV20'     => 'GetRecV20',
             'setV20'     => 'SetRecV20',
             'getLegacy'  => 'GetRec',
@@ -43,6 +49,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => true,
         ],
         'alarm' => [
+            'prop'       => 'EnableApiSiren',
+            'label'      => 'Sirene / AudioAlarm',
             'getV20'     => 'GetAudioAlarmV20',
             'setV20'     => 'SetAudioAlarmV20',
             'getLegacy'  => 'GetAudioAlarm',
@@ -54,6 +62,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => true,
         ],
         'whiteLed' => [
+            'prop'       => 'EnableApiWhiteLed',
+            'label'      => 'Spotlight / Weißlicht',
             'get'        => 'GetWhiteLed',
             'set'        => 'SetWhiteLed',
             'node'       => 'WhiteLed',
@@ -63,6 +73,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => false,
         ],
         'ir' => [
+            'prop'       => 'EnableApiIR',
+            'label'      => 'IR-Beleuchtung',
             'get'        => 'GetIrLights',
             'set'        => 'SetIrLights',
             'node'       => 'IrLights',
@@ -73,6 +85,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => false,
         ],
         'sensitivity' => [
+            'prop'       => 'EnableApiSensitivity',
+            'label'      => 'Sensitivität',
             'getV20'     => 'GetMdAlarm',
             'setV20'     => 'SetMdAlarm',
             'getLegacy'  => 'GetAlarm',
@@ -86,6 +100,8 @@ class Reolink extends IPSModuleStrict
             'versioned'  => true,
         ],
         'aiCfg' => [
+            'prop'       => 'EnableApiAutoTracking',
+            'label'      => 'Auto-Tracking',
             'get'        => 'GetAiCfg',
             'set'        => 'SetAiCfg',
             'node'       => null,
@@ -94,6 +110,24 @@ class Reolink extends IPSModuleStrict
             'paramGet'   => ['channel' => 0],
             'versioned'  => false,
         ],
+    ];
+
+
+
+    /**
+     * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
+     * im 2-Sekunden-Round-Robin ausgeführt wird.
+     */
+    private const API_POLL_MAP = [
+        'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'method' => 'UpdateWhiteLedStatus'],
+        'Email'        => ['property' => 'EnableApiEmail',        'method' => 'UpdateEmailStatus'],
+        'PTZ'          => ['property' => 'EnableApiPTZ',          'method' => 'CreateOrUpdatePTZHtml', 'args' => [false]],
+        'FTP'          => ['property' => 'EnableApiFTP',          'method' => 'UpdateFtpStatus'],
+        'Sensitivity'  => ['property' => 'EnableApiSensitivity',  'method' => 'UpdateMdSensitivityStatus'],
+        'Siren'        => ['property' => 'EnableApiSiren',        'method' => 'UpdateSirenStatus'],
+        'Record'       => ['property' => 'EnableApiRecord',       'method' => 'UpdateRecStatus'],
+        'IR'           => ['property' => 'EnableApiIR',           'method' => 'UpdateIrStatus'],
+        'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'method' => 'UpdateAutoTrackingStatus'],
     ];
 
     public function Create(): void
@@ -208,22 +242,7 @@ class Reolink extends IPSModuleStrict
             $this->SetTimerInterval("PollingTimer", 0);
         }
 
-        // API-Schalter
-        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
-        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
-        $enableAutoTracking = $this->ReadPropertyBoolean("EnableApiAutoTracking");
-
-        $anyFeatureOn = (
-            $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
-            $enableFTP || $enableSensitivity || $enableSiren || $enableRecord ||
-            $enableAutoTracking
-        );
+        $anyFeatureOn = $this->hasAnyApiFeatureEnabled();
 
 
         $this->CreateOrUpdateApiVariablesUnified();
@@ -1110,73 +1129,61 @@ class Reolink extends IPSModuleStrict
     // API-Fähigkeiten für Formular & Cache
     // ---------------------------
 
+    private function apiAbilitySupportsDomain(string $domain, array $ability): bool
+    {
+        $chn = $ability['abilityChn'][0] ?? [];
+
+        return match ($domain) {
+            'whiteLed'    => (($chn['floodLight']['ver'] ?? 0) > 0) || (($chn['whiteLed']['ver'] ?? 0) > 0),
+            'ir'          => (($chn['irLights']['ver'] ?? 0) > 0) || (($chn['led']['ver'] ?? 0) > 0),
+            'email'       => (int)($ability['supportEmailEnable'] ?? 0) === 1,
+            'ftp'         => (($chn['ftp']['ver'] ?? 0) > 0),
+            'sensitivity' => (($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0),
+            'alarm'       => (($chn['AudioAlarm']['ver'] ?? 0) > 0) || (($chn['audioAlarm']['ver'] ?? 0) > 0),
+            'record'      => (($chn['recCfg']['ver'] ?? 0) > 0),
+            'aiCfg'       => (($chn['aiTrack']['ver'] ?? 0) > 0) || (($chn['aiTrackDogCat']['ver'] ?? 0) > 0),
+            'ptz'         => (($chn['ptz']['ver'] ?? 0) > 0),
+            default       => true,
+        };
+    }
+
+    private function apiProbeDomain(string $domain): string
+    {
+        $d = $this->apiDef($domain);
+        if ($d === null) {
+            return 'unsupported';
+        }
+
+        if (empty($d['versioned'])) {
+            $res = $this->apiFeatureGet($domain, strtoupper($domain));
+            return is_array($res) ? 'native' : 'unsupported';
+        }
+
+        return $this->apiProbe($domain, $d['getV20'], $d['getLegacy'], (int)$d['actionGet']);
+    }
+
     private function getApiSupportFlags(): array
     {
         $ability = $this->apiGetAbilityCached();
         if (empty($ability)) {
-            // Noch keine Ability (kein Token / keine Verbindung) -> nichts einschränken
             return [];
         }
 
-        $chn = $ability['abilityChn'][0] ?? [];
-
-        // Grobe Feature-Erkennung aus Ability
-        $support = [
-            // Spotlight / Weißlicht-LED
-            'EnableApiWhiteLed' => (($chn['floodLight']['ver'] ?? 0) > 0)
-                                || (($chn['whiteLed']['ver'] ?? 0) > 0),
-
-            // IR-Licht
-            'EnableApiIR'       => (($chn['irLights']['ver'] ?? 0) > 0)
-                                || (($chn['led']['ver'] ?? 0) > 0),
-
-            // E-Mail-Alarm
-            'EnableApiEmail'    => (int)($ability['supportEmailEnable'] ?? 0) === 1,
-
-            // FTP
-            'EnableApiFTP'      => (($chn['ftp']['ver'] ?? 0) > 0),
-
-            // Motion-Detection / Sensitivity
-            'EnableApiSensitivity' =>
-                                    (($chn['alarmMd']['ver'] ?? 0) > 0)
-                                || (($chn['md']['ver'] ?? 0) > 0),
-
-            // Sirene / AudioAlarm
-            'EnableApiSiren'    => (($chn['AudioAlarm']['ver'] ?? 0) > 0)
-                                || (($chn['audioAlarm']['ver'] ?? 0) > 0),
-
-            // Recording
-            'EnableApiRecord'   => (($chn['recCfg']['ver'] ?? 0) > 0),
-
-            // PTZ
-            'EnableApiPTZ'      => (($chn['ptz']['ver'] ?? 0) > 0),
-        ];
-
-        // Feincheck: apiProbe pro Domain (füllt auch deinen ApiVersionCache!)
-        $probeMap = [
-            'EnableApiEmail'  => ['domain' => 'email',  'cmdV20' => 'GetEmailV20',      'cmdLegacy' => 'GetEmail',       'action' => 0],
-            'EnableApiFTP'    => ['domain' => 'ftp',    'cmdV20' => 'GetFtpV20',        'cmdLegacy' => 'GetFtp',         'action' => 0],
-            'EnableApiRecord' => ['domain' => 'record', 'cmdV20' => 'GetRecV20',        'cmdLegacy' => 'GetRec',         'action' => 1],
-            'EnableApiSiren'  => ['domain' => 'alarm',  'cmdV20' => 'GetAudioAlarmV20', 'cmdLegacy' => 'GetAudioAlarm',  'action' => 1],
-            // WhiteLed nutzt bei dir sowieso nur GetWhiteLed, apiProbe ist hier im Prinzip nur "ping"
-            'EnableApiWhiteLed' => ['domain' => 'spot', 'cmdV20' => 'GetWhiteLed',      'cmdLegacy' => 'GetWhiteLed',    'action' => 0],
-        ];
-
-        foreach ($probeMap as $propName => $p) {
-            // Wenn Ability schon sagt „geht nicht“, spar dir den Probe
-            if (isset($support[$propName]) && !$support[$propName]) {
+        $support = [];
+        foreach (self::API_DEFS as $domain => $d) {
+            $prop = $d['prop'] ?? null;
+            if ($prop === null) {
                 continue;
             }
 
-            $ver = $this->apiProbe($p['domain'], $p['cmdV20'], $p['cmdLegacy'], $p['action']);
-            if ($ver === 'unsupported') {
-                $support[$propName] = false;
-            } elseif (!isset($support[$propName])) {
-                $support[$propName] = true;
+            $supported = $this->apiAbilitySupportsDomain($domain, $ability);
+            if ($supported && !empty($d['versioned']) && $this->apiProbeDomain($domain) === 'unsupported') {
+                $supported = false;
             }
-            // Wichtig: apiProbe schreibt hier bereits in deinen ApiVersionCache rein.
+            $support[$prop] = $supported;
         }
 
+        $support['EnableApiPTZ'] = $this->apiAbilitySupportsDomain('ptz', $ability);
         return $support;
     }
 
@@ -1186,85 +1193,29 @@ class Reolink extends IPSModuleStrict
         if (empty($ability)) {
             return [];
         }
-        $chn = $ability['abilityChn'][0] ?? [];
 
         $rows = [];
-
-        $defs = [
-            'Email' => [
-                'prop'   => 'EnableApiEmail',
-                'label'  => 'E-Mail Alarm',
-                'domain' => 'email',
-                'cmdV20' => 'GetEmailV20',
-                'cmdLegacy' => 'GetEmail',
-                'action' => 0,
-                'supported' => (int)($ability['supportEmailEnable'] ?? 0) === 1
-            ],
-            'FTP' => [
-                'prop'   => 'EnableApiFTP',
-                'label'  => 'FTP Upload',
-                'domain' => 'ftp',
-                'cmdV20' => 'GetFtpV20',
-                'cmdLegacy' => 'GetFtp',
-                'action' => 0,
-                'supported' => (($chn['ftp']['ver'] ?? 0) > 0)
-            ],
-            'Record' => [
-                'prop'   => 'EnableApiRecord',
-                'label'  => 'Aufnahme / Record',
-                'domain' => 'record',
-                'cmdV20' => 'GetRecV20',
-                'cmdLegacy' => 'GetRec',
-                'action' => 1,
-                'supported' => (($chn['recCfg']['ver'] ?? 0) > 0)
-            ],
-            'Siren' => [
-                'prop'   => 'EnableApiSiren',
-                'label'  => 'Sirene / AudioAlarm',
-                'domain' => 'alarm',
-                'cmdV20' => 'GetAudioAlarmV20',
-                'cmdLegacy' => 'GetAudioAlarm',
-                'action' => 1,
-                'supported' => (($chn['AudioAlarm']['ver'] ?? 0) > 0)
-                            || (($chn['audioAlarm']['ver'] ?? 0) > 0)
-            ],
-            'WhiteLed' => [
-                'prop'   => 'EnableApiWhiteLed',
-                'label'  => 'Spotlight / Weißlicht',
-                'domain' => 'spot',
-                'cmdV20' => 'GetWhiteLed',
-                'cmdLegacy' => 'GetWhiteLed',
-                'action' => 0,
-                'supported' => (($chn['floodLight']['ver'] ?? 0) > 0)
-                            || (($chn['whiteLed']['ver'] ?? 0) > 0)
-            ],
-        ];
-
-        foreach ($defs as $key => $d) {
-            $supported = $d['supported'];
-
-            if (!$supported) {
-                $rows[] = [
-                    'label'     => $d['label'],
-                    'supported' => 'nein',
-                    'version'   => '-',
-                ];
+        foreach (self::API_DEFS as $domain => $d) {
+            if (!isset($d['label'], $d['prop'])) {
                 continue;
             }
 
-            // Erst versuchen, Version aus Cache zu holen
-            $ver = $this->apiVersionGet($d['domain']);
-            if ($ver === null) {
-                // Falls noch nicht probiert, einmalig apiProbe
-                $ver = $this->apiProbe($d['domain'], $d['cmdV20'], $d['cmdLegacy'], $d['action']);
+            $supported = $this->apiAbilitySupportsDomain($domain, $ability);
+            $ver = '-';
+            if ($supported) {
+                if (!empty($d['versioned'])) {
+                    $probe = $this->apiProbeDomain($domain);
+                    $ver = ($probe === 'v20') ? 'V20' : (($probe === 'legacy') ? 'Legacy' : '–');
+                    $supported = ($probe !== 'unsupported');
+                } else {
+                    $ver = 'Standard';
+                }
             }
 
             $rows[] = [
                 'label'     => $d['label'],
-                'supported' => 'ja',
-                'version'   => ($ver === 'v20') ? 'V20' :
-                            (($ver === 'legacy') ? 'Legacy' :
-                            (($ver === 'unsupported') ? '–' : '?')),
+                'supported' => $supported ? 'ja' : 'nein',
+                'version'   => $supported ? $ver : '-',
             ];
         }
 
@@ -2113,6 +2064,33 @@ class Reolink extends IPSModuleStrict
         }
     }
 
+
+    private function buildApiPollingQueue(): array
+    {
+        $queue = [];
+        foreach (self::API_POLL_MAP as $task => $cfg) {
+            if ($this->ReadPropertyBoolean($cfg['property'])) {
+                $queue[] = $task;
+            }
+        }
+        return $queue;
+    }
+
+    private function hasAnyApiFeatureEnabled(): bool
+    {
+        return $this->buildApiPollingQueue() !== [];
+    }
+
+    private function runApiPollingTask(string $task): void
+    {
+        $cfg = self::API_POLL_MAP[$task] ?? null;
+        if ($cfg === null || !method_exists($this, $cfg['method'])) {
+            return;
+        }
+
+        $this->{$cfg['method']}(...($cfg['args'] ?? []));
+    }
+
     public function ExecuteApiRequests(bool $force = false)
     {
         if (!$this->isActive()) {
@@ -2153,18 +2131,7 @@ class Reolink extends IPSModuleStrict
                 $this->WriteAttributeInteger('DevInfoLastRefresh', $now);
             }
 
-            $queue = [];
-
-            if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) $queue[] = 'WhiteLed';
-            if ($this->ReadPropertyBoolean("EnableApiEmail")) $queue[] = 'Email';
-            if ($this->ReadPropertyBoolean("EnableApiPTZ")) $queue[] = 'PTZ';
-            if ($this->ReadPropertyBoolean("EnableApiFTP")) $queue[] = 'FTP';
-            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) $queue[] = 'Sensitivity';
-            if ($this->ReadPropertyBoolean("EnableApiSiren")) $queue[] = 'Siren';
-            if ($this->ReadPropertyBoolean("EnableApiRecord")) $queue[] = 'Record';
-            if ($this->ReadPropertyBoolean("EnableApiIR")) $queue[] = 'IR';
-            if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) $queue[] = 'AutoTracking';
-
+            $queue = $this->buildApiPollingQueue();
             if (empty($queue)) {
                 return;
             }
@@ -2183,35 +2150,7 @@ class Reolink extends IPSModuleStrict
                 'queue' => $queue
             ]);
 
-            switch ($task) {
-                case 'WhiteLed':
-                    $this->UpdateWhiteLedStatus();
-                    break;
-                case 'Email':
-                    $this->EmailApply(null, null, null);
-                    break;
-                case 'PTZ':
-                    $this->CreateOrUpdatePTZHtml(false);
-                    break;
-                case 'FTP':
-                    $this->UpdateFtpStatus();
-                    break;
-                case 'Sensitivity':
-                    $this->UpdateMdSensitivityStatus();
-                    break;
-                case 'Siren':
-                    $this->UpdateSirenStatus();
-                    break;
-                case 'Record':
-                    $this->UpdateRecStatus();
-                    break;
-                case 'IR':
-                    $this->UpdateIrStatus();
-                    break;
-                case 'AutoTracking':
-                    $this->UpdateAutoTrackingStatus();
-                    break;
-            }
+            $this->runApiPollingTask($task);
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) {
@@ -2620,10 +2559,6 @@ class Reolink extends IPSModuleStrict
     // Spotlight (White LED)
     // ---------------------------
 
-    private function whiteLedGet(): ?array
-    {
-        return $this->apiFeatureGet('whiteLed', 'SPOT');
-    }
 
     private function whiteLedSet(array $payload): bool
     {
@@ -2678,10 +2613,6 @@ class Reolink extends IPSModuleStrict
     // E-Mail (V20 / Legacy)
     // ---------------------------
 
-    private function emailGet(): ?array
-    {
-        return $this->apiFeatureGet('email', 'EMAIL');
-    }
 
     private function emailSet(array $payload): bool
     {
@@ -3428,10 +3359,6 @@ class Reolink extends IPSModuleStrict
     // FTP EIN/AUS
     // ---------------------------
 
-    private function ftpGet(): ?array
-    {
-        return $this->apiFeatureGet('ftp', 'FTP');
-    }
 
     private function ftpSet(array $payload): bool
     {
@@ -3619,22 +3546,11 @@ class Reolink extends IPSModuleStrict
         return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
     }
 
-    private function apiGetNode(array $resp, string $key)
-    {
-        $root = $resp[0] ?? [];
-        $v = $root['value'][$key] ?? null;
-        if ($v === null) $v = $root['initial'][$key] ?? null;
-        return is_array($v) ? $v : null;
-    }
 
     // ---------------------------
     // Sirene ein-aus
     // ---------------------------
 
-    private function alarmGet(): ?array
-    {
-        return $this->apiFeatureGet('alarm', 'ALARM');
-    }
     
     private function alarmSet(array $audioNode): bool
     {
@@ -3710,10 +3626,6 @@ class Reolink extends IPSModuleStrict
     // Record Status
     // ---------------------------
 
-    private function recordGet(): ?array
-    {
-        return $this->apiFeatureGet('record', 'RECORD');
-    }
 
     private function recordSet(array $payload): bool
     {
