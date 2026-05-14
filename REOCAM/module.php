@@ -3807,65 +3807,45 @@ class Reolink extends IPSModuleStrict
             ]
         ]], 'PUSH');
 
-        // KOMPLETTE API-ANTWORT
-        $this->dbg('PUSH', 'Komplette API Antwort', $res);
+        $this->dbg('PUSH', 'API Antwort', $res);
 
-        if (!is_array($res)) {
-            $this->dbg('PUSH', 'Antwort ist kein Array');
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $this->dbg('PUSH', 'GetPushV20 fehlgeschlagen', $res);
             return;
         }
 
-        if (!isset($res[0])) {
-            $this->dbg('PUSH', 'Index 0 fehlt');
+        $push = $res[0]['value']['Push'] ?? null;
+        if (!is_array($push)) {
+            $this->dbg('PUSH', 'Push-Daten fehlen', $res);
             return;
         }
 
-        $this->dbg('PUSH', 'Antwort 0', $res[0]);
-
-        if (($res[0]['code'] ?? -1) !== 0) {
-            $this->dbg('PUSH', 'Code nicht 0', $res[0]['code'] ?? null);
-            return;
-        }
-
-        if (!isset($res[0]['value'])) {
-            $this->dbg('PUSH', 'value fehlt');
-            return;
-        }
-
-        $this->dbg('PUSH', 'value', $res[0]['value']);
-
-        if (!isset($res[0]['value']['Push'])) {
-            $this->dbg('PUSH', 'Push fehlt');
-            return;
-        }
-
-        $push = $res[0]['value']['Push'];
-
-        $this->dbg('PUSH', 'Push Daten', $push);
-
+        // Wichtig: array_key_exists, nicht empty(),
+        // weil enable = 0 sonst fälschlich als "fehlt" gilt.
         if (!array_key_exists('enable', $push)) {
-            $this->dbg('PUSH', 'enable fehlt');
+            $this->dbg('PUSH', 'enable fehlt', $push);
             return;
         }
 
-        $this->dbg('PUSH', 'enable RAW', $push['enable']);
+        $enableRaw = $push['enable'];
+        $enabled = ((int)$enableRaw === 1);
 
-        $enabled = ((int)$push['enable'] === 1);
-
+        $this->dbg('PUSH', 'enable RAW', $enableRaw);
         $this->dbg('PUSH', 'enable BOOL', $enabled);
 
         $id = @$this->GetIDForIdent('PushNotify');
-
-        $this->dbg('PUSH', 'Variablen-ID', $id);
-
         if ($id === false) {
+            $this->dbg('PUSH', 'Variable PushNotify existiert nicht');
             return;
         }
 
-        $this->dbg('PUSH', 'Alter Wert', GetValue($id));
+        $oldValue = (bool)GetValue($id);
+        $this->dbg('PUSH', 'Alter Wert', $oldValue);
 
-        $this->SetValue('PushNotify', $enabled);
+        if ($oldValue !== $enabled) {
+            $this->SetValue('PushNotify', $enabled);
+        }
 
-        $this->dbg('PUSH', 'Neuer Wert', GetValue($id));
+        $this->dbg('PUSH', 'Neuer Wert', (bool)GetValue($id));
     }
 }
