@@ -3797,7 +3797,6 @@ class Reolink extends IPSModuleStrict
         return false;
     }
 
-    private function UpdatePushStatus(): void
 private function UpdatePushStatus(): void
 {
     $this->dbg('PUSH', '===== UPDATE PUSH STATUS START =====');
