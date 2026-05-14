@@ -3798,40 +3798,101 @@ class Reolink extends IPSModuleStrict
     }
 
     private function UpdatePushStatus(): void
+private function UpdatePushStatus(): void
 {
-    $res = $this->apiCall([[
+    $this->dbg('PUSH', '===== UPDATE PUSH STATUS START =====');
+
+    $payload = [[
         'cmd'    => 'GetPushV20',
         'action' => 1,
         'param'  => [
             'channel' => 0
         ]
-    ]], 'PUSH');
+    ]];
 
-    $this->dbg('PUSH', 'API Antwort', $res);
+    $this->dbg('PUSH', 'REQUEST', $payload);
 
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+    $res = $this->apiCall($payload, 'PUSH');
+
+    $this->dbg('PUSH', 'RAW RESPONSE', $res);
+
+    if (!is_array($res)) {
+        $this->dbg('PUSH', 'Antwort ist kein Array');
         return;
     }
 
-    if (!isset($res[0]['value']['Push']['enable'])) {
-        $this->dbg('PUSH', 'enable fehlt');
+    if (!isset($res[0])) {
+        $this->dbg('PUSH', 'Antwort 0 fehlt');
         return;
     }
 
-    $enabled = ((int)$res[0]['value']['Push']['enable'] === 1);
+    $this->dbg('PUSH', 'RESPONSE[0]', $res[0]);
 
-    $this->dbg('PUSH', 'enable RAW', $res[0]['value']['Push']['enable']);
-    $this->dbg('PUSH', 'enable BOOL', $enabled);
+    $code = $res[0]['code'] ?? null;
+
+    $this->dbg('PUSH', 'CODE', $code);
+
+    if ($code !== 0) {
+        $this->dbg('PUSH', 'Code ungleich 0');
+        return;
+    }
+
+    $value = $res[0]['value'] ?? null;
+
+    $this->dbg('PUSH', 'VALUE', $value);
+
+    if (!is_array($value)) {
+        $this->dbg('PUSH', 'value fehlt');
+        return;
+    }
+
+    $push = $value['Push'] ?? null;
+
+    $this->dbg('PUSH', 'PUSH', $push);
+
+    if (!is_array($push)) {
+        $this->dbg('PUSH', 'Push fehlt');
+        return;
+    }
+
+    $hasEnable = array_key_exists('enable', $push);
+
+    $this->dbg('PUSH', 'ENABLE EXISTS', $hasEnable);
+
+    if (!$hasEnable) {
+        return;
+    }
+
+    $enableRaw = $push['enable'];
+
+    $this->dbg('PUSH', 'ENABLE RAW', $enableRaw);
+    $this->dbg('PUSH', 'ENABLE TYPE', gettype($enableRaw));
+
+    $enabled = ((int)$enableRaw === 1);
+
+    $this->dbg('PUSH', 'ENABLE BOOL', $enabled);
 
     $id = @$this->GetIDForIdent('PushNotify');
+
+    $this->dbg('PUSH', 'VARIABLE ID', $id);
+
     if ($id === false) {
+        $this->dbg('PUSH', 'Variable fehlt');
         return;
     }
 
-    $this->dbg('PUSH', 'Alter Wert', GetValue($id));
+    $oldValue = GetValue($id);
+
+    $this->dbg('PUSH', 'OLD VALUE', $oldValue);
+    $this->dbg('PUSH', 'OLD TYPE', gettype($oldValue));
 
     $this->SetValue('PushNotify', $enabled);
 
-    $this->dbg('PUSH', 'Neuer Wert', GetValue($id));
+    $newValue = GetValue($id);
+
+    $this->dbg('PUSH', 'NEW VALUE', $newValue);
+    $this->dbg('PUSH', 'NEW TYPE', gettype($newValue));
+
+    $this->dbg('PUSH', '===== UPDATE PUSH STATUS END =====');
 }
 }
