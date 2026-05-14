@@ -3799,99 +3799,65 @@ class Reolink extends IPSModuleStrict
 
 private function UpdatePushStatus(): void
 {
-    $this->dbg('PUSH', '===== UPDATE PUSH STATUS START =====');
+    $tests = [
+        ['cmd' => 'GetPushV20', 'action' => 0],
+        ['cmd' => 'GetPushV20', 'action' => 1],
+        ['cmd' => 'GetPush',    'action' => 0],
+        ['cmd' => 'GetPush',    'action' => 1],
+    ];
 
-    $payload = [[
-        'cmd'    => 'GetPushV20',
-        'action' => 1,
-        'param'  => [
-            'channel' => 0
-        ]
-    ]];
+    foreach ($tests as $test) {
+        $payload = [[
+            'cmd'    => $test['cmd'],
+            'action' => $test['action'],
+            'param'  => [
+                'channel' => 0
+            ]
+        ]];
 
-    $this->dbg('PUSH', 'REQUEST', $payload);
+        $label = $test['cmd'] . '_A' . $test['action'];
 
-    $res = $this->apiCall($payload, 'PUSH');
+        $this->dbg('PUSH', '===== TEST ' . $label . ' START =====');
+        $this->dbg('PUSH', 'REQUEST ' . $label, $payload);
 
-    $this->dbg('PUSH', 'RAW RESPONSE', $res);
+        $res = $this->apiCall($payload, 'PUSH');
 
-    if (!is_array($res)) {
-        $this->dbg('PUSH', 'Antwort ist kein Array');
-        return;
+        $this->dbg('PUSH', 'RESPONSE ' . $label, $res);
+
+        $push = $res[0]['value']['Push']
+            ?? $res[0]['initial']['Push']
+            ?? null;
+
+        if (is_array($push)) {
+            $this->dbg('PUSH', 'PUSH DATA ' . $label, $push);
+
+            if (array_key_exists('enable', $push)) {
+                $this->dbg('PUSH', 'ENABLE ' . $label, [
+                    'raw'  => $push['enable'],
+                    'type' => gettype($push['enable']),
+                    'bool' => ((int)$push['enable'] === 1)
+                ]);
+            } else {
+                $this->dbg('PUSH', 'ENABLE FEHLT ' . $label);
+            }
+
+            if (isset($push['schedule']['table']) && is_array($push['schedule']['table'])) {
+                $summary = [];
+                foreach ($push['schedule']['table'] as $key => $value) {
+                    $summary[$key] = [
+                        'len'      => is_string($value) ? strlen($value) : null,
+                        'hasOne'   => is_string($value) ? (strpos($value, '1') !== false) : null,
+                        'hasZero'  => is_string($value) ? (strpos($value, '0') !== false) : null,
+                        'first20'  => is_string($value) ? substr($value, 0, 20) : null,
+                    ];
+                }
+                $this->dbg('PUSH', 'SCHEDULE SUMMARY ' . $label, $summary);
+            }
+        } else {
+            $this->dbg('PUSH', 'PUSH DATA FEHLT ' . $label);
+        }
+
+        $this->dbg('PUSH', '===== TEST ' . $label . ' END =====');
     }
-
-    if (!isset($res[0])) {
-        $this->dbg('PUSH', 'Antwort 0 fehlt');
-        return;
-    }
-
-    $this->dbg('PUSH', 'RESPONSE[0]', $res[0]);
-
-    $code = $res[0]['code'] ?? null;
-
-    $this->dbg('PUSH', 'CODE', $code);
-
-    if ($code !== 0) {
-        $this->dbg('PUSH', 'Code ungleich 0');
-        return;
-    }
-
-    $value = $res[0]['value'] ?? null;
-
-    $this->dbg('PUSH', 'VALUE', $value);
-
-    if (!is_array($value)) {
-        $this->dbg('PUSH', 'value fehlt');
-        return;
-    }
-
-    $push = $value['Push'] ?? null;
-
-    $this->dbg('PUSH', 'PUSH', $push);
-
-    if (!is_array($push)) {
-        $this->dbg('PUSH', 'Push fehlt');
-        return;
-    }
-
-    $hasEnable = array_key_exists('enable', $push);
-
-    $this->dbg('PUSH', 'ENABLE EXISTS', $hasEnable);
-
-    if (!$hasEnable) {
-        return;
-    }
-
-    $enableRaw = $push['enable'];
-
-    $this->dbg('PUSH', 'ENABLE RAW', $enableRaw);
-    $this->dbg('PUSH', 'ENABLE TYPE', gettype($enableRaw));
-
-    $enabled = ((int)$enableRaw === 1);
-
-    $this->dbg('PUSH', 'ENABLE BOOL', $enabled);
-
-    $id = @$this->GetIDForIdent('PushNotify');
-
-    $this->dbg('PUSH', 'VARIABLE ID', $id);
-
-    if ($id === false) {
-        $this->dbg('PUSH', 'Variable fehlt');
-        return;
-    }
-
-    $oldValue = GetValue($id);
-
-    $this->dbg('PUSH', 'OLD VALUE', $oldValue);
-    $this->dbg('PUSH', 'OLD TYPE', gettype($oldValue));
-
-    $this->SetValue('PushNotify', $enabled);
-
-    $newValue = GetValue($id);
-
-    $this->dbg('PUSH', 'NEW VALUE', $newValue);
-    $this->dbg('PUSH', 'NEW TYPE', gettype($newValue));
-
-    $this->dbg('PUSH', '===== UPDATE PUSH STATUS END =====');
 }
 }
