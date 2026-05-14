@@ -158,6 +158,7 @@ Je nach Konfiguration werden automatisch angelegt:
 - Änderung der API-Afrage. Es wird nun alle 2sec ein Endpunkt abgefragt, um eine Überlastung zu verhindern.
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
 - Code aktualisiert und Konfiguration zentralisiert.
+- Erkennungsempfindlichkeit (Sensitivität) für die AI-Erkennung hinzugefügt
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
