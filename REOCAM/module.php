@@ -3792,35 +3792,26 @@ class Reolink extends IPSModuleStrict
 
     private function PushApply(bool $enable): bool
 {
-    $table = str_repeat($enable ? '1' : '0', 168);
-
     $payload = [[
         'cmd'   => 'SetPushV20',
         'param' => [
             'Push' => [
-                'enable'   => $enable ? 1 : 0,
-                'schedule' => [
-                    'channel' => 0,
-                    'table'   => [
-                        'AI_DOG_CAT' => $table,
-                        'AI_PEOPLE'  => $table,
-                        'AI_VEHICLE' => $table,
-                        'MD'         => $table
-                    ]
-                ]
+                'enable' => $enable ? 1 : 0
             ]
         ]
     ]];
 
-    $url = 'http://' . $this->ReadPropertyString('IPAddress') . '/api.cgi?cmd=SetPush&token=' . $this->ReadAttributeString('Token');
-
-    $this->dbg('PUSH', 'SET URL', ['url' => preg_replace('/token=.*/', 'token=***', $url)]);
     $this->dbg('PUSH', 'SET REQUEST', $payload);
 
-    $raw = $this->HttpPostJson($url, $payload); // falls deine Hilfsfunktion anders heisst, diese verwenden
+    $res = $this->apiCall($payload, 'PUSH');
 
-    $this->dbg('PUSH', 'SET RAW', $raw);
+    $this->dbg('PUSH', 'SET RESPONSE', $res);
 
+    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+        return false;
+    }
+
+    $this->SetValue('PushNotify', $enable);
     return true;
 }
 }
