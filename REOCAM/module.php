@@ -3805,27 +3805,25 @@ private function UpdatePushStatus(): void
         'param'  => ['channel' => 0]
     ]], 'PUSH');
 
-    $this->dbg('PUSH', 'RAW RESPONSE', $res);
-
     if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
         return;
     }
 
-    $push = $res[0]['value']['Push'] ?? null;
-    if (!is_array($push)) {
+    $push = $res[0]['value']['Push']
+        ?? $res[0]['initial']['Push']
+        ?? null;
+
+    if (!is_array($push) || !array_key_exists('enable', $push)) {
         return;
     }
 
-    $enable = $push['enable'] ?? null;
-    if ($enable === null) {
-        return;
-    }
+    $enabled = ((int)$push['enable'] === 1);
 
-    $enabled = ((int)$enable === 1);
+    $this->dbg('PUSH', 'Status gelesen', [
+        'enable' => $push['enable'],
+        'status' => $enabled
+    ]);
 
-    $id = @$this->GetIDForIdent('PushNotify');
-    if ($id !== false) {
-        $this->SetValue('PushNotify', $enabled);
-    }
+    $this->SetValue('PushNotify', $enabled);
 }
 }
