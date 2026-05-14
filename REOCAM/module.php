@@ -3761,6 +3761,48 @@ class Reolink extends IPSModuleStrict
     // Push
     // ---------------------------
 
+    private function UpdatePushStatus(): void
+    {
+        $res = $this->apiCall([[
+            'cmd'    => 'GetPushV20',
+            'action' => 0,
+            'param'  => [
+                'channel' => 0
+            ]
+        ]], 'PUSH');
+
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $this->dbg('PUSH', 'GetPushV20 fehlgeschlagen', $res);
+            return;
+        }
+
+        $push = $res[0]['value']['Push'] ?? null;
+        if (!is_array($push)) {
+            $this->dbg('PUSH', 'Push-Daten fehlen', $res);
+            return;
+        }
+
+        if (array_key_exists('scheduleEnable', $push)) {
+            $enabled = ((int)$push['scheduleEnable'] === 1);
+        } elseif (isset($push['schedule']) && is_array($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
+            $enabled = ((int)$push['schedule']['enable'] === 1);
+        } elseif (array_key_exists('enable', $push)) {
+            $enabled = ((int)$push['enable'] === 1);
+        } else {
+            $this->dbg('PUSH', 'Kein Push-Schalter gefunden', $push);
+            return;
+        }
+
+        $this->SetValue('PushNotify', $enabled);
+
+        $this->dbg('PUSH', 'Status gelesen', [
+            'scheduleEnable' => $push['scheduleEnable'] ?? null,
+            'scheduleEnable2'=> $push['schedule']['enable'] ?? null,
+            'enable'         => $push['enable'] ?? null,
+            'enabled'        => $enabled
+        ]);
+    }
+
     private function PushApply(bool $enable): bool
     {
         $payload = [[
@@ -3790,40 +3832,5 @@ class Reolink extends IPSModuleStrict
         $this->UpdatePushStatus();
 
         return true;
-    }
-
-    private function UpdatePushStatus(): void
-    {
-        $res = $this->apiCall([[
-            'cmd'    => 'GetPushV20',
-            'action' => 0,
-            'param'  => ['channel' => 0]
-        ]], 'PUSH');
-
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            return;
-        }
-
-        $push = $res[0]['value']['Push'] ?? null;
-        if (!is_array($push)) {
-            return;
-        }
-
-        if (array_key_exists('scheduleEnable', $push)) {
-            $enabled = ((int)$push['scheduleEnable'] === 1);
-        } elseif (isset($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
-            $enabled = ((int)$push['schedule']['enable'] === 1);
-        } else {
-            $this->dbg('PUSH', 'Kein Kanal-Schalter gefunden', $push);
-            return;
-        }
-
-        $this->dbg('PUSH', 'Status gelesen', [
-            'scheduleEnable' => $push['scheduleEnable'] ?? null,
-            'schedule.enable' => $push['schedule']['enable'] ?? null,
-            'enabled' => $enabled
-        ]);
-
-        $this->SetValue('PushNotify', $enabled);
     }
 }
