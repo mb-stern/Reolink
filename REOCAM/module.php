@@ -3506,49 +3506,45 @@ class Reolink extends IPSModuleStrict
     // Sensitivity
     // ---------------------------
 
-    private function sensitivityGet(): ?array 
+    private function sensitivityState(): ?array
     {
-        $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
-
         $res = $this->apiFeatureGet('sensitivity', 'SENS');
         if (!is_array($res)) return null;
 
         $node = $this->apiExtractNode($res, 'sensitivity');
         if (!is_array($node)) return null;
 
-        $sensDef  = null;
-        $segments = [];
-        if (!empty($node['newSens'])) {
-            $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
-            $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
-        } elseif (!empty($node['sens'])) {
-            $segments = $this->mdNormalizeSegments($node['sens']);
-        }
+        $isV20 = isset($node['newSens']);
+        $sensDef = $isV20 ? (int)($node['newSens']['sensDef'] ?? 10) : null;
+        $segments = $this->mdSegments($isV20 ? ($node['newSens']['sens'] ?? []) : ($node['sens'] ?? []));
 
-        $active = $this->mdPickActiveNow($segments, $sensDef);
-        return [ 'apiVer' => ($ver === 'v20' ? 'V20' : 'LEGACY'), 'sensDef'=>$sensDef, 'segments'=>$segments, 'active'=>$active ];
+        return [
+            'isV20'    => $isV20,
+            'sensDef'  => $sensDef,
+            'segments' => $segments,
+            'active'   => $this->mdActive($segments, $sensDef)
+        ];
     }
 
-    private function sensitivitySet(int $levelUi): bool 
+    public function SetMdSensitivity(int $level): bool
     {
-        $levelUi  = max(1, min(50, $levelUi));
-        $levelCam = 51 - $levelUi;
+        $levelCam = 51 - max(1, min(50, $level));
+        $st = $this->sensitivityState();
+        if (!$st) return false;
 
-        $state = $this->sensitivityGet();
-        if (!$state) return false;
+        $segments = $st['segments'] ?: [[
+            'beginHour' => 0, 'beginMin' => 0,
+            'endHour' => 23, 'endMin' => 59,
+            'sensitivity' => $levelCam
+        ]];
 
-        $segments = $state['segments'];
-        if (empty($segments)) {
-            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
-        } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-            unset($s);
+        foreach ($segments as &$s) {
+            $s['sensitivity'] = $levelCam;
         }
+        unset($s);
 
-        $isV20 = ($state['apiVer'] === 'V20');
-
-        if ($isV20) {
-            $payload = [
+        $payload = $st['isV20']
+            ? [
                 'type'       => 'md',
                 'useNewSens' => 1,
                 'newSens'    => [
@@ -3556,95 +3552,75 @@ class Reolink extends IPSModuleStrict
                     'sens'    => $segments
                 ],
                 'channel'    => 0
-            ];
-        } else {
-            $payload = [
+            ]
+            : [
                 'type'    => 'md',
                 'sens'    => $segments,
                 'channel' => 0
             ];
-        }
 
         $ok = $this->apiFeatureSet('sensitivity', $payload, 'SENS-SET');
-
         if ($ok) {
-            $this->UpdateMdSensitivityStatus(); 
+            $this->SetValue('MdSensitivity', 51 - $levelCam);
         }
+
         return $ok;
-    }
-
-    private function GetMdSensitivity(): ?array {
-        return $this->sensitivityGet();
-    }
-
-    public function SetMdSensitivity(int $level): bool {
-        return $this->sensitivitySet($level);
     }
 
     private function UpdateMdSensitivityStatus(): void
     {
-        $vid = @$this->GetIDForIdent("MdSensitivity");
-        if (!$vid) return;
-
-        $st = $this->GetMdSensitivity();
+        $st = $this->sensitivityState();
         if (!$st) return;
 
-        $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
-        $lvlUI  = 51 - $lvlCam;
-
-        if ((int)GetValue($vid) !== $lvlUI) {
-            $this->SetValue("MdSensitivity", $lvlUI);
-        }
+        $this->SetValue('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
     }
 
-    private function mdNormalizeSegments($raw): array
+    private function mdSegments($raw): array
     {
         $out = [];
-        $push = function($a) use (&$out) {
-            $out[] = [
-                'beginHour'   => (int)($a['beginHour'] ?? 0),
-                'beginMin'    => (int)($a['beginMin']  ?? 0),
-                'endHour'     => (int)($a['endHour']   ?? 23),
-                'endMin'      => (int)($a['endMin']    ?? 59),
-                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
-            ];
-        };
-        $walk = function($node) use (&$walk, $push) {
-            if (is_array($node)) {
-                if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
-                    $push($node);
-                } else {
-                    foreach ($node as $v) $walk($v);
-                }
+
+        $walk = function ($node) use (&$walk, &$out) {
+            if (!is_array($node)) return;
+
+            if (isset($node['beginHour'], $node['endHour'])) {
+                $s = [
+                    'beginHour'   => max(0, min(23, (int)($node['beginHour'] ?? 0))),
+                    'beginMin'    => max(0, min(59, (int)($node['beginMin'] ?? 0))),
+                    'endHour'     => max(0, min(23, (int)($node['endHour'] ?? 23))),
+                    'endMin'      => max(0, min(59, (int)($node['endMin'] ?? 59))),
+                    'sensitivity' => max(1, min(50, (int)($node['sensitivity'] ?? ($node['sens'] ?? 10))))
+                ];
+                $out[] = $s;
+                return;
+            }
+
+            foreach ($node as $v) {
+                $walk($v);
             }
         };
+
         $walk($raw);
-
-        $filtered = [];
-        foreach ($out as $s) {
-            $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
-            if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
-            if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
-            $filtered[] = $s;
-        }
-        return array_values($filtered);
+        return $out;
     }
 
-    private function mdPickActiveNow(array $segments, ?int $sensDef): int
+    private function mdActive(array $segments, ?int $fallback = null): int
     {
-        $now = (int)date('G')*60 + (int)date('i');
+        $now = ((int)date('G') * 60) + (int)date('i');
+
         foreach ($segments as $s) {
-            $start = $s['beginHour']*60 + $s['beginMin'];
-            $end   = $s['endHour']*60   + $s['endMin'];
-            if ($start <= $end) {
-                if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
-            } else {
-                if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
+            $start = $s['beginHour'] * 60 + $s['beginMin'];
+            $end   = $s['endHour'] * 60 + $s['endMin'];
+
+            if (
+                ($start <= $end && $now >= $start && $now <= $end) ||
+                ($start > $end && ($now >= $start || $now <= $end))
+            ) {
+                return (int)$s['sensitivity'];
             }
         }
-        return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
-    }
 
+        return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
+    }
 
     // ---------------------------
     // Sirene ein-aus
