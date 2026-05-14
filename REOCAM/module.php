@@ -268,8 +268,11 @@ class Reolink extends IPSModuleStrict
 
             case "PushNotify":
                 $ok = $this->PushApply((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdatePushStatus(); }
+                if ($ok) {
+                    $this->SetValue($Ident, (bool)$Value);
+                } else {
+                    $this->UpdatePushStatus();
+                }
                 break;
 
             default:
@@ -3758,43 +3761,35 @@ class Reolink extends IPSModuleStrict
     // Push
     // ---------------------------
 
-    private function pushGet(): ?array
+    private function PushApply(bool $enable): bool
     {
-        $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 0);
-        if ($ver === 'unsupported') return null;
+        $payload = [[
+            'cmd'    => 'SetPushV20',
+            'action' => 0,
+            'param'  => [
+                'Push' => [
+                    'scheduleEnable' => $enable ? 1 : 0,
+                    'schedule'       => [
+                        'channel' => 0
+                    ]
+                ]
+            ]
+        ]];
 
-        $cmd = ($ver === 'v20') ? 'GetPushV20' : 'GetPush';
+        $this->dbg('PUSH', 'SET REQUEST', $payload);
 
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'PUSH', true);
+        $res = $this->apiCall($payload, 'PUSH');
+
+        $this->dbg('PUSH', 'SET RESPONSE', $res);
+
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'PUSH');
+            return false;
         }
 
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
+        IPS_Sleep(300);
+        $this->UpdatePushStatus();
 
-    private function pushSet(bool $on): bool
-    {
-        $ver = $this->apiProbe('push', 'SetPushV20', 'SetPush', 0);
-        if ($ver === 'unsupported') return false;
-
-        $cmd = ($ver === 'v20') ? 'SetPushV20' : 'SetPush';
-
-        $payloads = [
-            [ 'Push' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ],
-            [ 'Push' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ],
-        ];
-
-        foreach ($payloads as $payload) {
-            foreach ([0, 1] as $action) {
-                $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>$action, 'param'=>$payload ]], 'PUSH-SET', true);
-                if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return true;
     }
 
     private function UpdatePushStatus(): void
