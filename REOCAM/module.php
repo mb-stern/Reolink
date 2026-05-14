@@ -37,8 +37,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
         $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
-        $this->RegisterPropertyBoolean("EnableApiMdAlarm", true);
-        
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -117,21 +115,20 @@ class Reolink extends IPSModuleStrict
         }
 
         // API-Schalter
-        $enableWhiteLed     = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR           = $this->ReadPropertyBoolean("EnableApiIR");      
-        $enableEmail        = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ          = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP          = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity  = $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren        = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord       = $this->ReadPropertyBoolean("EnableApiRecord");
+        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
+        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
+        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
         $enableAutoTracking = $this->ReadPropertyBoolean("EnableApiAutoTracking");
-        $enableMdAlarm      = $this->ReadPropertyBoolean("EnableApiMdAlarm");
 
         $anyFeatureOn = (
             $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
             $enableFTP || $enableSensitivity || $enableSiren || $enableRecord ||
-            $enableAutoTracking || $enableMdAlarm
+            $enableAutoTracking
         );
 
 
@@ -265,15 +262,6 @@ class Reolink extends IPSModuleStrict
             case "AutoTrackAnimal":
                 $ok = $this->SetAutoTrackingType('dog_cat', (bool)$Value);
                 if (!$ok) { $this->UpdateAutoTrackingStatus(); }
-                break;
-
-            case "MdAlarmEnabled":
-                $ok = $this->SetMdAlarmEnabled((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdateMdAlarmStatus();
-                }
                 break;
 
             default:
@@ -497,8 +485,7 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking',   'caption' => 'Auto-Tracking'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiMdAlarm',        'caption' => 'Bewegungserkennung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto-Tracking'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
@@ -1865,14 +1852,6 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariable("MdSensitivity");
         }
 
-        // -------- MdAlarm Ein/Aus --------
-        if ($this->ReadPropertyBoolean("EnableApiMdAlarm")) {
-            $this->RegisterVariableBoolean("MdAlarmEnabled", "Bewegungserkennung", "~Switch", 4);
-            $this->EnableAction("MdAlarmEnabled");
-        } else {
-            $this->UnregisterVariable("MdAlarmEnabled");
-        }
-
         // -------- Sirene--------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
             $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
@@ -2119,10 +2098,6 @@ class Reolink extends IPSModuleStrict
             }
             if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
                 $this->UpdateAutoTrackingStatus();
-            }
-
-            if ($this->ReadPropertyBoolean("EnableApiMdAlarm")) {
-                $this->UpdateMdAlarmStatus();
             }
 
         } finally {
@@ -3225,7 +3200,7 @@ class Reolink extends IPSModuleStrict
     }
 
     // ---------------------------
-    // MD-Alarm Sensitivity / Enable/Disable
+    // Sensitivity
     // ---------------------------
 
     private function sensitivityGet(): ?array 
@@ -3319,86 +3294,6 @@ class Reolink extends IPSModuleStrict
         return $this->sensitivitySet($level);
     }
 
-    public function SetMdAlarmEnabled(bool $enabled): bool
-    {
-        $state = $this->sensitivityGet();
-        if (!$state) {
-            return false;
-        }
-
-        $segments = $state['segments'];
-
-        if (empty($segments)) {
-            $segments = [[
-                'id'          => 0,
-                'beginHour'   => 0,
-                'beginMin'    => 0,
-                'endHour'     => 23,
-                'endMin'      => 59,
-                'enable'      => $enabled ? 1 : 0,
-                'priority'    => 0,
-                'sensitivity' => (int)($state['sensDef'] ?? 12)
-            ]];
-        } else {
-            foreach ($segments as &$s) {
-                $s['enable'] = $enabled ? 1 : 0;
-            }
-            unset($s);
-        }
-
-        $payload = [[
-            'cmd'   => 'SetMdAlarm',
-            'action'=> 0,
-            'param' => [
-                'MdAlarm' => [
-                    'type'       => 'md',
-                    'useNewSens' => 1,
-                    'newSens'    => [
-                        'sensDef' => (int)($state['sensDef'] ?? 12),
-                        'sens'    => $segments
-                    ],
-                    'channel'    => 0
-                ]
-            ]
-        ]];
-
-        $res = $this->apiCall($payload, 'MDALARM-SET');
-
-        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-
-        if ($ok) {
-            $this->UpdateMdAlarmStatus();
-        }
-
-        return $ok;
-    }
-
-    private function UpdateMdAlarmStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("MdAlarmEnabled");
-        if (!$vid) {
-            return;
-        }
-
-        $state = $this->sensitivityGet();
-        if (!$state || empty($state['segments'])) {
-            return;
-        }
-
-        $enabled = false;
-
-        foreach ($state['segments'] as $segment) {
-            if ((int)($segment['enable'] ?? 1) === 1) {
-                $enabled = true;
-                break;
-            }
-        }
-
-        if ((bool)GetValue($vid) !== $enabled) {
-            $this->SetValue("MdAlarmEnabled", $enabled);
-        }
-    }
-
     private function UpdateMdSensitivityStatus(): void
     {
         $vid = @$this->GetIDForIdent("MdSensitivity");
@@ -3420,13 +3315,10 @@ class Reolink extends IPSModuleStrict
         $out = [];
         $push = function($a) use (&$out) {
             $out[] = [
-                'id'          => (int)($a['id'] ?? count($out)),
                 'beginHour'   => (int)($a['beginHour'] ?? 0),
                 'beginMin'    => (int)($a['beginMin']  ?? 0),
                 'endHour'     => (int)($a['endHour']   ?? 23),
                 'endMin'      => (int)($a['endMin']    ?? 59),
-                'enable'      => (int)($a['enable'] ?? 1),
-                'priority'    => (int)($a['priority'] ?? 0),
                 'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
             ];
         };
