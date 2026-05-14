@@ -3791,47 +3791,36 @@ class Reolink extends IPSModuleStrict
 }
 
     private function PushApply(bool $enable): bool
-    {
-        // Erst aktuelle Push-Konfiguration lesen
-        $res = $this->apiCall([[
-            'cmd'    => 'GetPushV20',
-            'action' => 1,
-            'param'  => ['channel' => 0]
-        ]], 'PUSH');
+{
+    $table = str_repeat($enable ? '1' : '0', 168);
 
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->dbg('PUSH', 'Push-Konfiguration konnte nicht gelesen werden', $res);
-            return false;
-        }
-
-        $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
-        if (!is_array($push)) {
-            $this->dbg('PUSH', 'Push-Daten fehlen', $res);
-            return false;
-        }
-
-        // Nur enable ändern, Schedule unverändert lassen
-        $push['enable'] = $enable ? 1 : 0;
-
-        $payload = [[
-            'cmd'   => 'SetPushV20',
-            'param' => [
-                'Push' => $push
+    $payload = [[
+        'cmd'   => 'SetPushV20',
+        'param' => [
+            'Push' => [
+                'enable'   => $enable ? 1 : 0,
+                'schedule' => [
+                    'channel' => 0,
+                    'table'   => [
+                        'AI_DOG_CAT' => $table,
+                        'AI_PEOPLE'  => $table,
+                        'AI_VEHICLE' => $table,
+                        'MD'         => $table
+                    ]
+                ]
             ]
-        ]];
+        ]
+    ]];
 
-        $this->dbg('PUSH', 'SET REQUEST', $payload);
+    $url = 'http://' . $this->ReadPropertyString('IPAddress') . '/api.cgi?cmd=SetPush&token=' . $this->ReadAttributeString('Token');
 
-        $set = $this->apiCall($payload, 'PUSH');
+    $this->dbg('PUSH', 'SET URL', ['url' => preg_replace('/token=.*/', 'token=***', $url)]);
+    $this->dbg('PUSH', 'SET REQUEST', $payload);
 
-        $this->dbg('PUSH', 'SET RESPONSE', $set);
+    $raw = $this->HttpPostJson($url, $payload); // falls deine Hilfsfunktion anders heisst, diese verwenden
 
-        if (!is_array($set) || (($set[0]['code'] ?? -1) !== 0)) {
-            return false;
-        }
+    $this->dbg('PUSH', 'SET RAW', $raw);
 
-        $this->SetValue('PushNotify', $enable);
-
-        return true;
-    }
+    return true;
+}
 }
