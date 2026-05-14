@@ -2159,6 +2159,11 @@ class Reolink extends IPSModuleStrict
             case 'AutoTracking':
                 $this->UpdateAutoTrackingStatus();
                 break;
+        
+            } finally {
+            if (function_exists('IPS_SemaphoreLeave')) {
+                IPS_SemaphoreLeave($sem);
+            }
         }
     }
 
