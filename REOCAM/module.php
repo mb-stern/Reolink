@@ -149,23 +149,23 @@ class Reolink extends IPSModuleStrict
      */
     private const API_WRITE_MAP = [
         'whiteLed' => [
-            'WhiteLed' => ['payloads' => [[['state']]],  'type' => 'bool01'],
+            'WhiteLed' => ['payloads' => [[['state']]],  'type' => 'bool'],
             'Mode'     => ['payloads' => [[['mode']]],   'type' => 'int'],
             'Bright'   => ['payloads' => [[['bright']]], 'type' => 'int'],
         ],
         'email' => [
-            'EmailNotify'   => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool01'],
+            'EmailNotify'   => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
             'EmailInterval' => ['payloads' => [[['interval']]],                         'type' => 'emailIntervalString'],
             'EmailContent'  => ['method' => 'apiWriteEmailContentPayloads'],
         ],
         'ftp' => [
-            'FTPEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool01'],
+            'FTPEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
         ],
         'alarm' => [
-            'SirenEnabled' => ['payloads' => [[['enable']]], 'type' => 'bool01'],
+            'SirenEnabled' => ['payloads' => [[['enable']]], 'type' => 'bool'],
         ],
         'record' => [
-            'RecEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool01'],
+            'RecEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
         ],
         'ir' => [
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
@@ -2661,7 +2661,7 @@ class Reolink extends IPSModuleStrict
     private function apiConvertWriteValue(mixed $value, string $type): mixed
     {
         return match ($type) {
-            'bool01'              => $value ? 1 : 0,
+            'bool'              => $value ? 1 : 0,
             'int'                 => (int)$value,
             'emailIntervalString' => $this->IntervalSecondsToString((int)$value),
             'irModeString'        => $this->irModeIntToString((int)$value),
