@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, AI-Sensitivität korrigiert (v10)
+    // Refactoring-Version: API zentralisiert, AI-Sensitivität 0..100 korrigiert (v11)
 
     /**
      * Zentrale API-Definitionen.
@@ -403,7 +403,7 @@ class Reolink extends IPSModuleStrict
             case "AiSensitivityPerson":
             case "AiSensitivityVehicle":
             case "AiSensitivityAnimal":
-                $lvl = max(1, min(50, (int)$Value));
+                $lvl = max(0, min(100, (int)$Value));
                 if ($this->SetAiSensitivity($Ident, $lvl)) {
                     $this->SetValue($Ident, $lvl);
                 }
@@ -1945,25 +1945,30 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("FTPEnabled");
         }
 
-        // -------- Bewegungssensitivität + AI-Sensitivität (1..50) --------
+        // -------- Bewegungssensitivität (1..50) + AI-Sensitivität (0..100) --------
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
             if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
                 IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // Integer
             }
             IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
 
+            if (!IPS_VariableProfileExists("REOCAM.AiSensitivity100")) {
+                IPS_CreateVariableProfile("REOCAM.AiSensitivity100", 1); // Integer
+            }
+            IPS_SetVariableProfileValues("REOCAM.AiSensitivity100", 0, 100, 1);
+
             $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
 
-            // AI-Sensitivität gehört zur gleichen Konfiguration wie MdSensitivity
-            // und wird deshalb ebenfalls über EnableApiSensitivity erstellt.
-            $this->RegisterVariableInteger("AiSensitivityPerson", "AI Sensitivität Person", "REOCAM.Sensitivity50", 4);
+            // AI-Sensitivität kommt aus GetAiAlarm und hat laut API einen eigenen Bereich (typisch 0..100).
+            // Wichtig: keine 51-x Umkehrung und keine Begrenzung auf 50.
+            $this->RegisterVariableInteger("AiSensitivityPerson", "AI Sensitivität Person", "REOCAM.AiSensitivity100", 4);
             $this->EnableAction("AiSensitivityPerson");
 
-            $this->RegisterVariableInteger("AiSensitivityVehicle", "AI Sensitivität Fahrzeug", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("AiSensitivityVehicle", "AI Sensitivität Fahrzeug", "REOCAM.AiSensitivity100", 4);
             $this->EnableAction("AiSensitivityVehicle");
 
-            $this->RegisterVariableInteger("AiSensitivityAnimal", "AI Sensitivität Tier", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("AiSensitivityAnimal", "AI Sensitivität Tier", "REOCAM.AiSensitivity100", 4);
             $this->EnableAction("AiSensitivityAnimal");
         } else {
             $this->UnregisterVariableIfExists("MdSensitivity");
@@ -3558,7 +3563,7 @@ class Reolink extends IPSModuleStrict
             return false;
         }
 
-        $level = max(1, min(50, $level));
+        $level = max(0, min(100, $level));
         $node = $this->GetAiSensitivity($aiType);
         if (!is_array($node)) {
             return false;
@@ -3592,7 +3597,7 @@ class Reolink extends IPSModuleStrict
             }
             $node = $this->GetAiSensitivity($aiType);
             if (is_array($node) && isset($node['sensitivity'])) {
-                $this->SetValueIfChanged($ident, max(1, min(50, (int)$node['sensitivity'])));
+                $this->SetValueIfChanged($ident, max(0, min(100, (int)$node['sensitivity'])));
             }
         }
     }
