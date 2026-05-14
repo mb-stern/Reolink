@@ -3797,44 +3797,33 @@ class Reolink extends IPSModuleStrict
 
 private function PushApply(bool $enable): bool
 {
-    $res = $this->apiCall([[
-        'cmd'    => 'GetPush',
-        'action' => 1,
-        'param'  => ['channel' => 0]
-    ]], 'PUSH');
-
-    $this->dbg('PUSH', 'READ BEFORE SET', $res);
-
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+    if (!$this->apiEnsureToken()) {
         return false;
     }
 
-    $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
-    if (!is_array($push)) {
-        return false;
-    }
-
-    if (!isset($push['schedule']) || !is_array($push['schedule'])) {
-        $push['schedule'] = ['channel' => 0];
-    }
-
-    $push['schedule']['enable'] = $enable ? 1 : 0;
-    $push['schedule']['channel'] = 0;
+    $token = $this->ReadAttributeString('ApiToken');
 
     $payload = [[
-        'cmd'   => 'SetPush',
+        'cmd'   => 'SetPushV20',
         'param' => [
-            'Push' => $push
+            'Push' => [
+                'enable' => $enable ? 1 : 0
+            ]
         ]
     ]];
 
-    $this->dbg('PUSH', 'SET LEGACY REQUEST', $payload);
+    $url = $this->apiBase() . '/api.cgi?cmd=SetPushV20&token=' . rawurlencode($token);
 
-    $set = $this->apiCall($payload, 'PUSH');
+    $this->dbg('PUSH', 'SET URL', [
+        'url' => preg_replace('/token=[^&]*/', 'token=***', $url)
+    ]);
+    $this->dbg('PUSH', 'SET REQUEST', $payload);
 
-    $this->dbg('PUSH', 'SET LEGACY RESPONSE', $set);
+    $res = $this->apiHttpPostJson($url, $payload, 'PUSH');
 
-    if (!is_array($set) || (($set[0]['code'] ?? -1) !== 0)) {
+    $this->dbg('PUSH', 'SET RESPONSE', $res);
+
+    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
         return false;
     }
 
