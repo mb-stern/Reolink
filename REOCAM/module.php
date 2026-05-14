@@ -1934,6 +1934,7 @@ class Reolink extends IPSModuleStrict
     {
         $this->WriteAttributeString('ApiVersionCache', '{}');
         $this->WriteAttributeString('ApiCache', '{}');
+        $this->WriteAttributeString('AbilityCache', '');
         $this->SendDebug('API', 'Cache manuell gelöscht', 0);
     }
 
@@ -2285,39 +2286,119 @@ class Reolink extends IPSModuleStrict
         return $ability;
     }
 
-    private function apiVersionGet(string $domain): ?string {
+    private function apiVersionGet(string $domain): ?string
+    {
         $raw = $this->ReadAttributeString('ApiVersionCache');
         $map = $raw ? @json_decode($raw, true) : [];
         $now = time();
-        if (!isset($map[$domain])) return null;
-        $age = $now - (int)$map[$domain]['ts'];
-        if ($age > 86400) return null; // 24h
-        return ($map[$domain]['ver'] ?? null);
+
+        if (!is_array($map) || !isset($map[$domain])) {
+            return null;
+        }
+
+        $age = $now - (int)($map[$domain]['ts'] ?? 0);
+        if ($age > 86400) {
+            return null;
+        }
+
+        $ver = $map[$domain]['ver'] ?? null;
+        return in_array($ver, ['v20', 'legacy', 'unsupported'], true) ? $ver : null;
     }
-    private function apiVersionSet(string $domain, string $ver): void {
+
+    private function apiVersionSet(string $domain, string $ver): void
+    {
+        if (!in_array($ver, ['v20', 'legacy', 'unsupported'], true)) {
+            return;
+        }
+
         $raw = $this->ReadAttributeString('ApiVersionCache');
         $map = $raw ? @json_decode($raw, true) : [];
-        $map[$domain] = ['ver'=>$ver, 'ts'=>time()];
+        if (!is_array($map)) {
+            $map = [];
+        }
+
+        $map[$domain] = [
+            'ver' => $ver,
+            'ts'  => time()
+        ];
+
         $this->WriteAttributeString('ApiVersionCache', json_encode($map));
     }
 
-    private function apiProbe(string $domain, string $cmdV20, string $cmdLegacy, int $action): string {
-        // 1) Cache?
+    private function apiScheduleVersionFromAbility(): ?int
+    {
+        $ability = $this->apiGetAbilityCached();
+        if (empty($ability)) {
+            return null;
+        }
+
+        if (isset($ability['scheduleVersion'])) {
+            return (int)$ability['scheduleVersion'];
+        }
+
+        if (isset($ability['scheduleVersion']['ver'])) {
+            return (int)$ability['scheduleVersion']['ver'];
+        }
+
+        return null;
+    }
+
+    private function apiProbe(string $domain, string $cmdV20, string $cmdLegacy, int $action): string
+    {
         $cached = $this->apiVersionGet($domain);
-        if ($cached === 'v20' || $cached === 'legacy') return $cached;
+        if ($cached !== null) {
+            return $cached;
+        }
 
-        // 2) Probiere V20
-        $rV20 = $this->apiCall([[ 'cmd'=>$cmdV20, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
-        $okV20 = is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0);
-        if ($okV20) { $this->apiVersionSet($domain, 'v20'); return 'v20'; }
+        $scheduleVersion = $this->apiScheduleVersionFromAbility();
 
-        // 3) Probiere Legacy
-        $rLeg = $this->apiCall([[ 'cmd'=>$cmdLegacy, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
-        $okLeg = is_array($rLeg) && (($rLeg[0]['code'] ?? -1) === 0);
-        
-        if ($okLeg) {
-        $this->apiVersionSet($domain, 'legacy');
-        return 'legacy';
+        if ($scheduleVersion === 1) {
+            $res = $this->apiCall([[
+                'cmd'    => $cmdV20,
+                'action' => $action,
+                'param'  => ['channel' => 0]
+            ]], strtoupper($domain) . '/PROBE-V20', true);
+
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                $this->apiVersionSet($domain, 'v20');
+                return 'v20';
+            }
+        }
+
+        if ($scheduleVersion === 0) {
+            $res = $this->apiCall([[
+                'cmd'    => $cmdLegacy,
+                'action' => $action,
+                'param'  => ['channel' => 0]
+            ]], strtoupper($domain) . '/PROBE-LEGACY', true);
+
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                $this->apiVersionSet($domain, 'legacy');
+                return 'legacy';
+            }
+        }
+
+        // Fallback, falls Ability fehlt oder lügt:
+        $rV20 = $this->apiCall([[
+            'cmd'    => $cmdV20,
+            'action' => $action,
+            'param'  => ['channel' => 0]
+        ]], strtoupper($domain) . '/PROBE-V20-FALLBACK', true);
+
+        if (is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0)) {
+            $this->apiVersionSet($domain, 'v20');
+            return 'v20';
+        }
+
+        $rLegacy = $this->apiCall([[
+            'cmd'    => $cmdLegacy,
+            'action' => $action,
+            'param'  => ['channel' => 0]
+        ]], strtoupper($domain) . '/PROBE-LEGACY-FALLBACK', true);
+
+        if (is_array($rLegacy) && (($rLegacy[0]['code'] ?? -1) === 0)) {
+            $this->apiVersionSet($domain, 'legacy');
+            return 'legacy';
         }
 
         $this->apiVersionSet($domain, 'unsupported');
@@ -2401,12 +2482,15 @@ class Reolink extends IPSModuleStrict
     return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
     
-    private function emailSet(array $payload): bool 
+    private function emailSet(array $payload): bool
     {
-        $ver = $this->apiProbe('email', 'SetEmailV20', 'SetEmail', 0);
+        $ver = $this->apiProbe('email', 'GetEmailV20', 'GetEmail', 0);
+        if ($ver === 'unsupported') return false;
+
         $cmd = ($ver === 'v20') ? 'SetEmailV20' : 'SetEmail';
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$payload ]], 'EMAIL-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+        $res = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'EMAIL-SET');
+
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function IntervalSecondsToString(int $sec): ?string
@@ -3168,27 +3252,19 @@ class Reolink extends IPSModuleStrict
 
     private function ftpSet(bool $on): bool
     {
-        $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
+        $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
         if ($ver === 'unsupported') return false;
 
         $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
 
-        $p1  = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
-        $r1  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
-        $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-        if ($ok1) return true;
+        $p1 = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
+        $r1 = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $p1 ]], 'FTP-SET', true);
+        if (is_array($r1) && (($r1[0]['code'] ?? -1) === 0)) return true;
 
-        $r1b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
-        $ok1b = is_array($r1b) && (($r1b[0]['code'] ?? -1) === 0);
-        if ($ok1b) return true;
+        $p2 = [ 'Ftp' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ];
+        $r2 = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $p2 ]], 'FTP-SET');
 
-        $p2  = [ 'Ftp' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ];
-        $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ true);
-        $ok2 = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-        if ($ok2) return true;
-
-        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET');
-        return is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
+        return is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
     }
 
     private function UpdateFtpStatus(): void
@@ -3398,12 +3474,16 @@ class Reolink extends IPSModuleStrict
     return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
     }
     
-    private function alarmSet(array $audioNode): bool 
+    private function alarmSet(array $audioNode): bool
     {
-        $ver = $this->apiProbe('alarm', 'SetAudioAlarmV20', 'SetAudioAlarm', 1);
+        $ver = $this->apiProbe('alarm', 'GetAudioAlarmV20', 'GetAudioAlarm', 1);
+        if ($ver === 'unsupported') return false;
+
         $cmd = ($ver === 'v20') ? 'SetAudioAlarmV20' : 'SetAudioAlarm';
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['Audio'=>$audioNode] ]], 'ALARM-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+
+        $res = $this->apiCall([[ 'cmd' => $cmd, 'action' => 1, 'param' => ['Audio' => $audioNode] ]], 'ALARM-SET');
+
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     public function SetSirenEnabled(bool $on): bool
@@ -3490,15 +3570,14 @@ class Reolink extends IPSModuleStrict
 
     private function recordSet(array $payload): bool
     {
-        $ver = $this->apiProbe('record', 'SetRecV20', 'SetRec', 0);
+        $ver = $this->apiProbe('record', 'GetRecV20', 'GetRec', 1);
+        if ($ver === 'unsupported') return false;
+
         $cmd = ($ver === 'v20') ? 'SetRecV20' : 'SetRec';
 
-        $r0  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ true);
-        $ok0 = is_array($r0) && (($r0[0]['code'] ?? -1) === 0);
-        if ($ok0) return true;
+        $res = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'RECORD-SET');
 
-        $r1  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 1, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ false);
-        return is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
     }
 
     private function UpdateRecStatus(): void
