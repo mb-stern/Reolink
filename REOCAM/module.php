@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, AI-Sensitivität korrekt über EnableApiSensitivity erstellt (v9)
+    // Refactoring-Version: API zentralisiert, AI-Sensitivität korrigiert (v10)
 
     /**
      * Zentrale API-Definitionen.
@@ -3542,7 +3542,12 @@ class Reolink extends IPSModuleStrict
             return null;
         }
 
-        $node = $res[0]['value'] ?? null;
+        $value = $res[0]['value'] ?? null;
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $node = $value['AiAlarm'] ?? $value;
         return is_array($node) ? $node : null;
     }
 
@@ -3563,8 +3568,9 @@ class Reolink extends IPSModuleStrict
         $node['sensitivity'] = $level;
 
         $res = $this->apiCall([[
-            'cmd'   => 'SetAiAlarm',
-            'param' => [
+            'cmd'    => 'SetAiAlarm',
+            'action' => 0,
+            'param'  => [
                 'channel' => 0,
                 'AiAlarm' => $node
             ]
