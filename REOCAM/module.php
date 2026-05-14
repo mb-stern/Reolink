@@ -3798,44 +3798,40 @@ class Reolink extends IPSModuleStrict
     }
 
     private function UpdatePushStatus(): void
-    {
-        $res = $this->apiCall([[
-            'cmd'    => 'GetPushV20',
-            'action' => 0,
-            'param'  => ['channel' => 0]
-        ]], 'PUSH');
+{
+    $res = $this->apiCall([[
+        'cmd'    => 'GetPushV20',
+        'action' => 1,
+        'param'  => [
+            'channel' => 0
+        ]
+    ]], 'PUSH');
 
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->dbg('PUSH', 'GetPushV20 fehlgeschlagen', $res);
-            return;
-        }
+    $this->dbg('PUSH', 'API Antwort', $res);
 
-        $enable = $res[0]['value']['Push']['enable'] ?? null;
-
-        if ($enable === null) {
-            $this->dbg('PUSH', 'enable fehlt', $res);
-            return;
-        }
-
-        $enabled = ((int)$enable === 1);
-
-        $id = @$this->GetIDForIdent('PushNotify');
-        if ($id === false) {
-            $this->dbg('PUSH', 'Variable PushNotify fehlt');
-            return;
-        }
-
-        $this->dbg('PUSH', 'API enable gelesen', [
-            'raw'     => $enable,
-            'bool'    => $enabled,
-            'varID'   => $id,
-            'alt'     => GetValueBoolean($id)
-        ]);
-
-        SetValueBoolean($id, $enabled);
-
-        $this->dbg('PUSH', 'Variable gesetzt', [
-            'neu' => GetValueBoolean($id)
-        ]);
+    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+        return;
     }
+
+    if (!isset($res[0]['value']['Push']['enable'])) {
+        $this->dbg('PUSH', 'enable fehlt');
+        return;
+    }
+
+    $enabled = ((int)$res[0]['value']['Push']['enable'] === 1);
+
+    $this->dbg('PUSH', 'enable RAW', $res[0]['value']['Push']['enable']);
+    $this->dbg('PUSH', 'enable BOOL', $enabled);
+
+    $id = @$this->GetIDForIdent('PushNotify');
+    if ($id === false) {
+        return;
+    }
+
+    $this->dbg('PUSH', 'Alter Wert', GetValue($id));
+
+    $this->SetValue('PushNotify', $enabled);
+
+    $this->dbg('PUSH', 'Neuer Wert', GetValue($id));
+}
 }
