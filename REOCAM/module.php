@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, AI/AutoTracking zentral gemappt (v6)
+    // Refactoring-Version: API zentralisiert, AI/AutoTracking Variablen korrigiert (v7)
 
     /**
      * Zentrale API-Definitionen.
@@ -1924,7 +1924,7 @@ class Reolink extends IPSModuleStrict
             }
             IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
 
-            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 5);
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
         } else {
             $this->UnregisterVariable("MdSensitivity");
@@ -1963,18 +1963,19 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariable("RecEnabled");
         }
 
-        // -------- Auto-Tracking --------
+        // -------- Auto-Tracking / AI --------
+        // Wird über denselben Konfigurationsschalter "EnableApiAutoTracking" angelegt/entfernt
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 4);
+            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 5);
             $this->EnableAction("AutoTracking");
 
-            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 4);
+            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 5);
             $this->EnableAction("AutoTrackPerson");
 
-            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 4);
+            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 5);
             $this->EnableAction("AutoTrackVehicle");
 
-            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 4);
+            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 5);
             $this->EnableAction("AutoTrackAnimal");
         } else {
             $this->UnregisterVariable("AutoTracking");
