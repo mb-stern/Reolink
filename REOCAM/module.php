@@ -113,6 +113,66 @@ class Reolink extends IPSModuleStrict
     ];
 
 
+    /**
+     * Zentrales Lese-Mapping: Welche Variable wird aus welchem JSON-Pfad befüllt.
+     * paths = Fallback-Reihenfolge, falls Firmware V20/Legacy unterschiedlich liefert.
+     * type  = Ziel-/Umwandlungstyp.
+     */
+    private const API_READ_MAP = [
+        'whiteLed' => [
+            'WhiteLed' => ['paths' => [['state']],  'type' => 'bool'],
+            'Mode'     => ['paths' => [['mode']],   'type' => 'int'],
+            'Bright'   => ['paths' => [['bright']], 'type' => 'int'],
+        ],
+        'email' => [
+            'EmailNotify'   => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+            'EmailInterval' => ['paths' => [['interval'], ['intervalSec']],       'type' => 'emailInterval'],
+            'EmailContent'  => ['method' => 'apiReadEmailContentMode',            'type' => 'int'],
+        ],
+        'ftp' => [
+            'FTPEnabled' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+        ],
+        'alarm' => [
+            'SirenEnabled' => ['paths' => [['enable']], 'type' => 'bool'],
+        ],
+        'record' => [
+            'RecEnabled' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+        ],
+        'ir' => [
+            'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
+        ],
+    ];
+
+    /**
+     * Zentrales Schreib-Mapping: Welche Variable schreibt auf welchen API-Pfad.
+     * payloads = Fallback-Reihenfolge, falls Firmware direkte Felder oder schedule.* erwartet.
+     */
+    private const API_WRITE_MAP = [
+        'whiteLed' => [
+            'WhiteLed' => ['payloads' => [[['state']]],  'type' => 'bool01'],
+            'Mode'     => ['payloads' => [[['mode']]],   'type' => 'int'],
+            'Bright'   => ['payloads' => [[['bright']]], 'type' => 'int'],
+        ],
+        'email' => [
+            'EmailNotify'   => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool01'],
+            'EmailInterval' => ['payloads' => [[['interval']]],                         'type' => 'emailIntervalString'],
+            'EmailContent'  => ['method' => 'apiWriteEmailContentPayloads'],
+        ],
+        'ftp' => [
+            'FTPEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool01'],
+        ],
+        'alarm' => [
+            'SirenEnabled' => ['payloads' => [[['enable']]], 'type' => 'bool01'],
+        ],
+        'record' => [
+            'RecEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool01'],
+        ],
+        'ir' => [
+            'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
+        ],
+    ];
+
+
 
     /**
      * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
@@ -2555,58 +2615,218 @@ class Reolink extends IPSModuleStrict
         return $this->apiFeatureSet($domain, $node, $topic);
     }
 
+
+    private function apiPathGet(array $data, array $path): mixed
+    {
+        $cur = $data;
+        foreach ($path as $key) {
+            if (!is_array($cur) || !array_key_exists($key, $cur)) {
+                return null;
+            }
+            $cur = $cur[$key];
+        }
+        return $cur;
+    }
+
+    private function apiPathSet(array &$data, array $path, mixed $value): void
+    {
+        $cur =& $data;
+        $last = array_pop($path);
+        foreach ($path as $key) {
+            if (!isset($cur[$key]) || !is_array($cur[$key])) {
+                $cur[$key] = [];
+            }
+            $cur =& $cur[$key];
+        }
+        if ($last !== null) {
+            $cur[$last] = $value;
+        }
+    }
+
+    private function apiFirstMappedValue(array $node, array $cfg): mixed
+    {
+        if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
+            return $this->{$cfg['method']}($node);
+        }
+
+        foreach (($cfg['paths'] ?? []) as $path) {
+            $value = $this->apiPathGet($node, $path);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+        return null;
+    }
+
+    private function apiConvertReadValue(mixed $value, string $type): mixed
+    {
+        return match ($type) {
+            'bool'          => ((int)$value === 1) || $value === true || $value === 'on' || $value === 'On',
+            'int'           => (int)$value,
+            'emailInterval' => is_numeric($value) ? (int)$value : $this->IntervalStringToSeconds((string)$value),
+            'irMode'        => $this->irModeToInt($value),
+            default         => $value,
+        };
+    }
+
+    private function apiConvertWriteValue(mixed $value, string $type): mixed
+    {
+        return match ($type) {
+            'bool01'              => $value ? 1 : 0,
+            'int'                 => (int)$value,
+            'emailIntervalString' => $this->IntervalSecondsToString((int)$value),
+            'irModeString'        => $this->irModeIntToString((int)$value),
+            default               => $value,
+        };
+    }
+
+    private function apiUpdateMappedFeature(string $domain, string $topic = ''): bool
+    {
+        $map = self::API_READ_MAP[$domain] ?? null;
+        if (!is_array($map)) {
+            return false;
+        }
+
+        $node = $this->apiFeatureNodeGet($domain, $topic ?: strtoupper($domain));
+        if (!is_array($node)) {
+            return false;
+        }
+
+        foreach ($map as $ident => $cfg) {
+            $raw = $this->apiFirstMappedValue($node, $cfg);
+            if ($raw === null) {
+                continue;
+            }
+
+            $value = $this->apiConvertReadValue($raw, (string)($cfg['type'] ?? 'raw'));
+            if ($value === null) {
+                continue;
+            }
+
+            $this->SetValueIfChanged($ident, $value);
+        }
+
+        return true;
+    }
+
+    private function apiWriteMappedValue(string $domain, string $ident, mixed $value, string $topic = ''): bool
+    {
+        $cfg = self::API_WRITE_MAP[$domain][$ident] ?? null;
+        if (!is_array($cfg)) {
+            return false;
+        }
+
+        if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
+            $payloads = $this->{$cfg['method']}($value);
+        } else {
+            $converted = $this->apiConvertWriteValue($value, (string)($cfg['type'] ?? 'raw'));
+            if ($converted === null) {
+                return false;
+            }
+
+            $payloads = [];
+            foreach (($cfg['payloads'] ?? []) as $payloadDef) {
+                $payload = ['channel' => 0];
+                foreach ($payloadDef as $path) {
+                    $this->apiPathSet($payload, $path, $converted);
+                }
+                $payloads[] = $payload;
+            }
+        }
+
+        foreach ($payloads as $payload) {
+            if ($this->apiFeatureSet($domain, $payload, $topic ?: strtoupper($domain) . '-SET')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function apiReadEmailContentMode(array $email): ?int
+    {
+        if (isset($email['textType']) || isset($email['attachmentType'])) {
+            $text = (int)($email['textType'] ?? 1);
+            $att  = (int)($email['attachmentType'] ?? 0);
+            if ($text === 1 && $att === 0) return 0;
+            if ($text === 0 && $att === 1) return 1;
+            if ($text === 1 && $att === 1) return 2;
+            if ($text === 1 && $att === 2) return 3;
+            return 0;
+        }
+
+        if (isset($email['attachment'])) {
+            return [
+                '0' => 0,
+                'no' => 0,
+                'onlyPicture' => 1,
+                'picture' => 2,
+                'video' => 3,
+            ][(string)$email['attachment']] ?? 0;
+        }
+
+        return null;
+    }
+
+    private function apiWriteEmailContentPayloads(int $mode): array
+    {
+        $m = max(0, min(3, $mode));
+        return [
+            [
+                'channel'        => 0,
+                'textType'       => in_array($m, [0, 2, 3], true) ? 1 : 0,
+                'attachmentType' => ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0))),
+            ],
+            [
+                'channel'    => 0,
+                'attachment' => match ($m) { 1 => 'onlyPicture', 2 => 'picture', 3 => 'video', default => '0' },
+            ],
+        ];
+    }
+
+    private function irModeToInt(mixed $raw): ?int
+    {
+        if (is_int($raw)) {
+            return [0 => 0, 1 => 1, 2 => 2][$raw] ?? null;
+        }
+        if (is_string($raw)) {
+            return match (strtolower($raw)) {
+                'off'  => 0,
+                'on'   => 1,
+                'auto' => 2,
+                default => null,
+            };
+        }
+        return null;
+    }
+
+    private function irModeIntToString(int $mode): ?string
+    {
+        return [0 => 'Off', 1 => 'On', 2 => 'Auto'][$mode] ?? null;
+    }
+
     // ---------------------------
     // Spotlight (White LED)
     // ---------------------------
 
 
-    private function whiteLedSet(array $payload): bool
+    private function SetWhiteLed(bool $state): bool
     {
-        return $this->apiFeatureSet('whiteLed', $payload, 'SPOT-SET');
+        return $this->apiWriteMappedValue('whiteLed', 'WhiteLed', $state, 'SPOT-SET');
     }
 
-    private function SendLedRequest(array $ledParams): bool
+    private function SetMode(int $mode): bool
     {
-        return $this->whiteLedSet(array_merge($ledParams, ["channel" => 0]));
+        return $this->apiWriteMappedValue('whiteLed', 'Mode', $mode, 'SPOT-SET');
     }
-    private function SetWhiteLed(bool $state): bool   { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
-    private function SetMode(int $mode): bool         { return $this->SendLedRequest(['mode'  => $mode]); }
-    private function SetBrightness(int $b): bool      { return $this->SendLedRequest(['bright'=> $b]); }
+
+    private function SetBrightness(int $b): bool
+    {
+        return $this->apiWriteMappedValue('whiteLed', 'Bright', $b, 'SPOT-SET');
+    }
 
     private function UpdateWhiteLedStatus(): void
     {
-        $wl = $this->apiFeatureNodeGet('whiteLed', 'SPOT');
-        if (!is_array($wl)) {
-            $this->dbg('SPOTLIGHT', 'Ungültige Antwort');
-            return;
-        }
-
-        $this->ApplyWhiteLedStateToVars([
-            'state'  => isset($wl['state'])  ? (int)$wl['state']  : null,
-            'mode'   => isset($wl['mode'])   ? (int)$wl['mode']   : null,
-            'bright' => isset($wl['bright']) ? (int)$wl['bright'] : null,
-        ]);
-    }
-
-    private function ApplyWhiteLedStateToVars(array $led): void
-    {
-        $map = [
-            'WhiteLed' => array_key_exists('state',  $led) ? (bool)$led['state']   : null,
-            'Mode'     => array_key_exists('mode',   $led) ? (int)$led['mode']     : null,
-            'Bright'   => array_key_exists('bright', $led) ? (int)$led['bright']   : null,
-        ];
-
-        foreach ($map as $ident => $newVal) {
-            if ($newVal === null) continue;
-            $id = @$this->GetIDForIdent($ident);
-            if (!$id) continue;
-
-            $oldVal = GetValue($id);
-            if ($oldVal !== $newVal) {
-                $this->SetValue($ident, $newVal);
-                $this->dbg('SPOTLIGHT', 'Var geändert', ['ident' => $ident, 'old' => $oldVal, 'new' => $newVal]);
-            }
-        }
+        $this->apiUpdateMappedFeature('whiteLed', 'SPOT');
     }
 
     // ---------------------------
@@ -2614,149 +2834,55 @@ class Reolink extends IPSModuleStrict
     // ---------------------------
 
 
-    private function emailSet(array $payload): bool
-    {
-        return $this->apiFeatureSet('email', $payload, 'EMAIL-SET');
-    }
-
     private function IntervalSecondsToString(int $sec): ?string
     {
-        switch ($sec) {
-            case 30: return "30 Seconds";
-            case 60: return "1 Minute";
-            case 300: return "5 Minutes";
-            case 600: return "10 Minutes";
-            case 1800: return "30 Minutes";
-        }
-        return null;
+        return [
+            30   => '30 Seconds',
+            60   => '1 Minute',
+            300  => '5 Minutes',
+            600  => '10 Minutes',
+            1800 => '30 Minutes',
+        ][$sec] ?? null;
     }
+
     private function IntervalStringToSeconds(string $s): ?int
     {
-        $s = trim($s);
-        $map = [ "30 Seconds" => 30, "1 Minute" => 60, "5 Minutes" => 300, "10 Minutes" => 600, "30 Minutes" => 1800 ];
-        return $map[$s] ?? null;
-    }
-
-    private function GetEmailState(): ?array
-    {
-        $e = $this->apiFeatureNodeGet('email', 'EMAIL');
-        if (!is_array($e)) return null;
-
-        $enabled = null;
-        if (array_key_exists('enable', $e)) {
-            $enabled = ((int)$e['enable'] === 1);
-        } elseif (isset($e['schedule']['enable'])) {
-            $enabled = ((int)$e['schedule']['enable'] === 1);
-        }
-
-        $intervalSec = null;
-        if (isset($e['interval'])) {
-            $map = ['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800];
-            $intervalSec = $map[(string)$e['interval']] ?? null;
-        } elseif (isset($e['intervalSec'])) {
-            $intervalSec = (int)$e['intervalSec'];
-        }
-
-        $contentMode = null;
-        if (isset($e['textType']) || isset($e['attachmentType'])) {
-            $text = (int)($e['textType'] ?? 1);
-            $att  = (int)($e['attachmentType'] ?? 0);
-            if ($text === 1 && $att === 0)      $contentMode = 0;
-            elseif ($text === 0 && $att === 1)  $contentMode = 1;
-            elseif ($text === 1 && $att === 1)  $contentMode = 2;
-            elseif ($text === 1 && $att === 2)  $contentMode = 3;
-            else                                $contentMode = 0;
-        } elseif (isset($e['attachment'])) {
-            $contentMode = [
-                '0'=>0, 'no'=>0, 'onlyPicture'=>1, 'picture'=>2, 'video'=>3
-            ][(string)$e['attachment']] ?? 0;
-        }
-
         return [
-            'enabled'     => $enabled,
-            'intervalSec' => $intervalSec,
-            'contentMode' => $contentMode,
-            'raw'         => $e
-        ];
+            '30 Seconds' => 30,
+            '1 Minute'   => 60,
+            '5 Minutes'  => 300,
+            '10 Minutes' => 600,
+            '30 Minutes' => 1800,
+        ][trim($s)] ?? null;
     }
 
     private function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
     {
         if ($enable === null && $intervalSec === null && $contentMode === null) {
-            if (method_exists($this, 'UpdateEmailStatus')) {
-                $this->UpdateEmailStatus();
-            }
+            $this->UpdateEmailStatus();
             return true;
         }
 
-        $okAll   = true;
-        $touched = false;
-
+        $ok = true;
         if ($enable !== null) {
-            $touched = true;
-            $ok = $this->emailSet(['channel'=>0, 'enable'=>($enable?1:0)]);
-            if (!$ok) {
-                $ok = $this->emailSet(['channel'=>0, 'schedule'=>['enable'=>($enable?1:0)]]);
-            }
-            $okAll = $okAll && $ok;
+            $ok = $this->apiWriteMappedValue('email', 'EmailNotify', $enable, 'EMAIL-SET') && $ok;
         }
-
         if ($intervalSec !== null) {
-            $touched = true;
-            $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
-            $str = $map[(int)$intervalSec] ?? null;
-            $ok  = $str ? $this->emailSet(['channel'=>0, 'interval'=>$str]) : false;
-            $okAll = $okAll && $ok;
+            $ok = $this->apiWriteMappedValue('email', 'EmailInterval', $intervalSec, 'EMAIL-SET') && $ok;
         }
-
         if ($contentMode !== null) {
-            $touched = true;
-            $m = (int)$contentMode;
-
-            $payloadV20 = [
-                'channel'        => 0,
-                'textType'       => in_array($m, [0,2,3], true) ? 1 : 0,
-                'attachmentType' => ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0))),
-            ];
-            $ok = $this->emailSet($payloadV20);
-
-            if (!$ok) {
-                $payloadLegacy = [
-                    'channel'    => 0,
-                    'attachment' => match ($m) { 1=>'onlyPicture', 2=>'picture', 3=>'video', default=>'0' },
-                ];
-                $ok = $this->emailSet($payloadLegacy);
-            }
-            $okAll = $okAll && $ok;
+            $ok = $this->apiWriteMappedValue('email', 'EmailContent', $contentMode, 'EMAIL-SET') && $ok;
         }
 
-        if (!$touched) return true;
-
-        if (method_exists($this, 'UpdateEmailStatus')) {
+        if ($ok) {
             $this->UpdateEmailStatus();
         }
-        return $okAll;
+        return $ok;
     }
 
     public function UpdateEmailStatus(): void
     {
-        $st = $this->GetEmailState();
-        if (!is_array($st)) return;
-
-        $id = @$this->GetIDForIdent('EmailNotify');
-        if ($id !== false && $st['enabled'] !== null && (bool)GetValue($id) !== (bool)$st['enabled']) {
-            $this->SetValue('EmailNotify', (bool)$st['enabled']);
-        }
-
-        $id = @$this->GetIDForIdent('EmailInterval');
-        if ($id !== false && $st['intervalSec'] !== null && (int)GetValue($id) !== (int)$st['intervalSec']) {
-            $this->SetValue('EmailInterval', (int)$st['intervalSec']);
-        }
-
-        $id = @$this->GetIDForIdent('EmailContent');
-        if ($id !== false && $st['contentMode'] !== null && (int)GetValue($id) !== (int)$st['contentMode']) {
-            $this->SetValue('EmailContent', (int)$st['contentMode']);
-        }
+        $this->apiUpdateMappedFeature('email', 'EMAIL');
     }
 
     // ---------------------------
@@ -3360,46 +3486,19 @@ class Reolink extends IPSModuleStrict
     // ---------------------------
 
 
-    private function ftpSet(array $payload): bool
-    {
-        return $this->apiFeatureSet('ftp', $payload, 'FTP-SET');
-    }
-
-    private function ftpSetEnabled(bool $on): bool
-    {
-        $enabled = $on ? 1 : 0;
-
-        // Neue und alte Firmware unterscheiden sich hier teils: einmal direkt enable,
-        // einmal schedule.enable. Darum beide Varianten sauber über dieselbe API-Schicht testen.
-        if ($this->apiFeatureSet('ftp', ['channel' => 0, 'enable' => $enabled], 'FTP-SET')) {
-            return true;
-        }
-
-        return $this->apiFeatureSet('ftp', ['channel' => 0, 'schedule' => ['enable' => $enabled]], 'FTP-SET');
-    }
-
     private function UpdateFtpStatus(): void
     {
-        $ftp = $this->apiFeatureNodeGet('ftp', 'FTP');
-        if (!is_array($ftp)) return;
-
-        $enabled = null;
-        if (array_key_exists('enable', $ftp)) $enabled = ((int)$ftp['enable'] === 1);
-        elseif (isset($ftp['schedule']['enable'])) $enabled = ((int)$ftp['schedule']['enable'] === 1);
-        if ($enabled === null) return;
-
-        $id = @$this->GetIDForIdent('FTPEnabled');
-        if ($id !== false && (bool)GetValue($id) !== $enabled) {
-            $this->SetValue('FTPEnabled', (bool)$enabled);
-            $this->dbg('FTP', 'Var geändert', ['old' => (bool)GetValue($id), 'new' => (bool)$enabled]);
-        }
+        $this->apiUpdateMappedFeature('ftp', 'FTP');
     }
 
     private function FtpApply(bool $on): bool
     {
-        $ok = $this->ftpSetEnabled($on);
-        if ($ok) $this->UpdateFtpStatus();
-        else     $this->dbg('FTP', 'Setzen fehlgeschlagen');
+        $ok = $this->apiWriteMappedValue('ftp', 'FTPEnabled', $on, 'FTP-SET');
+        if ($ok) {
+            $this->UpdateFtpStatus();
+        } else {
+            $this->dbg('FTP', 'Setzen fehlgeschlagen');
+        }
         return $ok;
     }
 
@@ -3552,37 +3651,19 @@ class Reolink extends IPSModuleStrict
     // ---------------------------
 
     
-    private function alarmSet(array $audioNode): bool
-    {
-        return $this->apiFeatureSet('alarm', $audioNode, 'ALARM-SET');
-    }
-
     public function SetSirenEnabled(bool $on): bool
     {
-        $audio = $this->apiFeatureNodeGet('alarm', 'ALARM');
-        if (!is_array($audio)) return false;
-
-        $audio['enable'] = $on ? 1 : 0;
-        $ok = $this->alarmSet($audio);
-
-        if ($ok) $this->UpdateSirenStatus();
+        $ok = $this->apiWriteMappedValue('alarm', 'SirenEnabled', $on, 'ALARM-SET');
+        if ($ok) {
+            $this->UpdateSirenStatus();
+        }
         return $ok;
     }
 
     private function UpdateSirenStatus(): void
     {
-        $vid = @$this->GetIDForIdent("SirenEnabled");
-        if (!$vid) return;
-
-        $audio = $this->apiFeatureNodeGet('alarm', 'ALARM');
-        if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
-
-        $enabled = ((int)$audio['enable'] === 1);
-        if ((bool)GetValue($vid) !== $enabled) {
-            $this->SetValue("SirenEnabled", $enabled);
-        }
+        $this->apiUpdateMappedFeature('alarm', 'ALARM');
     }
-
 
     // ---------------------------
     // Sirene ansteuern
@@ -3627,44 +3708,14 @@ class Reolink extends IPSModuleStrict
     // ---------------------------
 
 
-    private function recordSet(array $payload): bool
-    {
-        return $this->apiFeatureSet('record', $payload, 'RECORD-SET');
-    }
-
     private function UpdateRecStatus(): void
     {
-        $vid = @$this->GetIDForIdent("RecEnabled");
-        if (!$vid) return;
-
-        $rec = $this->apiFeatureNodeGet('record', 'RECORD');
-        if (!is_array($rec)) return;
-
-        $enabled = null;
-        if (array_key_exists('enable', $rec)) {
-            $enabled = ((int)$rec['enable'] === 1);
-        } elseif (isset($rec['schedule']['enable'])) {
-            $enabled = ((int)$rec['schedule']['enable'] === 1);
-        }
-        if ($enabled !== null && ((bool)GetValue($vid) !== $enabled)) {
-            $this->SetValue('RecEnabled', $enabled);
-        }
+        $this->apiUpdateMappedFeature('record', 'RECORD');
     }
 
     public function SetRecEnabled(bool $on): bool
     {
-        $rec = $this->apiFeatureNodeGet('record', 'RECORD');
-        if (!is_array($rec)) $rec = [];
-
-        $rec['enable']  = $on ? 1 : 0;
-        $rec['channel'] = 0;
-
-        $ok = $this->recordSet($rec);
-
-        if (!$ok) {
-            $ok = $this->recordSet(['schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0]);
-        }
-
+        $ok = $this->apiWriteMappedValue('record', 'RecEnabled', $on, 'RECORD-SET');
         if ($ok) {
             $this->UpdateRecStatus();
         }
@@ -3681,12 +3732,7 @@ class Reolink extends IPSModuleStrict
         if (!$this->apiEnsureToken()) return false;
 
         $mode = max(0, min(2, $mode));
-        $map  = [0 => 'Off', 1 => 'On', 2 => 'Auto'];
-
-        $ok = $this->apiFeatureSet('ir', [
-            'channel' => 0,
-            'state'   => $map[$mode],
-        ], 'IR-SET');
+        $ok = $this->apiWriteMappedValue('ir', 'IRLights', $mode, 'IR-SET');
 
         if ($ok) {
             $this->UpdateIrStatus();
@@ -3694,40 +3740,9 @@ class Reolink extends IPSModuleStrict
         return $ok;
     }
 
-    private function irGetMode(): ?string
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
-        if (!$this->apiEnsureToken()) return null;
-
-        $res = $this->apiFeatureGet('ir', 'IR');
-        if (!is_array($res)) return null;
-
-        $node = $this->apiExtractNode($res, 'ir');
-        if (!is_array($node)) return null;
-
-        $raw = $node['state'] ?? null;
-        if (is_string($raw)) {
-            $s = strtolower($raw);
-            if (in_array($s, ['off','on','auto'], true)) return $s;
-        }
-        if (is_int($raw)) {
-            return [0=>'off',1=>'on',2=>'auto'][$raw] ?? null;
-        }
-        return null;
-    }
-
     private function UpdateIrStatus(): void
     {
-        $mode = $this->irGetMode();
-        if ($mode === null) return;
-
-        $vid = @$this->GetIDForIdent('IRLights');
-        if ($vid !== false) {
-            $val = ($mode === 'off' ? 0 : ($mode === 'on' ? 1 : 2));
-            if ((int)GetValue($vid) !== $val) {
-                $this->SetValue('IRLights', $val);
-            }
-        }
+        $this->apiUpdateMappedFeature('ir', 'IR');
     }
 
     // ---------------------------
