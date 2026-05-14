@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, AI/AutoTracking Variablen korrigiert (v7)
+    // Refactoring-Version: API zentralisiert, AI/AutoTracking Variablen robust erstellt (v8)
 
     /**
      * Zentrale API-Definitionen.
@@ -1174,7 +1174,7 @@ class Reolink extends IPSModuleStrict
             'sensitivity' => (($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0),
             'alarm'       => (($chn['AudioAlarm']['ver'] ?? 0) > 0) || (($chn['audioAlarm']['ver'] ?? 0) > 0),
             'record'      => (($chn['recCfg']['ver'] ?? 0) > 0),
-            'aiCfg'       => (($chn['aiTrack']['ver'] ?? 0) > 0) || (($chn['aiTrackDogCat']['ver'] ?? 0) > 0),
+            'aiCfg'       => true, // nicht hart aus Ability ausblenden: GetAiCfg ist je nach Modell/Firmware unterschiedlich gemeldet
             'ptz'         => (($chn['ptz']['ver'] ?? 0) > 0),
             default       => true,
         };
@@ -1825,6 +1825,14 @@ class Reolink extends IPSModuleStrict
     // API Variablen erstellen/löschen
     // ---------------------------
 
+    private function UnregisterVariableIfExists(string $ident): void
+    {
+        $id = @$this->GetIDForIdent($ident);
+        if ($id !== false) {
+            $this->UnregisterVariable($ident);
+        }
+    }
+
     private function CreateOrUpdateApiVariablesUnified(): void
     {
         // -------- IR (Infrared) --------
@@ -1840,7 +1848,7 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("IRLights", "IR Beleuchtung", "REOCAM.IR", 0);
             $this->EnableAction("IRLights");
         } else {
-            $this->UnregisterVariable("IRLights");
+            $this->UnregisterVariableIfExists("IRLights");
         }
 
         // -------- White LED --------
@@ -1862,9 +1870,9 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
             $this->EnableAction("Bright");
         } else {
-            $this->UnregisterVariable("WhiteLed");
-            $this->UnregisterVariable("Mode");
-            $this->UnregisterVariable("Bright");
+            $this->UnregisterVariableIfExists("WhiteLed");
+            $this->UnregisterVariableIfExists("Mode");
+            $this->UnregisterVariableIfExists("Bright");
         }
 
         // -------- Email --------
@@ -1897,16 +1905,16 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 2);
             $this->EnableAction("EmailContent");
         } else {
-            $this->UnregisterVariable("EmailNotify");
-            $this->UnregisterVariable("EmailInterval");
-            $this->UnregisterVariable("EmailContent");
+            $this->UnregisterVariableIfExists("EmailNotify");
+            $this->UnregisterVariableIfExists("EmailInterval");
+            $this->UnregisterVariableIfExists("EmailContent");
         }
 
         // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
         } else {
-            $this->UnregisterVariable("PTZ_HTML");
+            $this->UnregisterVariableIfExists("PTZ_HTML");
         }
 
         // -------- FTP --------
@@ -1914,7 +1922,7 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
             $this->EnableAction("FTPEnabled");
         } else {
-            $this->UnregisterVariable("FTPEnabled");
+            $this->UnregisterVariableIfExists("FTPEnabled");
         }
 
         // -------- Bewegungssensitivität (1..50) --------
@@ -1927,7 +1935,7 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
         } else {
-            $this->UnregisterVariable("MdSensitivity");
+            $this->UnregisterVariableIfExists("MdSensitivity");
         }
 
         // -------- Sirene--------
@@ -1951,8 +1959,8 @@ class Reolink extends IPSModuleStrict
             $this->EnableAction("SirenAction");
 
         } else {
-            $this->UnregisterVariable("SirenEnabled");
-            $this->UnregisterVariable("SirenAction");
+            $this->UnregisterVariableIfExists("SirenEnabled");
+            $this->UnregisterVariableIfExists("SirenAction");
         }
 
         // -------- Recording / Schedule --------
@@ -1960,12 +1968,14 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 7);
             $this->EnableAction("RecEnabled");
         } else {
-            $this->UnregisterVariable("RecEnabled");
+            $this->UnregisterVariableIfExists("RecEnabled");
         }
 
         // -------- Auto-Tracking / AI --------
         // Wird über denselben Konfigurationsschalter "EnableApiAutoTracking" angelegt/entfernt
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
+            $this->dbg('API-VARS', 'Erstelle AutoTracking/AI Variablen');
+
             $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 5);
             $this->EnableAction("AutoTracking");
 
@@ -1978,10 +1988,11 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 5);
             $this->EnableAction("AutoTrackAnimal");
         } else {
-            $this->UnregisterVariable("AutoTracking");
-            $this->UnregisterVariable("AutoTrackPerson");
-            $this->UnregisterVariable("AutoTrackVehicle");
-            $this->UnregisterVariable("AutoTrackAnimal");
+            $this->dbg('API-VARS', 'Entferne AutoTracking/AI Variablen');
+            $this->UnregisterVariableIfExists("AutoTracking");
+            $this->UnregisterVariableIfExists("AutoTrackPerson");
+            $this->UnregisterVariableIfExists("AutoTrackVehicle");
+            $this->UnregisterVariableIfExists("AutoTrackAnimal");
         }
 
         // -------- Kamera online --------
@@ -1999,8 +2010,8 @@ class Reolink extends IPSModuleStrict
             
 
         } else {
-            $this->UnregisterVariable("FirmwareUpdateAvailable");
-            $this->UnregisterVariable("FirmwareDownloadUrl");
+            $this->UnregisterVariableIfExists("FirmwareUpdateAvailable");
+            $this->UnregisterVariableIfExists("FirmwareDownloadUrl");
         }
     }
 
