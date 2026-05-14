@@ -3799,30 +3799,44 @@ class Reolink extends IPSModuleStrict
 
     private function UpdatePushStatus(): void
     {
-        $res = $this->pushGet();
+        $res = $this->apiCall([[
+            'cmd'    => 'GetPushV20',
+            'action' => 0,
+            'param'  => [
+                'channel' => 0
+            ]
+        ]], 'PUSH');
+
         if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            $this->dbg('PUSH', 'GetPushV20 fehlgeschlagen', $res);
             return;
         }
 
         $push = $res[0]['value']['Push'] ?? null;
         if (!is_array($push)) {
+            $this->dbg('PUSH', 'Push-Daten fehlen', $res);
             return;
         }
 
-        // Wichtig:
-        // Nicht empty() verwenden, weil enable = 0 sonst als "nicht vorhanden" gilt.
-        if (array_key_exists('enable', $push)) {
-            $enabled = ((int)$push['enable'] === 1);
-        } elseif (isset($push['schedule']) && is_array($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
-            $enabled = ((int)$push['schedule']['enable'] === 1);
-        } else {
+        if (!array_key_exists('enable', $push)) {
+            $this->dbg('PUSH', 'Push enable fehlt', $push);
             return;
         }
+
+        $enabled = ((int)$push['enable'] === 1);
 
         $id = @$this->GetIDForIdent('PushNotify');
-        if ($id !== false && (bool)GetValue($id) !== $enabled) {
-            $this->SetValue('PushNotify', $enabled);
+        if ($id === false) {
+            $this->dbg('PUSH', 'Variable PushNotify existiert nicht');
+            return;
         }
+
+        $this->SetValue('PushNotify', $enabled);
+
+        $this->dbg('PUSH', 'Status gelesen', [
+            'enable_raw' => $push['enable'],
+            'enabled'    => $enabled
+        ]);
     }
 
     private function PushApply(bool $on): bool
