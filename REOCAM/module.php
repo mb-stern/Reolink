@@ -3761,53 +3761,80 @@ class Reolink extends IPSModuleStrict
     // Push
     // ---------------------------
 
-    private function UpdatePushStatus(): void
+   private function UpdatePushStatus(): void
 {
     $res = $this->apiCall([[
-        'cmd'    => 'GetPushV20',
+        'cmd'    => 'GetPush',
         'action' => 1,
         'param'  => ['channel' => 0]
     ]], 'PUSH');
 
+    $this->dbg('PUSH', 'GET LEGACY RESPONSE', $res);
+
     if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-        $this->dbg('PUSH', 'GetPushV20 fehlgeschlagen', $res);
         return;
     }
 
     $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
-    if (!is_array($push) || !array_key_exists('enable', $push)) {
-        $this->dbg('PUSH', 'Push.enable fehlt', $res);
+    if (!is_array($push)) {
         return;
     }
 
-    $enabled = ((int)$push['enable'] === 1);
+    if (!isset($push['schedule']['enable'])) {
+        $this->dbg('PUSH', 'schedule.enable fehlt', $push);
+        return;
+    }
+
+    $enabled = ((int)$push['schedule']['enable'] === 1);
 
     $this->dbg('PUSH', 'Status gelesen', [
-        'enable'  => $push['enable'],
-        'enabled' => $enabled
+        'schedule.enable' => $push['schedule']['enable'],
+        'enabled'         => $enabled
     ]);
 
     $this->SetValue('PushNotify', $enabled);
 }
 
-    private function PushApply(bool $enable): bool
+private function PushApply(bool $enable): bool
 {
+    $res = $this->apiCall([[
+        'cmd'    => 'GetPush',
+        'action' => 1,
+        'param'  => ['channel' => 0]
+    ]], 'PUSH');
+
+    $this->dbg('PUSH', 'READ BEFORE SET', $res);
+
+    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+        return false;
+    }
+
+    $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
+    if (!is_array($push)) {
+        return false;
+    }
+
+    if (!isset($push['schedule']) || !is_array($push['schedule'])) {
+        $push['schedule'] = ['channel' => 0];
+    }
+
+    $push['schedule']['enable'] = $enable ? 1 : 0;
+    $push['schedule']['channel'] = 0;
+
     $payload = [[
-        'cmd'   => 'SetPushV20',
+        'cmd'   => 'SetPush',
         'param' => [
-            'Push' => [
-                'enable' => $enable ? 1 : 0
-            ]
+            'Push' => $push
         ]
     ]];
 
-    $this->dbg('PUSH', 'SET REQUEST', $payload);
+    $this->dbg('PUSH', 'SET LEGACY REQUEST', $payload);
 
-    $res = $this->apiCall($payload, 'PUSH');
+    $set = $this->apiCall($payload, 'PUSH');
 
-    $this->dbg('PUSH', 'SET RESPONSE', $res);
+    $this->dbg('PUSH', 'SET LEGACY RESPONSE', $set);
 
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+    if (!is_array($set) || (($set[0]['code'] ?? -1) !== 0)) {
         return false;
     }
 
