@@ -172,6 +172,23 @@ class Reolink extends IPSModuleStrict
         ],
     ];
 
+    /**
+     * Zentrale Action-Definition: einfache RequestAction-Zweige laufen hierüber.
+     * Spezialfälle bleiben in RequestAction separat.
+     */
+    private const API_ACTION_MAP = [
+        'WhiteLed'      => ['domain' => 'whiteLed', 'type' => 'bool'],
+        'Mode'          => ['domain' => 'whiteLed', 'type' => 'int'],
+        'Bright'        => ['domain' => 'whiteLed', 'type' => 'int'],
+        'EmailNotify'   => ['domain' => 'email',    'type' => 'bool'],
+        'EmailInterval' => ['domain' => 'email',    'type' => 'int'],
+        'EmailContent'  => ['domain' => 'email',    'type' => 'int'],
+        'FTPEnabled'    => ['domain' => 'ftp',      'type' => 'bool'],
+        'SirenEnabled'  => ['domain' => 'alarm',    'type' => 'bool'],
+        'RecEnabled'    => ['domain' => 'record',   'type' => 'bool'],
+        'IRLights'      => ['domain' => 'ir',       'type' => 'int'],
+    ];
+
 
 
     /**
@@ -179,14 +196,14 @@ class Reolink extends IPSModuleStrict
      * im 2-Sekunden-Round-Robin ausgeführt wird.
      */
     private const API_POLL_MAP = [
-        'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'method' => 'UpdateWhiteLedStatus'],
-        'Email'        => ['property' => 'EnableApiEmail',        'method' => 'UpdateEmailStatus'],
+        'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'domain' => 'whiteLed'],
+        'Email'        => ['property' => 'EnableApiEmail',        'domain' => 'email'],
         'PTZ'          => ['property' => 'EnableApiPTZ',          'method' => 'CreateOrUpdatePTZHtml', 'args' => [false]],
-        'FTP'          => ['property' => 'EnableApiFTP',          'method' => 'UpdateFtpStatus'],
+        'FTP'          => ['property' => 'EnableApiFTP',          'domain' => 'ftp'],
         'Sensitivity'  => ['property' => 'EnableApiSensitivity',  'method' => 'UpdateMdSensitivityStatus'],
-        'Siren'        => ['property' => 'EnableApiSiren',        'method' => 'UpdateSirenStatus'],
-        'Record'       => ['property' => 'EnableApiRecord',       'method' => 'UpdateRecStatus'],
-        'IR'           => ['property' => 'EnableApiIR',           'method' => 'UpdateIrStatus'],
+        'Siren'        => ['property' => 'EnableApiSiren',        'domain' => 'alarm'],
+        'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
+        'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
         'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'method' => 'UpdateAutoTrackingStatus'],
     ];
 
@@ -329,80 +346,42 @@ class Reolink extends IPSModuleStrict
 
     public function RequestAction(string $Ident, mixed $Value): void
     {
+        $cfg = self::API_ACTION_MAP[$Ident] ?? null;
+        if ($cfg !== null) {
+            $value = match ($cfg['type']) {
+                'bool'  => (bool)$Value,
+                'int'   => (int)$Value,
+                default => $Value,
+            };
+
+            $ok = $this->apiWriteMappedValue($cfg['domain'], $Ident, $value, strtoupper($cfg['domain']) . '-SET');
+            if ($ok) {
+                $this->SetValue($Ident, $value);
+            } else {
+                $this->apiUpdateMappedFeature($cfg['domain'], strtoupper($cfg['domain']));
+            }
+            return;
+        }
+
         switch ($Ident) {
-            case "WhiteLed":
-                $ok = $this->SetWhiteLed((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "Mode":
-                $ok = $this->SetMode((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "Bright":
-                $ok = $this->SetBrightness((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "EmailNotify":
-                $ok = $this->EmailApply((bool)$Value, null, null);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->EmailApply(null, null, null); }
-                break;
-
-            case "EmailInterval":
-                $ok = $this->EmailApply(null, (int)$Value, null);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->EmailApply(null, null, null); }
-                break;
-
-            case "EmailContent":
-                $ok = $this->EmailApply(null, null, (int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->EmailApply(null, null, null); }
-                break;
-
-            case "FTPEnabled":
-                $ok = $this->FtpApply((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateFtpStatus(); }
-                break;
-
-            case "IRLights":
-                $ok = $this->IR_SetModeInt((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateIrStatus(); }
-                break;
-
             case "MdSensitivity":
                 $lvl = max(1, min(50, (int)$Value));
-                $ok = $this->SetMdSensitivity($lvl);
-                if ($ok) { $this->SetValue($Ident, $lvl); }
-                break;
-
-            case "SirenEnabled":
-                $ok = $this->SetSirenEnabled((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
+                if ($this->SetMdSensitivity($lvl)) {
+                    $this->SetValue($Ident, $lvl);
+                }
                 break;
 
             case "SirenAction":
                 $val = (int)$Value;
-                $ok = false;
-                if ($val === 0) $ok = $this->SirenManualSwitch(false);
-                elseif ($val === 100) $ok = $this->SirenManualSwitch(true);
-                elseif ($val >= 1 && $val <= 5) $ok = $this->SirenPlayTimes($val);
-
-                if ($ok) { $this->SetValue('SirenAction', 0); }
-                break;
-
-            case "RecEnabled":
-                $ok = $this->SetRecEnabled((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateRecStatus(); }
+                $ok = match (true) {
+                    $val === 0 => $this->SirenManualSwitch(false),
+                    $val === 100 => $this->SirenManualSwitch(true),
+                    $val >= 1 && $val <= 5 => $this->SirenPlayTimes($val),
+                    default => false,
+                };
+                if ($ok) {
+                    $this->SetValue('SirenAction', 0);
+                }
                 break;
 
             case "ResetApiCache":
@@ -423,18 +402,21 @@ class Reolink extends IPSModuleStrict
                 break;
 
             case "AutoTrackPerson":
-                $ok = $this->SetAutoTrackingType('people', (bool)$Value);
-                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
+                if (!$this->SetAutoTrackingType('people', (bool)$Value)) {
+                    $this->UpdateAutoTrackingStatus();
+                }
                 break;
 
             case "AutoTrackVehicle":
-                $ok = $this->SetAutoTrackingType('vehicle', (bool)$Value);
-                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
+                if (!$this->SetAutoTrackingType('vehicle', (bool)$Value)) {
+                    $this->UpdateAutoTrackingStatus();
+                }
                 break;
 
             case "AutoTrackAnimal":
-                $ok = $this->SetAutoTrackingType('dog_cat', (bool)$Value);
-                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
+                if (!$this->SetAutoTrackingType('dog_cat', (bool)$Value)) {
+                    $this->UpdateAutoTrackingStatus();
+                }
                 break;
 
             default:
@@ -2144,11 +2126,18 @@ class Reolink extends IPSModuleStrict
     private function runApiPollingTask(string $task): void
     {
         $cfg = self::API_POLL_MAP[$task] ?? null;
-        if ($cfg === null || !method_exists($this, $cfg['method'])) {
+        if ($cfg === null) {
             return;
         }
 
-        $this->{$cfg['method']}(...($cfg['args'] ?? []));
+        if (isset($cfg['domain'])) {
+            $this->apiUpdateMappedFeature($cfg['domain'], strtoupper((string)$task));
+            return;
+        }
+
+        if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
+            $this->{$cfg['method']}(...($cfg['args'] ?? []));
+        }
     }
 
     public function ExecuteApiRequests(bool $force = false)
@@ -2805,31 +2794,6 @@ class Reolink extends IPSModuleStrict
     }
 
     // ---------------------------
-    // Spotlight (White LED)
-    // ---------------------------
-
-
-    private function SetWhiteLed(bool $state): bool
-    {
-        return $this->apiWriteMappedValue('whiteLed', 'WhiteLed', $state, 'SPOT-SET');
-    }
-
-    private function SetMode(int $mode): bool
-    {
-        return $this->apiWriteMappedValue('whiteLed', 'Mode', $mode, 'SPOT-SET');
-    }
-
-    private function SetBrightness(int $b): bool
-    {
-        return $this->apiWriteMappedValue('whiteLed', 'Bright', $b, 'SPOT-SET');
-    }
-
-    private function UpdateWhiteLedStatus(): void
-    {
-        $this->apiUpdateMappedFeature('whiteLed', 'SPOT');
-    }
-
-    // ---------------------------
     // E-Mail (V20 / Legacy)
     // ---------------------------
 
@@ -2854,35 +2818,6 @@ class Reolink extends IPSModuleStrict
             '10 Minutes' => 600,
             '30 Minutes' => 1800,
         ][trim($s)] ?? null;
-    }
-
-    private function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
-    {
-        if ($enable === null && $intervalSec === null && $contentMode === null) {
-            $this->UpdateEmailStatus();
-            return true;
-        }
-
-        $ok = true;
-        if ($enable !== null) {
-            $ok = $this->apiWriteMappedValue('email', 'EmailNotify', $enable, 'EMAIL-SET') && $ok;
-        }
-        if ($intervalSec !== null) {
-            $ok = $this->apiWriteMappedValue('email', 'EmailInterval', $intervalSec, 'EMAIL-SET') && $ok;
-        }
-        if ($contentMode !== null) {
-            $ok = $this->apiWriteMappedValue('email', 'EmailContent', $contentMode, 'EMAIL-SET') && $ok;
-        }
-
-        if ($ok) {
-            $this->UpdateEmailStatus();
-        }
-        return $ok;
-    }
-
-    public function UpdateEmailStatus(): void
-    {
-        $this->apiUpdateMappedFeature('email', 'EMAIL');
     }
 
     // ---------------------------
@@ -3482,164 +3417,104 @@ class Reolink extends IPSModuleStrict
 
 
     // ---------------------------
-    // FTP EIN/AUS
-    // ---------------------------
-
-
-    private function UpdateFtpStatus(): void
-    {
-        $this->apiUpdateMappedFeature('ftp', 'FTP');
-    }
-
-    private function FtpApply(bool $on): bool
-    {
-        $ok = $this->apiWriteMappedValue('ftp', 'FTPEnabled', $on, 'FTP-SET');
-        if ($ok) {
-            $this->UpdateFtpStatus();
-        } else {
-            $this->dbg('FTP', 'Setzen fehlgeschlagen');
-        }
-        return $ok;
-    }
-
-    // ---------------------------
     // Sensitivity
     // ---------------------------
 
-    private function sensitivityState(): ?array
+    private function GetMdSensitivity(): ?array
     {
-        $res = $this->apiFeatureGet('sensitivity', 'SENS');
-        if (!is_array($res)) return null;
-
-        $node = $this->apiExtractNode($res, 'sensitivity');
-        if (!is_array($node)) return null;
+        $node = $this->apiFeatureNodeGet('sensitivity', 'SENS');
+        if (!is_array($node)) {
+            return null;
+        }
 
         $isV20 = isset($node['newSens']);
         $sensDef = $isV20 ? (int)($node['newSens']['sensDef'] ?? 10) : null;
         $segments = $this->mdSegments($isV20 ? ($node['newSens']['sens'] ?? []) : ($node['sens'] ?? []));
 
         return [
+            'apiVer'   => $isV20 ? 'V20' : 'LEGACY',
             'isV20'    => $isV20,
             'sensDef'  => $sensDef,
             'segments' => $segments,
-            'active'   => $this->mdActive($segments, $sensDef)
+            'active'   => $this->mdActive($segments, $sensDef),
         ];
     }
 
     public function SetMdSensitivity(int $level): bool
     {
         $levelCam = 51 - max(1, min(50, $level));
-        $st = $this->sensitivityState();
-        if (!$st) return false;
+        $st = $this->GetMdSensitivity();
+        if (!$st) {
+            return false;
+        }
 
         $segments = $st['segments'] ?: [[
             'beginHour' => 0, 'beginMin' => 0,
             'endHour' => 23, 'endMin' => 59,
-            'sensitivity' => $levelCam
+            'sensitivity' => $levelCam,
         ]];
-
-        foreach ($segments as &$s) {
-            $s['sensitivity'] = $levelCam;
+        foreach ($segments as &$segment) {
+            $segment['sensitivity'] = $levelCam;
         }
-        unset($s);
+        unset($segment);
 
-        $payload = $st['isV20']
-            ? [
-                'type'       => 'md',
-                'useNewSens' => 1,
-                'newSens'    => [
-                    'sensDef' => $levelCam,
-                    'sens'    => $segments
-                ],
-                'channel'    => 0
-            ]
-            : [
-                'type'    => 'md',
-                'sens'    => $segments,
-                'channel' => 0
-            ];
+        $payload = !empty($st['isV20'])
+            ? ['type' => 'md', 'useNewSens' => 1, 'newSens' => ['sensDef' => $levelCam, 'sens' => $segments], 'channel' => 0]
+            : ['type' => 'md', 'sens' => $segments, 'channel' => 0];
 
         $ok = $this->apiFeatureSet('sensitivity', $payload, 'SENS-SET');
         if ($ok) {
-            $this->SetValue('MdSensitivity', 51 - $levelCam);
+            $this->SetValueIfChanged('MdSensitivity', 51 - $levelCam);
         }
-
         return $ok;
     }
 
     private function UpdateMdSensitivityStatus(): void
     {
-        $st = $this->sensitivityState();
-        if (!$st) return;
-
-        $this->SetValue('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
+        $st = $this->GetMdSensitivity();
+        if ($st) {
+            $this->SetValueIfChanged('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
+        }
     }
 
-    private function mdSegments($raw): array
+    private function mdSegments(mixed $raw): array
     {
-        $out = [];
-
-        $walk = function ($node) use (&$walk, &$out) {
-            if (!is_array($node)) return;
-
-            if (isset($node['beginHour'], $node['endHour'])) {
-                $s = [
+        $segments = [];
+        $walk = function ($node) use (&$walk, &$segments): void {
+            if (!is_array($node)) {
+                return;
+            }
+            if (isset($node['beginHour']) || isset($node['endHour'])) {
+                $segments[] = [
                     'beginHour'   => max(0, min(23, (int)($node['beginHour'] ?? 0))),
                     'beginMin'    => max(0, min(59, (int)($node['beginMin'] ?? 0))),
                     'endHour'     => max(0, min(23, (int)($node['endHour'] ?? 23))),
                     'endMin'      => max(0, min(59, (int)($node['endMin'] ?? 59))),
-                    'sensitivity' => max(1, min(50, (int)($node['sensitivity'] ?? ($node['sens'] ?? 10))))
+                    'sensitivity' => max(1, min(50, (int)($node['sensitivity'] ?? ($node['sens'] ?? 10)))),
                 ];
-                $out[] = $s;
                 return;
             }
-
-            foreach ($node as $v) {
-                $walk($v);
+            foreach ($node as $child) {
+                $walk($child);
             }
         };
-
         $walk($raw);
-        return $out;
+        return $segments;
     }
 
     private function mdActive(array $segments, ?int $fallback = null): int
     {
         $now = ((int)date('G') * 60) + (int)date('i');
-
         foreach ($segments as $s) {
             $start = $s['beginHour'] * 60 + $s['beginMin'];
             $end   = $s['endHour'] * 60 + $s['endMin'];
-
-            if (
-                ($start <= $end && $now >= $start && $now <= $end) ||
-                ($start > $end && ($now >= $start || $now <= $end))
-            ) {
+            if (($start <= $end && $now >= $start && $now <= $end) || ($start > $end && ($now >= $start || $now <= $end))) {
                 return (int)$s['sensitivity'];
             }
         }
-
         return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
     }
 
-    // ---------------------------
-    // Sirene ein-aus
-    // ---------------------------
-
-    
-    public function SetSirenEnabled(bool $on): bool
-    {
-        $ok = $this->apiWriteMappedValue('alarm', 'SirenEnabled', $on, 'ALARM-SET');
-        if ($ok) {
-            $this->UpdateSirenStatus();
-        }
-        return $ok;
-    }
-
-    private function UpdateSirenStatus(): void
-    {
-        $this->apiUpdateMappedFeature('alarm', 'ALARM');
-    }
 
     // ---------------------------
     // Sirene ansteuern
@@ -3678,48 +3553,6 @@ class Reolink extends IPSModuleStrict
         return $ok;
     }
 
-
-    // ---------------------------
-    // Record Status
-    // ---------------------------
-
-
-    private function UpdateRecStatus(): void
-    {
-        $this->apiUpdateMappedFeature('record', 'RECORD');
-    }
-
-    public function SetRecEnabled(bool $on): bool
-    {
-        $ok = $this->apiWriteMappedValue('record', 'RecEnabled', $on, 'RECORD-SET');
-        if ($ok) {
-            $this->UpdateRecStatus();
-        }
-        return $ok;
-    }
-
-    // ---------------------------
-    // Infrared (IR)
-    // ---------------------------
-
-    public function IR_SetModeInt(int $mode): bool
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
-        if (!$this->apiEnsureToken()) return false;
-
-        $mode = max(0, min(2, $mode));
-        $ok = $this->apiWriteMappedValue('ir', 'IRLights', $mode, 'IR-SET');
-
-        if ($ok) {
-            $this->UpdateIrStatus();
-        }
-        return $ok;
-    }
-
-    private function UpdateIrStatus(): void
-    {
-        $this->apiUpdateMappedFeature('ir', 'IR');
-    }
 
     // ---------------------------
     // Online-Status
