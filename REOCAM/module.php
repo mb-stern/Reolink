@@ -37,7 +37,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
         $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
-        $this->RegisterPropertyBoolean("EnableApiPush", true);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -116,21 +115,20 @@ class Reolink extends IPSModuleStrict
         }
 
         // API-Schalter
-        $enableWhiteLed     = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR           = $this->ReadPropertyBoolean("EnableApiIR");      
-        $enableEmail        = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ          = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP          = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity  = $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren        = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord       = $this->ReadPropertyBoolean("EnableApiRecord");
+        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
+        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
+        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
+        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
+        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
+        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
+        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
+        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
         $enableAutoTracking = $this->ReadPropertyBoolean("EnableApiAutoTracking");
-        $enablePush         = $this->ReadPropertyBoolean("EnableApiPush");
 
         $anyFeatureOn = (
             $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
             $enableFTP || $enableSensitivity || $enableSiren || $enableRecord ||
-            $enableAutoTracking || $enablePush
+            $enableAutoTracking
         );
 
 
@@ -264,15 +262,6 @@ class Reolink extends IPSModuleStrict
             case "AutoTrackAnimal":
                 $ok = $this->SetAutoTrackingType('dog_cat', (bool)$Value);
                 if (!$ok) { $this->UpdateAutoTrackingStatus(); }
-                break;
-
-            case "PushNotify":
-                $ok = $this->PushApply((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdatePushStatus();
-                }
                 break;
 
             default:
@@ -490,14 +479,13 @@ class Reolink extends IPSModuleStrict
                     'items'   => [
                         ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiPush',           'caption' => 'Push-Benachrichtigung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking',   'caption' => 'Auto-Tracking'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto-Tracking'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
@@ -1851,14 +1839,6 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariable("FTPEnabled");
         }
 
-        // -------- Push --------
-        if ($this->ReadPropertyBoolean("EnableApiPush")) {
-            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 62);
-            $this->EnableAction("PushNotify");
-        } else {
-            $this->UnregisterVariable("PushNotify");
-        }
-
         // -------- Bewegungssensitivität (1..50) --------
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
             if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
@@ -2118,10 +2098,6 @@ class Reolink extends IPSModuleStrict
             }
             if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
                 $this->UpdateAutoTrackingStatus();
-            }
-
-            if ($this->ReadPropertyBoolean("EnableApiPush")) {
-                $this->UpdatePushStatus();
             }
 
         } finally {
@@ -3756,78 +3732,4 @@ class Reolink extends IPSModuleStrict
             $this->SetValue($ident, $value);
         }
     }
-
-    // ---------------------------
-    // Push
-    // ---------------------------
-
-   private function UpdatePushStatus(): void
-{
-    $res = $this->apiCall([[
-        'cmd'    => 'GetPush',
-        'action' => 1,
-        'param'  => ['channel' => 0]
-    ]], 'PUSH');
-
-    $this->dbg('PUSH', 'GET LEGACY RESPONSE', $res);
-
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-        return;
-    }
-
-    $push = $res[0]['value']['Push'] ?? $res[0]['initial']['Push'] ?? null;
-    if (!is_array($push)) {
-        return;
-    }
-
-    if (!isset($push['schedule']['enable'])) {
-        $this->dbg('PUSH', 'schedule.enable fehlt', $push);
-        return;
-    }
-
-    $enabled = ((int)$push['schedule']['enable'] === 1);
-
-    $this->dbg('PUSH', 'Status gelesen', [
-        'schedule.enable' => $push['schedule']['enable'],
-        'enabled'         => $enabled
-    ]);
-
-    $this->SetValue('PushNotify', $enabled);
-}
-
-private function PushApply(bool $enable): bool
-{
-    if (!$this->apiEnsureToken()) {
-        return false;
-    }
-
-    $token = $this->ReadAttributeString('ApiToken');
-
-    $payload = [[
-        'cmd'   => 'SetPushV20',
-        'param' => [
-            'Push' => [
-                'enable' => $enable ? 1 : 0
-            ]
-        ]
-    ]];
-
-    $url = $this->apiBase() . '/api.cgi?cmd=SetPushV20&token=' . rawurlencode($token);
-
-    $this->dbg('PUSH', 'SET URL', [
-        'url' => preg_replace('/token=[^&]*/', 'token=***', $url)
-    ]);
-    $this->dbg('PUSH', 'SET REQUEST', $payload);
-
-    $res = $this->apiHttpPostJson($url, $payload, 'PUSH');
-
-    $this->dbg('PUSH', 'SET RESPONSE', $res);
-
-    if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-        return false;
-    }
-
-    $this->SetValue('PushNotify', $enable);
-    return true;
-}
 }
