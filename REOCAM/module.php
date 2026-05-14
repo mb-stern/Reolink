@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, AI/AutoTracking Variablen robust erstellt (v8)
+    // Refactoring-Version: API zentralisiert, AI-Sensitivität korrekt über EnableApiSensitivity erstellt (v9)
 
     /**
      * Zentrale API-Definitionen.
@@ -100,6 +100,17 @@ class Reolink extends IPSModuleStrict
             'actionSet'  => 0,
             'paramGet'   => ['channel' => 0],
             'versioned'  => true,
+        ],
+        'aiAlarm' => [
+            'prop'       => 'EnableApiSensitivity',
+            'label'      => 'AI-Sensitivität',
+            'get'        => 'GetAiAlarm',
+            'set'        => 'SetAiAlarm',
+            'node'       => null,
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => false,
         ],
         'aiCfg' => [
             'prop'       => 'EnableApiAutoTracking',
@@ -218,7 +229,7 @@ class Reolink extends IPSModuleStrict
         'Email'        => ['property' => 'EnableApiEmail',        'domain' => 'email'],
         'PTZ'          => ['property' => 'EnableApiPTZ',          'method' => 'CreateOrUpdatePTZHtml', 'args' => [false]],
         'FTP'          => ['property' => 'EnableApiFTP',          'domain' => 'ftp'],
-        'Sensitivity'  => ['property' => 'EnableApiSensitivity',  'method' => 'UpdateMdSensitivityStatus'],
+        'Sensitivity'  => ['property' => 'EnableApiSensitivity',  'method' => 'UpdateSensitivityStatus'],
         'Siren'        => ['property' => 'EnableApiSiren',        'domain' => 'alarm'],
         'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
         'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
@@ -385,6 +396,15 @@ class Reolink extends IPSModuleStrict
             case "MdSensitivity":
                 $lvl = max(1, min(50, (int)$Value));
                 if ($this->SetMdSensitivity($lvl)) {
+                    $this->SetValue($Ident, $lvl);
+                }
+                break;
+
+            case "AiSensitivityPerson":
+            case "AiSensitivityVehicle":
+            case "AiSensitivityAnimal":
+                $lvl = max(1, min(50, (int)$Value));
+                if ($this->SetAiSensitivity($Ident, $lvl)) {
                     $this->SetValue($Ident, $lvl);
                 }
                 break;
@@ -1925,7 +1945,7 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("FTPEnabled");
         }
 
-        // -------- Bewegungssensitivität (1..50) --------
+        // -------- Bewegungssensitivität + AI-Sensitivität (1..50) --------
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
             if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
                 IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // Integer
@@ -1934,8 +1954,22 @@ class Reolink extends IPSModuleStrict
 
             $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
+
+            // AI-Sensitivität gehört zur gleichen Konfiguration wie MdSensitivity
+            // und wird deshalb ebenfalls über EnableApiSensitivity erstellt.
+            $this->RegisterVariableInteger("AiSensitivityPerson", "AI Sensitivität Person", "REOCAM.Sensitivity50", 4);
+            $this->EnableAction("AiSensitivityPerson");
+
+            $this->RegisterVariableInteger("AiSensitivityVehicle", "AI Sensitivität Fahrzeug", "REOCAM.Sensitivity50", 4);
+            $this->EnableAction("AiSensitivityVehicle");
+
+            $this->RegisterVariableInteger("AiSensitivityAnimal", "AI Sensitivität Tier", "REOCAM.Sensitivity50", 4);
+            $this->EnableAction("AiSensitivityAnimal");
         } else {
             $this->UnregisterVariableIfExists("MdSensitivity");
+            $this->UnregisterVariableIfExists("AiSensitivityPerson");
+            $this->UnregisterVariableIfExists("AiSensitivityVehicle");
+            $this->UnregisterVariableIfExists("AiSensitivityAnimal");
         }
 
         // -------- Sirene--------
@@ -3477,6 +3511,83 @@ class Reolink extends IPSModuleStrict
         $st = $this->GetMdSensitivity();
         if ($st) {
             $this->SetValueIfChanged('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
+        }
+    }
+
+    private function UpdateSensitivityStatus(): void
+    {
+        $this->UpdateMdSensitivityStatus();
+        $this->UpdateAiSensitivityStatus();
+    }
+
+    private function aiTypeByIdent(string $ident): ?string
+    {
+        return match ($ident) {
+            'AiSensitivityPerson'  => 'people',
+            'AiSensitivityVehicle' => 'vehicle',
+            'AiSensitivityAnimal'  => 'dog_cat',
+            default => null,
+        };
+    }
+
+    private function GetAiSensitivity(string $aiType): ?array
+    {
+        $res = $this->apiCall([[
+            'cmd'    => 'GetAiAlarm',
+            'action' => 0,
+            'param'  => ['channel' => 0, 'ai_type' => $aiType]
+        ]], 'AI-SENS', true);
+
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            return null;
+        }
+
+        $node = $res[0]['value'] ?? null;
+        return is_array($node) ? $node : null;
+    }
+
+    public function SetAiSensitivity(string $ident, int $level): bool
+    {
+        $aiType = $this->aiTypeByIdent($ident);
+        if ($aiType === null) {
+            return false;
+        }
+
+        $level = max(1, min(50, $level));
+        $node = $this->GetAiSensitivity($aiType);
+        if (!is_array($node)) {
+            return false;
+        }
+
+        $node['ai_type'] = $aiType;
+        $node['sensitivity'] = $level;
+
+        $res = $this->apiCall([[
+            'cmd'   => 'SetAiAlarm',
+            'param' => [
+                'channel' => 0,
+                'AiAlarm' => $node
+            ]
+        ]], 'AI-SENS-SET');
+
+        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if ($ok) {
+            $this->SetValueIfChanged($ident, $level);
+        }
+        return $ok;
+    }
+
+    private function UpdateAiSensitivityStatus(): void
+    {
+        foreach (['AiSensitivityPerson', 'AiSensitivityVehicle', 'AiSensitivityAnimal'] as $ident) {
+            $aiType = $this->aiTypeByIdent($ident);
+            if ($aiType === null) {
+                continue;
+            }
+            $node = $this->GetAiSensitivity($aiType);
+            if (is_array($node) && isset($node['sensitivity'])) {
+                $this->SetValueIfChanged($ident, max(1, min(50, (int)$node['sensitivity'])));
+            }
         }
     }
 
