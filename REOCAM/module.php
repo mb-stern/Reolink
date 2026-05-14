@@ -3807,43 +3807,65 @@ class Reolink extends IPSModuleStrict
             ]
         ]], 'PUSH');
 
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $this->dbg('PUSH', 'GetPushV20 fehlgeschlagen', $res);
+        // KOMPLETTE API-ANTWORT
+        $this->dbg('PUSH', 'Komplette API Antwort', $res);
+
+        if (!is_array($res)) {
+            $this->dbg('PUSH', 'Antwort ist kein Array');
             return;
         }
 
-        $push = $res[0]['value']['Push'] ?? null;
-        if (!is_array($push)) {
-            $this->dbg('PUSH', 'Push-Daten fehlen', $res);
+        if (!isset($res[0])) {
+            $this->dbg('PUSH', 'Index 0 fehlt');
             return;
         }
+
+        $this->dbg('PUSH', 'Antwort 0', $res[0]);
+
+        if (($res[0]['code'] ?? -1) !== 0) {
+            $this->dbg('PUSH', 'Code nicht 0', $res[0]['code'] ?? null);
+            return;
+        }
+
+        if (!isset($res[0]['value'])) {
+            $this->dbg('PUSH', 'value fehlt');
+            return;
+        }
+
+        $this->dbg('PUSH', 'value', $res[0]['value']);
+
+        if (!isset($res[0]['value']['Push'])) {
+            $this->dbg('PUSH', 'Push fehlt');
+            return;
+        }
+
+        $push = $res[0]['value']['Push'];
+
+        $this->dbg('PUSH', 'Push Daten', $push);
 
         if (!array_key_exists('enable', $push)) {
-            $this->dbg('PUSH', 'Push enable fehlt', $push);
+            $this->dbg('PUSH', 'enable fehlt');
             return;
         }
+
+        $this->dbg('PUSH', 'enable RAW', $push['enable']);
 
         $enabled = ((int)$push['enable'] === 1);
 
+        $this->dbg('PUSH', 'enable BOOL', $enabled);
+
         $id = @$this->GetIDForIdent('PushNotify');
+
+        $this->dbg('PUSH', 'Variablen-ID', $id);
+
         if ($id === false) {
-            $this->dbg('PUSH', 'Variable PushNotify existiert nicht');
             return;
         }
 
+        $this->dbg('PUSH', 'Alter Wert', GetValue($id));
+
         $this->SetValue('PushNotify', $enabled);
 
-        $this->dbg('PUSH', 'Status gelesen', [
-            'enable_raw' => $push['enable'],
-            'enabled'    => $enabled
-        ]);
-    }
-
-    private function PushApply(bool $on): bool
-    {
-        $ok = $this->pushSet($on);
-        if ($ok) $this->UpdatePushStatus();
-        else     $this->dbg('PUSH', 'Setzen fehlgeschlagen');
-        return $ok;
+        $this->dbg('PUSH', 'Neuer Wert', GetValue($id));
     }
 }
