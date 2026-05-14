@@ -2022,22 +2022,18 @@ class Reolink extends IPSModuleStrict
 
     public function ExecuteApiRequests(bool $force = false)
     {
-        // Instanz aktiv?
         if (!$this->isActive()) {
             return;
         }
 
-        // Online-Status aktualisieren (z.B. Ping / Erreichbarkeit)
         $this->UpdateOnlineStatus();
 
-        // Wenn Kamera als offline markiert ist, keine API-Requests ausführen
         $onlineId = @$this->GetIDForIdent('KameraOnline');
         if ($onlineId !== false && !GetValueBoolean($onlineId)) {
             $this->dbg('API', 'Abgebrochen: Kamera offline, keine API-Requests');
             return;
         }
 
-        // Ohne gültigen Token machen alle weiteren API-Aufrufe keinen Sinn
         if (!$this->apiEnsureToken()) {
             return;
         }
@@ -2050,120 +2046,83 @@ class Reolink extends IPSModuleStrict
         }
 
         try {
-            $last = (int)($this->ReadAttributeInteger('ExecLastTs') ?? 0);
+            $last = (int)$this->ReadAttributeInteger('ExecLastTs');
             $now  = time();
 
-            // Minimalabstand zwischen zwei Läufen (1 Sekunde)
             if (!$force && ($now - $last) < 1) {
                 return;
             }
             $this->WriteAttributeInteger('ExecLastTs', $now);
 
-            // -------------------------------------------------
-            // DevInfo-Cache alle 10 Minuten aktualisieren
-            // (damit z.B. nach Firmware-Downgrade/-Upgrade die Daten
-            //  im Formular und für den Firmwarecheck frisch sind)
-            // -------------------------------------------------
             $lastDev = (int)$this->ReadAttributeInteger('DevInfoLastRefresh');
-            if (($now - $lastDev) > 600) { // 600 Sekunden = 10 Minuten
-                $this->apiGetDevInfoCached(true); // holt frische Daten und schreibt Cache
+            if (($now - $lastDev) > 600) {
+                $this->apiGetDevInfoCached(true);
                 $this->WriteAttributeInteger('DevInfoLastRefresh', $now);
             }
 
-            // -------------------------------------------------
-        // API-abhängige Features nach Konfiguration
-        // Round-Robin: pro Timerlauf nur ein API-Punkt
-        // -------------------------------------------------
-        $queue = [];
+            $queue = [];
 
-        if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) {
-            $queue[] = 'WhiteLed';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiEmail")) {
-            $queue[] = 'Email';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $queue[] = 'PTZ';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiFTP")) {
-            $queue[] = 'FTP';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
-            $queue[] = 'Sensitivity';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            $queue[] = 'Siren';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-            $queue[] = 'Record';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiIR")) {
-            $queue[] = 'IR';
-        }
-        if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-            $queue[] = 'AutoTracking';
-        }
+            if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) $queue[] = 'WhiteLed';
+            if ($this->ReadPropertyBoolean("EnableApiEmail")) $queue[] = 'Email';
+            if ($this->ReadPropertyBoolean("EnableApiPTZ")) $queue[] = 'PTZ';
+            if ($this->ReadPropertyBoolean("EnableApiFTP")) $queue[] = 'FTP';
+            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) $queue[] = 'Sensitivity';
+            if ($this->ReadPropertyBoolean("EnableApiSiren")) $queue[] = 'Siren';
+            if ($this->ReadPropertyBoolean("EnableApiRecord")) $queue[] = 'Record';
+            if ($this->ReadPropertyBoolean("EnableApiIR")) $queue[] = 'IR';
+            if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) $queue[] = 'AutoTracking';
 
-        if (empty($queue)) {
-            return;
-        }
+            if (empty($queue)) {
+                return;
+            }
 
-        $index = (int)$this->ReadAttributeInteger('ApiQueueIndex');
+            $index = (int)$this->ReadAttributeInteger('ApiQueueIndex');
+            if ($index >= count($queue)) {
+                $index = 0;
+            }
 
-        if ($index >= count($queue)) {
-            $index = 0;
-        }
+            $task = $queue[$index];
+            $this->WriteAttributeInteger('ApiQueueIndex', ($index + 1) % count($queue));
 
-        $task = $queue[$index];
-        $this->WriteAttributeInteger('ApiQueueIndex', ($index + 1) % count($queue));
+            $this->dbg('API', 'Round-Robin API-Update', [
+                'index' => $index,
+                'task'  => $task,
+                'queue' => $queue
+            ]);
 
-        $this->dbg('API', 'Round-Robin API-Update', [
-            'index' => $index,
-            'task'  => $task,
-            'queue' => $queue
-        ]);
+            switch ($task) {
+                case 'WhiteLed':
+                    $this->UpdateWhiteLedStatus();
+                    break;
+                case 'Email':
+                    $this->EmailApply(null, null, null);
+                    break;
+                case 'PTZ':
+                    $this->CreateOrUpdatePTZHtml(false);
+                    break;
+                case 'FTP':
+                    $this->UpdateFtpStatus();
+                    break;
+                case 'Sensitivity':
+                    $this->UpdateMdSensitivityStatus();
+                    break;
+                case 'Siren':
+                    $this->UpdateSirenStatus();
+                    break;
+                case 'Record':
+                    $this->UpdateRecStatus();
+                    break;
+                case 'IR':
+                    $this->UpdateIrStatus();
+                    break;
+                case 'AutoTracking':
+                    $this->UpdateAutoTrackingStatus();
+                    break;
+            }
 
-        switch ($task) {
-            case 'WhiteLed':
-                $this->UpdateWhiteLedStatus();
-                break;
-
-            case 'Email':
-                $this->EmailApply(null, null, null);
-                break;
-
-            case 'PTZ':
-                $this->CreateOrUpdatePTZHtml(false);
-                break;
-
-            case 'FTP':
-                $this->UpdateFtpStatus();
-                break;
-
-            case 'Sensitivity':
-                $this->UpdateMdSensitivityStatus();
-                break;
-
-            case 'Siren':
-                $this->UpdateSirenStatus();
-                break;
-
-            case 'Record':
-                $this->UpdateRecStatus();
-                break;
-
-            case 'IR':
-                $this->UpdateIrStatus();
-                break;
-
-            case 'AutoTracking':
-                $this->UpdateAutoTrackingStatus();
-                break;
-        
-                } finally {
-                if (function_exists('IPS_SemaphoreLeave')) {
-                    IPS_SemaphoreLeave($sem);
-                }
+        } finally {
+            if (function_exists('IPS_SemaphoreLeave')) {
+                IPS_SemaphoreLeave($sem);
             }
         }
     }
