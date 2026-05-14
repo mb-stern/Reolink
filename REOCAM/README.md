@@ -155,6 +155,9 @@ Je nach Konfiguration werden automatisch angelegt:
 ## 9. Versionen
 
 ### Version 2.17 (02.05.2026)
+- Änderung der API-Afrage. Es wird nun alle 2sec ein Endpunkt abgefragt, um eine Überlastung zu verhindern.
+
+### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
 
 ### Version 2.16 (22.02.2026)
