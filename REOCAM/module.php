@@ -2160,9 +2160,10 @@ class Reolink extends IPSModuleStrict
                 $this->UpdateAutoTrackingStatus();
                 break;
         
-            } finally {
-            if (function_exists('IPS_SemaphoreLeave')) {
-                IPS_SemaphoreLeave($sem);
+                } finally {
+                if (function_exists('IPS_SemaphoreLeave')) {
+                    IPS_SemaphoreLeave($sem);
+                }
             }
         }
     }
