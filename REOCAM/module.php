@@ -1974,7 +1974,7 @@ class Reolink extends IPSModuleStrict
             }
             IPS_SetVariableProfileValues("REOCAM.AiSensitivity100", 0, 100, 1);
 
-            $this->RegisterVariableInteger("MdSensitivity", "MD Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
 
             // AI-Sensitivität kommt aus GetAiAlarm und hat laut API einen eigenen Bereich (typisch 0..100).
@@ -3539,19 +3539,25 @@ class Reolink extends IPSModuleStrict
 
     private function SetMdDetectionAreaEnabled(bool $enable): bool
     {
-        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE', true);
+        // Nur die Erkennungsfläche (scope.table) ändern.
+        // Wichtig: Keine newSens/sens-Werte mitsenden, sonst überschreibt Reolink
+        // je nach Firmware die MdSensitivity mit Default-/Initialwerten.
+        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE', false);
         if (!is_array($node)) {
             return false;
         }
 
-        $cols  = (int)$node['scope']['cols'];
-        $rows  = (int)$node['scope']['rows'];
-        $table = (string)$node['scope']['table'];
+        $scope = $node['scope'] ?? [];
+        $cols  = (int)($scope['cols'] ?? 0);
+        $rows  = (int)($scope['rows'] ?? 0);
+        $table = (string)($scope['table'] ?? '');
         $len   = $cols * $rows;
 
+        if ($cols <= 0 || $rows <= 0 || strlen($table) !== $len) {
+            return false;
+        }
+
         if (!$enable) {
-            // Nur sinnvolle Originalmasken sichern. Wenn bereits alles 0 ist,
-            // behalten wir das vorhandene Backup.
             if (strpos($table, '1') !== false) {
                 $this->WriteAttributeString('MdAlarmScopeBackup', json_encode([
                     'cols'  => $cols,
@@ -3561,7 +3567,7 @@ class Reolink extends IPSModuleStrict
                 ]));
             }
 
-            $node['scope']['table'] = str_repeat('0', $len);
+            $table = str_repeat('0', $len);
         } else {
             $backup = @json_decode($this->ReadAttributeString('MdAlarmScopeBackup'), true);
 
@@ -3572,14 +3578,22 @@ class Reolink extends IPSModuleStrict
                 && is_string($backup['table'] ?? null)
                 && strlen((string)$backup['table']) === $len
             ) {
-                $node['scope']['table'] = (string)$backup['table'];
+                $table = (string)$backup['table'];
             } else {
-                // Fallback, falls noch nie deaktiviert wurde oder die Kameramaske andere Dimensionen hat.
-                $node['scope']['table'] = str_repeat('1', $len);
+                $table = str_repeat('1', $len);
             }
         }
 
-        $ok = $this->apiFeatureSet('sensitivityMd', $node, 'MD-SCOPE-SET');
+        $payload = [
+            'channel' => (int)($node['channel'] ?? 0),
+            'scope'   => [
+                'cols'  => $cols,
+                'rows'  => $rows,
+                'table' => $table,
+            ],
+        ];
+
+        $ok = $this->apiFeatureSet('sensitivityMd', $payload, 'MD-SCOPE-SET');
         if ($ok) {
             $this->SetValueIfChanged('MdDetectionArea', $enable);
         }
@@ -3652,17 +3666,6 @@ class Reolink extends IPSModuleStrict
 
     private function UpdateMdSensitivityStatus(): void
     {
-        // Wenn die MD-Erkennungsfläche absichtlich deaktiviert ist, darf der
-        // Sensitivity-Poll die eingestellte Empfindlichkeit nicht überschreiben.
-        // Reolink liefert in diesem Zustand je nach Firmware initial/value-Werte,
-        // die nicht der vom Benutzer eingestellten Empfindlichkeit entsprechen.
-        if ($this->ReadPropertyBoolean('EnableApiMdDetectionArea')) {
-            $areaId = @$this->GetIDForIdent('MdDetectionArea');
-            if ($areaId !== false && !GetValueBoolean($areaId)) {
-                return;
-            }
-        }
-
         $st = $this->GetMdSensitivity();
         if ($st && $st['active'] !== null) {
             $this->SetValueIfChanged('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
@@ -3811,7 +3814,7 @@ class Reolink extends IPSModuleStrict
         }
 
         if (!$hasEnabledSegment) {
-            return null;
+            return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
         }
 
         return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
