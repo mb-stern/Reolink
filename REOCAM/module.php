@@ -110,6 +110,24 @@ class Reolink extends IPSModuleStrict
             'paramGet'   => ['channel' => 0],
             'versioned'  => false,
         ],
+        'push' => [
+            'prop'       => 'EnableApiPush',
+            'label'      => 'Push-Benachrichtigung',
+            'getV20'     => 'GetPushV20',
+            'setV20'     => 'SetPushV20',
+            'getLegacy'  => 'GetPush',
+            'setLegacy'  => 'SetPush',
+            'node'       => 'Push',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+
+        'push' => [
+            'PushNotify' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+        ],
+
         'aiCfg' => [
             'prop'       => 'EnableApiAutoTracking',
             'label'      => 'Auto-Tracking',
@@ -152,6 +170,20 @@ class Reolink extends IPSModuleStrict
         'ir' => [
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
+        'push' => [
+            'prop'       => 'EnableApiPush',
+            'label'      => 'Push-Benachrichtigung',
+            'getV20'     => 'GetPushV20',
+            'setV20'     => 'SetPushV20',
+            'getLegacy'  => 'GetPush',
+            'setLegacy'  => 'SetPush',
+            'node'       => 'Push',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+
         'aiCfg' => [
             'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
             'AutoTrackPerson'  => ['paths' => [['trackType', 'people']],     'type' => 'bool'],
@@ -190,6 +222,20 @@ class Reolink extends IPSModuleStrict
         'sensitivityMd' => [
             'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
         ],
+        'push' => [
+            'prop'       => 'EnableApiPush',
+            'label'      => 'Push-Benachrichtigung',
+            'getV20'     => 'GetPushV20',
+            'setV20'     => 'SetPushV20',
+            'getLegacy'  => 'GetPush',
+            'setLegacy'  => 'SetPush',
+            'node'       => 'Push',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+
         'aiCfg' => [
             'AutoTracking'     => ['method' => 'apiWriteAiCfgMasterPayloads'],
             'AutoTrackPerson'  => ['method' => 'apiWriteAiCfgPersonPayloads'],
@@ -213,6 +259,7 @@ class Reolink extends IPSModuleStrict
         'SirenEnabled'  => ['domain' => 'alarm',    'type' => 'bool'],
         'RecEnabled'    => ['domain' => 'record',   'type' => 'bool'],
         'IRLights'      => ['domain' => 'ir',       'type' => 'int'],
+        'PushNotify'   => ['domain' => 'push',     'type' => 'bool'],
         'MdDetectionArea' => ['domain' => 'sensitivityMd', 'type' => 'bool'],
         'AutoTracking'  => ['domain' => 'aiCfg',    'type' => 'bool'],
         'AutoTrackPerson'  => ['domain' => 'aiCfg', 'type' => 'bool'],
@@ -235,6 +282,7 @@ class Reolink extends IPSModuleStrict
         'Siren'        => ['property' => 'EnableApiSiren',        'domain' => 'alarm'],
         'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
         'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
+        'Push'         => ['property' => 'EnableApiPush',         'domain' => 'push'],
         'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'domain' => 'aiCfg'],
     ];
 
@@ -272,6 +320,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean('EnableFirmwareVariables', true);
         $this->RegisterPropertyBoolean("UseHttps", false);
         $this->RegisterPropertyBoolean("EnableApiAutoTracking", false);
+        $this->RegisterPropertyBoolean("EnableApiPush", true);
 
         // Archiv
         $this->RegisterPropertyInteger("MaxArchiveImages", 20);
@@ -649,6 +698,7 @@ class Reolink extends IPSModuleStrict
                     'items'   => [
                         ['type' => 'CheckBox', 'name' => 'EnableApiWhiteLed',       'caption' => 'LED-Scheinwerfer'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiPush',           'caption' => 'Push-Benachrichtigung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität und Bewegungserkennung'],
