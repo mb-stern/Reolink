@@ -394,6 +394,16 @@ class Reolink extends IPSModuleStrict
         }
 
         switch ($Ident) {
+
+            case "MdDetectionArea":
+                $ok = $this->SetMdDetectionAreaEnabled((bool)$Value);
+                if ($ok) {
+                    $this->SetValue($Ident, (bool)$Value);
+                } else {
+                    $this->UpdateMdDetectionAreaStatus();
+                }
+                break;
+
             case "MdSensitivity":
                 $lvl = max(1, min(50, (int)$Value));
                 if ($this->SetMdSensitivity($lvl)) {
