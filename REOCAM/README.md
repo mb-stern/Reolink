@@ -156,7 +156,7 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
-### Version 3.0 (15.05.2026)
+### Version 3.0 (16.05.2026)
 - Massiver interner Umbau mit Zentralisierung der API-Konfiguration.
 - Änderung der API-Afrage. Es wird nun alle Endpunkt der Reihe nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
