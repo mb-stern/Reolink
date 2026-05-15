@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, MdDetectionArea über API_WRITE_MAP (v21)
-
     /**
      * Zentrale API-Definitionen.
      * versioned=true: V20/Legacy wird über apiProbe() erkannt.
@@ -226,7 +224,7 @@ class Reolink extends IPSModuleStrict
 
     /**
      * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
-     * im 2-Sekunden-Round-Robin ausgeführt wird.
+     * im Sekunden-Round-Robin ausgeführt wird.
      */
     private const API_POLL_MAP = [
         'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'domain' => 'whiteLed'],
