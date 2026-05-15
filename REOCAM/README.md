@@ -15,7 +15,7 @@
 ## 1. Funktionsumfang
 
 Dieses Modul integriert **Reolink-Kameras** vollständig in **IP-Symcon**, mit Schwerpunkt auf der **Webhook-Integration**.  
-Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, Tier, Fahrzeug, Besucher) in Echtzeit an IP-Symcon zu übertragen — ohne Polling und nahezu verzögerungsfrei.
+Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, Tier, Fahrzeug, Besucher) in Echtzeit an IP-Symcon zu übertragen — ohne Polling und nahezu verzögerungsfrei. Dazu ist es wichtig, dass die Push-Benachrichtigung im Modul aktiviert ist.
 
 ### Hauptfunktionen
 - **Echtzeit-Verarbeitung über Webhook**: Auslösen bei Personen-, Tier-, Fahrzeug- und Bewegungsereignissen  
