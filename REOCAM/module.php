@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, AI-Sensitivität 0..100 korrigiert (v11)
+    // Refactoring-Version: API zentralisiert, Sensitivität + Bewegungserkennung gemeinsam (v18)
 
     /**
      * Zentrale API-Definitionen.
@@ -264,7 +264,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiFTP", true);
         $this->RegisterPropertyBoolean('EnableApiSensitivity', true);
-        $this->RegisterPropertyBoolean('EnableApiMdDetectionArea', false); 
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
@@ -292,7 +291,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
         $this->RegisterAttributeInteger('ApiQueueIndex', 0);
-        $this->RegisterAttributeString('MdAlarmScopeBackup', '');
 
         // Hook-Adresse (ohne /hook/)
         $address = 'reolink_' . $this->InstanceID;   
@@ -411,14 +409,6 @@ class Reolink extends IPSModuleStrict
                 }
                 break;
 
-            case "MdDetectionArea":
-                $ok = $this->SetMdDetectionAreaEnabled((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdateMdDetectionAreaStatus();
-                }
-                break;
 
             case "SirenAction":
                 $val = (int)$Value;
@@ -658,8 +648,7 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiIR',             'caption' => 'IR-Beleuchtung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiMdDetectionArea', 'caption' => 'MD-Erkennungsfläche schaltbar (Nicht-Erkennungszone)'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität und Bewegungserkennung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
@@ -1994,15 +1983,9 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("AiSensitivityAnimal");
         }
 
-        // -------- MD-Erkennungsfläche / Nicht-Erkennungszone --------
-        // Diese Variable deaktiviert nicht den MdAlarm selbst, sondern setzt die aktuelle
-        // Erkennungsmaske komplett auf 0 und stellt beim Aktivieren das gespeicherte Backup wieder her.
-        if ($this->ReadPropertyBoolean("EnableApiMdDetectionArea")) {
-            $this->RegisterVariableBoolean("MdDetectionArea", "MD Erkennungsfläche aktiv", "~Switch", 4);
-            $this->EnableAction("MdDetectionArea");
-        } else {
-            $this->UnregisterVariableIfExists("MdDetectionArea");
-        }
+        // Die frühere Einzelvariable MdDetectionArea wird nicht mehr verwendet.
+        // Die Erkennungsfläche gehört nun logisch zum Schalter "Sensitivität und Bewegungserkennung".
+        $this->UnregisterVariableIfExists("MdDetectionArea");
 
         // -------- Sirene--------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
@@ -2189,8 +2172,7 @@ class Reolink extends IPSModuleStrict
 
     private function hasAnyApiFeatureEnabled(): bool
     {
-        return $this->buildApiPollingQueue() !== []
-            || $this->ReadPropertyBoolean('EnableApiMdDetectionArea');
+        return $this->buildApiPollingQueue() !== [];
     }
 
     private function runApiPollingTask(string $task): void
@@ -3490,131 +3472,6 @@ class Reolink extends IPSModuleStrict
     // Sensitivity
     // ---------------------------
 
-    private function GetMdAlarmNodeForScope(string $topic = 'MD-SCOPE', bool $preferInitial = false): ?array
-    {
-        $res = $this->apiFeatureGet('sensitivityMd', $topic);
-        if (!is_array($res)) {
-            return null;
-        }
-
-        $nodeName = $this->apiNodeName('sensitivityMd') ?? 'MdAlarm';
-        $root = $res[0] ?? [];
-
-        // Wichtig:
-        // Beim Schreiben nehmen wir bevorzugt "initial", weil Reolink bei GetMdAlarm
-        // in "value.newSens.sens" teilweise Dummy-Werte mit sensitivity=0 liefert.
-        // Diese werden von SetMdAlarm nicht sauber akzeptiert. Die echte, gültige
-        // Konfiguration steht in "initial".
-        if ($preferInitial) {
-            $node = $root['initial'][$nodeName] ?? $root['value'][$nodeName] ?? null;
-        } else {
-            $node = $root['value'][$nodeName] ?? $root['initial'][$nodeName] ?? null;
-        }
-
-        if (!is_array($node)) {
-            return null;
-        }
-
-        $scope = $node['scope'] ?? null;
-        if (!is_array($scope)) {
-            return null;
-        }
-
-        $cols  = (int)($scope['cols'] ?? 0);
-        $rows  = (int)($scope['rows'] ?? 0);
-        $table = (string)($scope['table'] ?? '');
-
-        if ($cols <= 0 || $rows <= 0 || strlen($table) !== ($cols * $rows)) {
-            $this->dbg($topic, 'Scope ungültig', [
-                'cols' => $cols,
-                'rows' => $rows,
-                'tableLen' => strlen($table),
-                'expected' => max(0, $cols * $rows),
-            ]);
-            return null;
-        }
-
-        return $node;
-    }
-
-    private function SetMdDetectionAreaEnabled(bool $enable): bool
-    {
-        // Nur die Erkennungsfläche (scope.table) ändern.
-        // Wichtig: Keine newSens/sens-Werte mitsenden, sonst überschreibt Reolink
-        // je nach Firmware die MdSensitivity mit Default-/Initialwerten.
-        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE', false);
-        if (!is_array($node)) {
-            return false;
-        }
-
-        $scope = $node['scope'] ?? [];
-        $cols  = (int)($scope['cols'] ?? 0);
-        $rows  = (int)($scope['rows'] ?? 0);
-        $table = (string)($scope['table'] ?? '');
-        $len   = $cols * $rows;
-
-        if ($cols <= 0 || $rows <= 0 || strlen($table) !== $len) {
-            return false;
-        }
-
-        if (!$enable) {
-            if (strpos($table, '1') !== false) {
-                $this->WriteAttributeString('MdAlarmScopeBackup', json_encode([
-                    'cols'  => $cols,
-                    'rows'  => $rows,
-                    'table' => $table,
-                    'ts'    => time(),
-                ]));
-            }
-
-            $table = str_repeat('0', $len);
-        } else {
-            $backup = @json_decode($this->ReadAttributeString('MdAlarmScopeBackup'), true);
-
-            if (
-                is_array($backup)
-                && (int)($backup['cols'] ?? 0) === $cols
-                && (int)($backup['rows'] ?? 0) === $rows
-                && is_string($backup['table'] ?? null)
-                && strlen((string)$backup['table']) === $len
-            ) {
-                $table = (string)$backup['table'];
-            } else {
-                $table = str_repeat('1', $len);
-            }
-        }
-
-        $payload = [
-            'channel' => (int)($node['channel'] ?? 0),
-            'scope'   => [
-                'cols'  => $cols,
-                'rows'  => $rows,
-                'table' => $table,
-            ],
-        ];
-
-        $ok = $this->apiFeatureSet('sensitivityMd', $payload, 'MD-SCOPE-SET');
-        if ($ok) {
-            $this->SetValueIfChanged('MdDetectionArea', $enable);
-        }
-        return $ok;
-    }
-
-    private function UpdateMdDetectionAreaStatus(): void
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiMdDetectionArea')) {
-            return;
-        }
-
-        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE-STATUS');
-        if (!is_array($node)) {
-            return;
-        }
-
-        $table = (string)($node['scope']['table'] ?? '');
-        $this->SetValueIfChanged('MdDetectionArea', strpos($table, '1') !== false);
-    }
-
     private function GetMdSensitivity(): ?array
     {
         $node = $this->apiFeatureNodeGet('sensitivityMd', 'SENS');
@@ -3676,7 +3533,6 @@ class Reolink extends IPSModuleStrict
     {
         $this->UpdateMdSensitivityStatus();
         $this->UpdateAiSensitivityStatus();
-        $this->UpdateMdDetectionAreaStatus();
     }
 
     private function aiTypeByIdent(string $ident): ?string
