@@ -168,11 +168,7 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
         'push' => [
-            // Reolink hat bei Push offenbar zwei Schalterebenen:
-            // 1) Hauptschalter: Push.enable
-            // 2) Untermenü-Schalter: Push.schedule.enable
-            // Der Zeitplan selbst (schedule.table) wird nicht verändert.
-            'PushNotify' => ['method' => 'apiReadPushEffectiveEnabled', 'type' => 'bool'],
+            'PushNotify' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
         ],
         'aiCfg' => [
             'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
@@ -210,10 +206,7 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
         'push' => [
-            // Nicht als zwei getrennte Fallback-Payloads senden, sonst endet der Schreibvorgang
-            // nach dem ersten erfolgreichen Schalter. Es werden nur Push.enable und
-            // Push.schedule.enable geändert; schedule.table bleibt unverändert.
-            'PushNotify' => ['method' => 'apiWritePushPayloads'],
+            'PushNotify' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
         ],
         'sensitivityMd' => [
             'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
@@ -2834,62 +2827,6 @@ class Reolink extends IPSModuleStrict
             }
         }
         return false;
-    }
-
-    /**
-     * Push effektiv lesen.
-     *
-     * Wichtig:
-     * Der Zeitplan (schedule.table) wird hier bewusst NICHT bewertet.
-     * Er beschreibt nur, wann Push erlaubt ist. Der Schalter im Untermenü
-     * ist nach den beobachteten API-Dumps Push.schedule.enable.
-     */
-    private function apiReadPushEffectiveEnabled(array $push): ?bool
-    {
-        $main = null;
-        if (array_key_exists('enable', $push)) {
-            $main = $this->apiConvertReadValue($push['enable'], 'bool');
-        }
-
-        $sub = null;
-        if (isset($push['schedule']) && is_array($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
-            $sub = $this->apiConvertReadValue($push['schedule']['enable'], 'bool');
-        }
-
-        if ($main !== null && $sub !== null) {
-            return (bool)$main && (bool)$sub;
-        }
-
-        return $main ?? $sub;
-    }
-
-    /**
-     * Push schreiben: Hauptschalter UND Untermenü-Schalter setzen.
-     *
-     * Wichtig:
-     * Der Zeitplan (schedule.table) wird bewusst NICHT verändert.
-     * Wir ändern nur Push.enable und Push.schedule.enable.
-     */
-    private function apiWritePushPayloads(mixed $value): array
-    {
-        $enable = (bool)$value;
-
-        $node = $this->apiFeatureNodeGet('push', 'PUSH-GET-BEFORE-SET');
-        if (!is_array($node)) {
-            $node = [];
-        }
-
-        $node['channel'] = (int)($node['channel'] ?? 0);
-        $node['enable']  = $enable ? 1 : 0;
-
-        $schedule = isset($node['schedule']) && is_array($node['schedule']) ? $node['schedule'] : [];
-        $schedule['channel'] = (int)($schedule['channel'] ?? 0);
-        $schedule['enable']  = $enable ? 1 : 0;
-
-        // schedule.table bleibt unverändert erhalten.
-        $node['schedule'] = $schedule;
-
-        return [$node];
     }
 
     private function apiReadEmailContentMode(array $email): ?int
