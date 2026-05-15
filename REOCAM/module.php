@@ -2,8 +2,6 @@
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, Push integriert (v28 - Push nur Hauptschalter)
-
     /**
      * Zentrale API-Definitionen.
      * versioned=true: V20/Legacy wird über apiProbe() erkannt.
@@ -137,7 +135,6 @@ class Reolink extends IPSModuleStrict
         ],
     ];
 
-
     /**
      * Zentrales Lese-Mapping: Welche Variable wird aus welchem JSON-Pfad befüllt.
      * paths = Fallback-Reihenfolge, falls Firmware V20/Legacy unterschiedlich liefert.
@@ -243,8 +240,6 @@ class Reolink extends IPSModuleStrict
         'AutoTrackVehicle' => ['domain' => 'aiCfg', 'type' => 'bool'],
         'AutoTrackAnimal'  => ['domain' => 'aiCfg', 'type' => 'bool'],
     ];
-
-
 
     /**
      * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
