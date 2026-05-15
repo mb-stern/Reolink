@@ -1989,14 +1989,12 @@ class Reolink extends IPSModuleStrict
             }
             IPS_SetVariableProfileValues("REOCAM.AiSensitivity100", 0, 100, 1);
 
-            $this->RegisterVariableBoolean("MdDetectionArea", "Bewegungserkennung", "~Switch", 4);
+            $this->RegisterVariableBoolean("MdDetectionArea", "MD Bewegungserkennung", "~Switch", 4);
             $this->EnableAction("MdDetectionArea");
 
-            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("MdSensitivity", "MD Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
 
-            // AI-Sensitivität kommt aus GetAiAlarm und hat laut API einen eigenen Bereich (typisch 0..100).
-            // Wichtig: keine 51-x Umkehrung und keine Begrenzung auf 50.
             $this->RegisterVariableInteger("AiSensitivityPerson", "AI Sensitivität Person", "REOCAM.AiSensitivity100", 4);
             $this->EnableAction("AiSensitivityPerson");
 
@@ -2012,7 +2010,6 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("AiSensitivityVehicle");
             $this->UnregisterVariableIfExists("AiSensitivityAnimal");
         }
-
 
         // -------- Sirene--------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
@@ -2048,7 +2045,6 @@ class Reolink extends IPSModuleStrict
         }
 
         // -------- Auto-Tracking / AI --------
-        // Wird über denselben Konfigurationsschalter "EnableApiAutoTracking" angelegt/entfernt
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
             $this->dbg('API-VARS', 'Erstelle AutoTracking/AI Variablen');
 
