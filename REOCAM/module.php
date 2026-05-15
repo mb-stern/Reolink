@@ -3,6 +3,264 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
+    // Refactoring-Version: API zentralisiert, Push integriert (v24)
+
+    /**
+     * Zentrale API-Definitionen.
+     * versioned=true: V20/Legacy wird über apiProbe() erkannt.
+     * versioned=false: normaler Get/Set-Befehl ohne V20-Umschaltung.
+     */
+    private const API_DEFS = [
+        'email' => [
+            'prop'       => 'EnableApiEmail',
+            'label'      => 'E-Mail Alarm',
+            'getV20'     => 'GetEmailV20',
+            'setV20'     => 'SetEmailV20',
+            'getLegacy'  => 'GetEmail',
+            'setLegacy'  => 'SetEmail',
+            'node'       => 'Email',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+        'ftp' => [
+            'prop'       => 'EnableApiFTP',
+            'label'      => 'FTP Upload',
+            'getV20'     => 'GetFtpV20',
+            'setV20'     => 'SetFtpV20',
+            'getLegacy'  => 'GetFtp',
+            'setLegacy'  => 'SetFtp',
+            'node'       => 'Ftp',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+        'record' => [
+            'prop'       => 'EnableApiRecord',
+            'label'      => 'Aufnahme / Record',
+            'getV20'     => 'GetRecV20',
+            'setV20'     => 'SetRecV20',
+            'getLegacy'  => 'GetRec',
+            'setLegacy'  => 'SetRec',
+            'node'       => 'Rec',
+            'actionGet'  => 1,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+        'alarm' => [
+            'prop'       => 'EnableApiSiren',
+            'label'      => 'Sirene / AudioAlarm',
+            'getV20'     => 'GetAudioAlarmV20',
+            'setV20'     => 'SetAudioAlarmV20',
+            'getLegacy'  => 'GetAudioAlarm',
+            'setLegacy'  => 'SetAudioAlarm',
+            'node'       => 'Audio',
+            'actionGet'  => 1,
+            'actionSet'  => 1,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+        'whiteLed' => [
+            'prop'       => 'EnableApiWhiteLed',
+            'label'      => 'Spotlight / Weißlicht',
+            'get'        => 'GetWhiteLed',
+            'set'        => 'SetWhiteLed',
+            'node'       => 'WhiteLed',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => false,
+        ],
+        'ir' => [
+            'prop'       => 'EnableApiIR',
+            'label'      => 'IR-Beleuchtung',
+            'get'        => 'GetIrLights',
+            'set'        => 'SetIrLights',
+            'node'       => 'IrLights',
+            'actionGet'  => 0,
+            'actionGetFallback' => 1,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => false,
+        ],
+        'sensitivityMd' => [
+            'prop'       => 'EnableApiSensitivity',
+            'label'      => 'MD-Sensitivität',
+            'getV20'     => 'GetMdAlarm',
+            'setV20'     => 'SetMdAlarm',
+            'getLegacy'  => 'GetAlarm',
+            'setLegacy'  => 'SetAlarm',
+            'nodeV20'    => 'MdAlarm',
+            'nodeLegacy' => 'Alarm',
+            'actionGet'  => 1,
+            'actionGetFallback' => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+        'sensitivityAi' => [
+            'prop'       => 'EnableApiSensitivity',
+            'label'      => 'AI-Sensitivität',
+            'get'        => 'GetAiAlarm',
+            'set'        => 'SetAiAlarm',
+            'node'       => null,
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => false,
+        ],
+        'push' => [
+            'prop'       => 'EnableApiPush',
+            'label'      => 'Push-Benachrichtigung',
+            'getV20'     => 'GetPushV20',
+            'setV20'     => 'SetPushV20',
+            'getLegacy'  => 'GetPush',
+            'setLegacy'  => 'SetPush',
+            'node'       => 'Push',
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => true,
+        ],
+        'aiCfg' => [
+            'prop'       => 'EnableApiAutoTracking',
+            'label'      => 'Auto-Tracking',
+            'get'        => 'GetAiCfg',
+            'set'        => 'SetAiCfg',
+            'node'       => null,
+            'actionGet'  => 0,
+            'actionSet'  => 0,
+            'paramGet'   => ['channel' => 0],
+            'versioned'  => false,
+        ],
+    ];
+
+
+    /**
+     * Zentrales Lese-Mapping: Welche Variable wird aus welchem JSON-Pfad befüllt.
+     * paths = Fallback-Reihenfolge, falls Firmware V20/Legacy unterschiedlich liefert.
+     * type  = Ziel-/Umwandlungstyp.
+     */
+    private const API_READ_MAP = [
+        'whiteLed' => [
+            'WhiteLed' => ['paths' => [['state']],  'type' => 'bool'],
+            'Mode'     => ['paths' => [['mode']],   'type' => 'int'],
+            'Bright'   => ['paths' => [['bright']], 'type' => 'int'],
+        ],
+        'email' => [
+            'EmailNotify'   => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+            'EmailInterval' => ['paths' => [['interval'], ['intervalSec']],       'type' => 'emailInterval'],
+            'EmailContent'  => ['method' => 'apiReadEmailContentMode',            'type' => 'int'],
+        ],
+        'ftp' => [
+            'FTPEnabled' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+        ],
+        'alarm' => [
+            'SirenEnabled' => ['paths' => [['enable']], 'type' => 'bool'],
+        ],
+        'record' => [
+            'RecEnabled' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+        ],
+        'ir' => [
+            'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
+        ],
+        'push' => [
+            'PushNotify' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+        ],
+        'aiCfg' => [
+            'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
+            'AutoTrackPerson'  => ['paths' => [['trackType', 'people']],     'type' => 'bool'],
+            'AutoTrackVehicle' => ['paths' => [['trackType', 'vehicle']],    'type' => 'bool'],
+            'AutoTrackAnimal'  => ['paths' => [['trackType', 'dog_cat']],    'type' => 'bool'],
+        ],
+    ];
+
+    /**
+     * Zentrales Schreib-Mapping: Welche Variable schreibt auf welchen API-Pfad.
+     * payloads = Fallback-Reihenfolge, falls Firmware direkte Felder oder schedule.* erwartet.
+     */
+    private const API_WRITE_MAP = [
+        'whiteLed' => [
+            'WhiteLed' => ['payloads' => [[['state']]],  'type' => 'bool'],
+            'Mode'     => ['payloads' => [[['mode']]],   'type' => 'int'],
+            'Bright'   => ['payloads' => [[['bright']]], 'type' => 'int'],
+        ],
+        'email' => [
+            'EmailNotify'   => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+            'EmailInterval' => ['payloads' => [[['interval']]],                         'type' => 'emailIntervalString'],
+            'EmailContent'  => ['method' => 'apiWriteEmailContentPayloads'],
+        ],
+        'ftp' => [
+            'FTPEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+        ],
+        'alarm' => [
+            'SirenEnabled' => ['payloads' => [[['enable']]], 'type' => 'bool'],
+        ],
+        'record' => [
+            'RecEnabled' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+        ],
+        'ir' => [
+            'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
+        ],
+        'push' => [
+            'PushNotify' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+        ],
+        'sensitivityMd' => [
+            'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
+        ],
+        'aiCfg' => [
+            'AutoTracking'     => ['method' => 'apiWriteAiCfgMasterPayloads'],
+            'AutoTrackPerson'  => ['method' => 'apiWriteAiCfgPersonPayloads'],
+            'AutoTrackVehicle' => ['method' => 'apiWriteAiCfgVehiclePayloads'],
+            'AutoTrackAnimal'  => ['method' => 'apiWriteAiCfgAnimalPayloads'],
+        ],
+    ];
+
+    /**
+     * Zentrale Action-Definition: einfache RequestAction-Zweige laufen hierüber.
+     * Spezialfälle bleiben in RequestAction separat.
+     */
+    private const API_ACTION_MAP = [
+        'WhiteLed'      => ['domain' => 'whiteLed', 'type' => 'bool'],
+        'Mode'          => ['domain' => 'whiteLed', 'type' => 'int'],
+        'Bright'        => ['domain' => 'whiteLed', 'type' => 'int'],
+        'EmailNotify'   => ['domain' => 'email',    'type' => 'bool'],
+        'EmailInterval' => ['domain' => 'email',    'type' => 'int'],
+        'EmailContent'  => ['domain' => 'email',    'type' => 'int'],
+        'FTPEnabled'    => ['domain' => 'ftp',      'type' => 'bool'],
+        'SirenEnabled'  => ['domain' => 'alarm',    'type' => 'bool'],
+        'RecEnabled'    => ['domain' => 'record',   'type' => 'bool'],
+        'IRLights'      => ['domain' => 'ir',       'type' => 'int'],
+        'PushNotify'   => ['domain' => 'push',     'type' => 'bool'],
+        'MdDetectionArea' => ['domain' => 'sensitivityMd', 'type' => 'bool'],
+        'AutoTracking'  => ['domain' => 'aiCfg',    'type' => 'bool'],
+        'AutoTrackPerson'  => ['domain' => 'aiCfg', 'type' => 'bool'],
+        'AutoTrackVehicle' => ['domain' => 'aiCfg', 'type' => 'bool'],
+        'AutoTrackAnimal'  => ['domain' => 'aiCfg', 'type' => 'bool'],
+    ];
+
+
+
+    /**
+     * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
+     * im 2-Sekunden-Round-Robin ausgeführt wird.
+     */
+    private const API_POLL_MAP = [
+        'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'domain' => 'whiteLed'],
+        'Email'        => ['property' => 'EnableApiEmail',        'domain' => 'email'],
+        'PTZ'          => ['property' => 'EnableApiPTZ',          'method' => 'CreateOrUpdatePTZHtml', 'args' => [false]],
+        'FTP'          => ['property' => 'EnableApiFTP',          'domain' => 'ftp'],
+        'Sensitivity'  => ['property' => 'EnableApiSensitivity',  'method' => 'UpdateSensitivityStatus'],
+        'Siren'        => ['property' => 'EnableApiSiren',        'domain' => 'alarm'],
+        'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
+        'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
+        'Push'         => ['property' => 'EnableApiPush',         'domain' => 'push'],
+        'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'domain' => 'aiCfg'],
+    ];
+
     public function Create(): void
     {
         parent::Create();
@@ -30,7 +288,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterPropertyBoolean("EnableApiEmail", true);
         $this->RegisterPropertyBoolean("EnableApiPTZ", false);
         $this->RegisterPropertyBoolean("EnableApiFTP", true);
-        $this->RegisterPropertyBoolean('EnableApiSensitivity', true); 
+        $this->RegisterPropertyBoolean('EnableApiSensitivity', true);
         $this->RegisterPropertyBoolean('EnableApiSiren', true); 
         $this->RegisterPropertyBoolean('EnableApiRecord', true);
         $this->RegisterPropertyBoolean("EnableApiIR", true);
@@ -59,6 +317,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterAttributeInteger('FirmwareLastCheckTs', 0);
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
         $this->RegisterAttributeInteger('ApiQueueIndex', 0);
+        $this->RegisterAttributeString('MdAlarmScopeBackup', '');
 
         // Hook-Adresse (ohne /hook/)
         $address = 'reolink_' . $this->InstanceID;   
@@ -116,22 +375,7 @@ class Reolink extends IPSModuleStrict
             $this->SetTimerInterval("PollingTimer", 0);
         }
 
-        // API-Schalter
-        $enableWhiteLed   = $this->ReadPropertyBoolean("EnableApiWhiteLed");
-        $enableIR         = $this->ReadPropertyBoolean("EnableApiIR");      
-        $enableEmail      = $this->ReadPropertyBoolean("EnableApiEmail");
-        $enablePTZ        = $this->ReadPropertyBoolean("EnableApiPTZ");
-        $enableFTP        = $this->ReadPropertyBoolean("EnableApiFTP");
-        $enableSensitivity= $this->ReadPropertyBoolean("EnableApiSensitivity");
-        $enableSiren      = $this->ReadPropertyBoolean("EnableApiSiren");
-        $enableRecord     = $this->ReadPropertyBoolean("EnableApiRecord");
-        $enableAutoTracking = $this->ReadPropertyBoolean("EnableApiAutoTracking");
-
-        $anyFeatureOn = (
-            $enableWhiteLed || $enableIR || $enableEmail || $enablePTZ ||
-            $enableFTP || $enableSensitivity || $enableSiren || $enableRecord ||
-            $enableAutoTracking
-        );
+        $anyFeatureOn = $this->hasAnyApiFeatureEnabled();
 
 
         $this->CreateOrUpdateApiVariablesUnified();
@@ -158,80 +402,52 @@ class Reolink extends IPSModuleStrict
 
     public function RequestAction(string $Ident, mixed $Value): void
     {
+        $cfg = self::API_ACTION_MAP[$Ident] ?? null;
+        if ($cfg !== null) {
+            $value = match ($cfg['type']) {
+                'bool'  => (bool)$Value,
+                'int'   => (int)$Value,
+                default => $Value,
+            };
+
+            $ok = $this->apiWriteMappedValue($cfg['domain'], $Ident, $value, strtoupper($cfg['domain']) . '-SET');
+            if ($ok) {
+                $this->SetValue($Ident, $value);
+            } else {
+                $this->apiUpdateMappedFeature($cfg['domain'], strtoupper($cfg['domain']));
+            }
+            return;
+        }
+
         switch ($Ident) {
-            case "WhiteLed":
-                $ok = $this->SetWhiteLed((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "Mode":
-                $ok = $this->SetMode((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "Bright":
-                $ok = $this->SetBrightness((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateWhiteLedStatus(); }
-                break;
-
-            case "EmailNotify":
-                $ok = $this->EmailApply((bool)$Value, null, null);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->EmailApply(null, null, null); }
-                break;
-
-            case "EmailInterval":
-                $ok = $this->EmailApply(null, (int)$Value, null);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->EmailApply(null, null, null); }
-                break;
-
-            case "EmailContent":
-                $ok = $this->EmailApply(null, null, (int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->EmailApply(null, null, null); }
-                break;
-
-            case "FTPEnabled":
-                $ok = $this->FtpApply((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateFtpStatus(); }
-                break;
-
-            case "IRLights":
-                $ok = $this->IR_SetModeInt((int)$Value);
-                if ($ok) { $this->SetValue($Ident, (int)$Value); }
-                else     { $this->UpdateIrStatus(); }
-                break;
-
             case "MdSensitivity":
                 $lvl = max(1, min(50, (int)$Value));
-                $ok = $this->SetMdSensitivity($lvl);
-                if ($ok) { $this->SetValue($Ident, $lvl); }
+                if ($this->SetMdSensitivity($lvl)) {
+                    $this->SetValue($Ident, $lvl);
+                }
                 break;
 
-            case "SirenEnabled":
-                $ok = $this->SetSirenEnabled((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
+            case "AiSensitivityPerson":
+            case "AiSensitivityVehicle":
+            case "AiSensitivityAnimal":
+                $lvl = max(0, min(100, (int)$Value));
+                if ($this->SetAiSensitivity($Ident, $lvl)) {
+                    $this->SetValue($Ident, $lvl);
+                }
                 break;
+
 
             case "SirenAction":
                 $val = (int)$Value;
-                $ok = false;
-                if ($val === 0) $ok = $this->SirenManualSwitch(false);
-                elseif ($val === 100) $ok = $this->SirenManualSwitch(true);
-                elseif ($val >= 1 && $val <= 5) $ok = $this->SirenPlayTimes($val);
-
-                if ($ok) { $this->SetValue('SirenAction', 0); }
-                break;
-
-            case "RecEnabled":
-                $ok = $this->SetRecEnabled((bool)$Value);
-                if ($ok) { $this->SetValue($Ident, (bool)$Value); }
-                else     { $this->UpdateRecStatus(); }
+                $ok = match (true) {
+                    $val === 0 => $this->SirenManualSwitch(false),
+                    $val === 100 => $this->SirenManualSwitch(true),
+                    $val >= 1 && $val <= 5 => $this->SirenPlayTimes($val),
+                    default => false,
+                };
+                if ($ok) {
+                    $this->SetValue('SirenAction', 0);
+                }
                 break;
 
             case "ResetApiCache":
@@ -240,30 +456,6 @@ class Reolink extends IPSModuleStrict
 
             case "Push_Besucher":
                 $this->SetValue("Push_Besucher", (bool)$Value);
-                break;
-
-            case "AutoTracking":
-                $ok = $this->SetAutoTracking((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdateAutoTrackingStatus();
-                }
-                break;
-
-            case "AutoTrackPerson":
-                $ok = $this->SetAutoTrackingType('people', (bool)$Value);
-                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
-                break;
-
-            case "AutoTrackVehicle":
-                $ok = $this->SetAutoTrackingType('vehicle', (bool)$Value);
-                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
-                break;
-
-            case "AutoTrackAnimal":
-                $ok = $this->SetAutoTrackingType('dog_cat', (bool)$Value);
-                if (!$ok) { $this->UpdateAutoTrackingStatus(); }
                 break;
 
             default:
@@ -484,7 +676,7 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiPush',           'caption' => 'Push-Benachrichtigung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiEmail',          'caption' => 'E-Mail Alarm'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiFTP',            'caption' => 'FTP'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiSensitivity',    'caption' => 'Sensitivität und Bewegungserkennung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
@@ -1019,73 +1211,67 @@ class Reolink extends IPSModuleStrict
     // API-Fähigkeiten für Formular & Cache
     // ---------------------------
 
+    private function apiAbilitySupportsDomain(string $domain, array $ability): bool
+    {
+        $chn = $ability['abilityChn'][0] ?? [];
+
+        return match ($domain) {
+            'whiteLed'    => (($chn['floodLight']['ver'] ?? 0) > 0) || (($chn['whiteLed']['ver'] ?? 0) > 0),
+            'ir'          => (($chn['irLights']['ver'] ?? 0) > 0) || (($chn['led']['ver'] ?? 0) > 0),
+            'email'       => (int)($ability['supportEmailEnable'] ?? 0) === 1,
+            'ftp'         => (($chn['ftp']['ver'] ?? 0) > 0),
+            'sensitivityMd' => (($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0),
+            'sensitivityAi' => true, // GetAiAlarm ist je nach Modell/Firmware nicht sauber in Ability gemeldet
+            'alarm'       => (($chn['AudioAlarm']['ver'] ?? 0) > 0) || (($chn['audioAlarm']['ver'] ?? 0) > 0),
+            'record'      => (($chn['recCfg']['ver'] ?? 0) > 0),
+            'push'        => true, // GetPush/GetPushV20 ist je nach Modell/Firmware nicht sauber in Ability gemeldet
+            'aiCfg'       => true, // nicht hart aus Ability ausblenden: GetAiCfg ist je nach Modell/Firmware unterschiedlich gemeldet
+            'ptz'         => (($chn['ptz']['ver'] ?? 0) > 0),
+            default       => true,
+        };
+    }
+
+    private function apiProbeDomain(string $domain): string
+    {
+        $d = $this->apiDef($domain);
+        if ($d === null) {
+            return 'unsupported';
+        }
+
+        if (empty($d['versioned'])) {
+            $res = $this->apiFeatureGet($domain, strtoupper($domain));
+            return is_array($res) ? 'native' : 'unsupported';
+        }
+
+        return $this->apiProbe($domain, $d['getV20'], $d['getLegacy'], (int)$d['actionGet']);
+    }
+
     private function getApiSupportFlags(): array
     {
         $ability = $this->apiGetAbilityCached();
         if (empty($ability)) {
-            // Noch keine Ability (kein Token / keine Verbindung) -> nichts einschränken
             return [];
         }
 
-        $chn = $ability['abilityChn'][0] ?? [];
-
-        // Grobe Feature-Erkennung aus Ability
-        $support = [
-            // Spotlight / Weißlicht-LED
-            'EnableApiWhiteLed' => (($chn['floodLight']['ver'] ?? 0) > 0)
-                                || (($chn['whiteLed']['ver'] ?? 0) > 0),
-
-            // IR-Licht
-            'EnableApiIR'       => (($chn['irLights']['ver'] ?? 0) > 0)
-                                || (($chn['led']['ver'] ?? 0) > 0),
-
-            // E-Mail-Alarm
-            'EnableApiEmail'    => (int)($ability['supportEmailEnable'] ?? 0) === 1,
-
-            // FTP
-            'EnableApiFTP'      => (($chn['ftp']['ver'] ?? 0) > 0),
-
-            // Motion-Detection / Sensitivity
-            'EnableApiSensitivity' =>
-                                    (($chn['alarmMd']['ver'] ?? 0) > 0)
-                                || (($chn['md']['ver'] ?? 0) > 0),
-
-            // Sirene / AudioAlarm
-            'EnableApiSiren'    => (($chn['AudioAlarm']['ver'] ?? 0) > 0)
-                                || (($chn['audioAlarm']['ver'] ?? 0) > 0),
-
-            // Recording
-            'EnableApiRecord'   => (($chn['recCfg']['ver'] ?? 0) > 0),
-
-            // PTZ
-            'EnableApiPTZ'      => (($chn['ptz']['ver'] ?? 0) > 0),
-        ];
-
-        // Feincheck: apiProbe pro Domain (füllt auch deinen ApiVersionCache!)
-        $probeMap = [
-            'EnableApiEmail'  => ['domain' => 'email',  'cmdV20' => 'GetEmailV20',      'cmdLegacy' => 'GetEmail',       'action' => 0],
-            'EnableApiFTP'    => ['domain' => 'ftp',    'cmdV20' => 'GetFtpV20',        'cmdLegacy' => 'GetFtp',         'action' => 0],
-            'EnableApiRecord' => ['domain' => 'record', 'cmdV20' => 'GetRecV20',        'cmdLegacy' => 'GetRec',         'action' => 1],
-            'EnableApiSiren'  => ['domain' => 'alarm',  'cmdV20' => 'GetAudioAlarmV20', 'cmdLegacy' => 'GetAudioAlarm',  'action' => 1],
-            // WhiteLed nutzt bei dir sowieso nur GetWhiteLed, apiProbe ist hier im Prinzip nur "ping"
-            'EnableApiWhiteLed' => ['domain' => 'spot', 'cmdV20' => 'GetWhiteLed',      'cmdLegacy' => 'GetWhiteLed',    'action' => 0],
-        ];
-
-        foreach ($probeMap as $propName => $p) {
-            // Wenn Ability schon sagt „geht nicht“, spar dir den Probe
-            if (isset($support[$propName]) && !$support[$propName]) {
+        $support = [];
+        foreach (self::API_DEFS as $domain => $d) {
+            $prop = $d['prop'] ?? null;
+            if ($prop === null) {
                 continue;
             }
 
-            $ver = $this->apiProbe($p['domain'], $p['cmdV20'], $p['cmdLegacy'], $p['action']);
-            if ($ver === 'unsupported') {
-                $support[$propName] = false;
-            } elseif (!isset($support[$propName])) {
-                $support[$propName] = true;
+            $supported = $this->apiAbilitySupportsDomain($domain, $ability);
+            if ($supported && !empty($d['versioned']) && $this->apiProbeDomain($domain) === 'unsupported') {
+                $supported = false;
             }
-            // Wichtig: apiProbe schreibt hier bereits in deinen ApiVersionCache rein.
+
+            // Mehrere API-Domains können denselben Konfigurationsschalter verwenden,
+            // z.B. EnableApiSensitivity für MD- und AI-Sensitivität.
+            // Dann darf ein späterer Teilbereich den Schalter nicht wieder ausblenden.
+            $support[$prop] = ($support[$prop] ?? false) || $supported;
         }
 
+        $support['EnableApiPTZ'] = $this->apiAbilitySupportsDomain('ptz', $ability);
         return $support;
     }
 
@@ -1095,85 +1281,29 @@ class Reolink extends IPSModuleStrict
         if (empty($ability)) {
             return [];
         }
-        $chn = $ability['abilityChn'][0] ?? [];
 
         $rows = [];
-
-        $defs = [
-            'Email' => [
-                'prop'   => 'EnableApiEmail',
-                'label'  => 'E-Mail Alarm',
-                'domain' => 'email',
-                'cmdV20' => 'GetEmailV20',
-                'cmdLegacy' => 'GetEmail',
-                'action' => 0,
-                'supported' => (int)($ability['supportEmailEnable'] ?? 0) === 1
-            ],
-            'FTP' => [
-                'prop'   => 'EnableApiFTP',
-                'label'  => 'FTP Upload',
-                'domain' => 'ftp',
-                'cmdV20' => 'GetFtpV20',
-                'cmdLegacy' => 'GetFtp',
-                'action' => 0,
-                'supported' => (($chn['ftp']['ver'] ?? 0) > 0)
-            ],
-            'Record' => [
-                'prop'   => 'EnableApiRecord',
-                'label'  => 'Aufnahme / Record',
-                'domain' => 'record',
-                'cmdV20' => 'GetRecV20',
-                'cmdLegacy' => 'GetRec',
-                'action' => 1,
-                'supported' => (($chn['recCfg']['ver'] ?? 0) > 0)
-            ],
-            'Siren' => [
-                'prop'   => 'EnableApiSiren',
-                'label'  => 'Sirene / AudioAlarm',
-                'domain' => 'alarm',
-                'cmdV20' => 'GetAudioAlarmV20',
-                'cmdLegacy' => 'GetAudioAlarm',
-                'action' => 1,
-                'supported' => (($chn['AudioAlarm']['ver'] ?? 0) > 0)
-                            || (($chn['audioAlarm']['ver'] ?? 0) > 0)
-            ],
-            'WhiteLed' => [
-                'prop'   => 'EnableApiWhiteLed',
-                'label'  => 'Spotlight / Weißlicht',
-                'domain' => 'spot',
-                'cmdV20' => 'GetWhiteLed',
-                'cmdLegacy' => 'GetWhiteLed',
-                'action' => 0,
-                'supported' => (($chn['floodLight']['ver'] ?? 0) > 0)
-                            || (($chn['whiteLed']['ver'] ?? 0) > 0)
-            ],
-        ];
-
-        foreach ($defs as $key => $d) {
-            $supported = $d['supported'];
-
-            if (!$supported) {
-                $rows[] = [
-                    'label'     => $d['label'],
-                    'supported' => 'nein',
-                    'version'   => '-',
-                ];
+        foreach (self::API_DEFS as $domain => $d) {
+            if (!isset($d['label'], $d['prop'])) {
                 continue;
             }
 
-            // Erst versuchen, Version aus Cache zu holen
-            $ver = $this->apiVersionGet($d['domain']);
-            if ($ver === null) {
-                // Falls noch nicht probiert, einmalig apiProbe
-                $ver = $this->apiProbe($d['domain'], $d['cmdV20'], $d['cmdLegacy'], $d['action']);
+            $supported = $this->apiAbilitySupportsDomain($domain, $ability);
+            $ver = '-';
+            if ($supported) {
+                if (!empty($d['versioned'])) {
+                    $probe = $this->apiProbeDomain($domain);
+                    $ver = ($probe === 'v20') ? 'V20' : (($probe === 'legacy') ? 'Legacy' : '–');
+                    $supported = ($probe !== 'unsupported');
+                } else {
+                    $ver = 'Standard';
+                }
             }
 
             $rows[] = [
                 'label'     => $d['label'],
-                'supported' => 'ja',
-                'version'   => ($ver === 'v20') ? 'V20' :
-                            (($ver === 'legacy') ? 'Legacy' :
-                            (($ver === 'unsupported') ? '–' : '?')),
+                'supported' => $supported ? 'ja' : 'nein',
+                'version'   => $supported ? $ver : '-',
             ];
         }
 
@@ -1750,6 +1880,14 @@ class Reolink extends IPSModuleStrict
     // API Variablen erstellen/löschen
     // ---------------------------
 
+    private function UnregisterVariableIfExists(string $ident): void
+    {
+        $id = @$this->GetIDForIdent($ident);
+        if ($id !== false) {
+            $this->UnregisterVariable($ident);
+        }
+    }
+
     private function CreateOrUpdateApiVariablesUnified(): void
     {
         // -------- IR (Infrared) --------
@@ -1765,7 +1903,7 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("IRLights", "IR Beleuchtung", "REOCAM.IR", 0);
             $this->EnableAction("IRLights");
         } else {
-            $this->UnregisterVariable("IRLights");
+            $this->UnregisterVariableIfExists("IRLights");
         }
 
         // -------- White LED --------
@@ -1787,9 +1925,9 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("Bright", "LED Helligkeit", "~Intensity.100", 1);
             $this->EnableAction("Bright");
         } else {
-            $this->UnregisterVariable("WhiteLed");
-            $this->UnregisterVariable("Mode");
-            $this->UnregisterVariable("Bright");
+            $this->UnregisterVariableIfExists("WhiteLed");
+            $this->UnregisterVariableIfExists("Mode");
+            $this->UnregisterVariableIfExists("Bright");
         }
 
         // -------- Email --------
@@ -1822,16 +1960,16 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableInteger("EmailContent", "E-Mail Inhalt", "REOCAM.EmailContent", 2);
             $this->EnableAction("EmailContent");
         } else {
-            $this->UnregisterVariable("EmailNotify");
-            $this->UnregisterVariable("EmailInterval");
-            $this->UnregisterVariable("EmailContent");
+            $this->UnregisterVariableIfExists("EmailNotify");
+            $this->UnregisterVariableIfExists("EmailInterval");
+            $this->UnregisterVariableIfExists("EmailContent");
         }
 
         // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
         } else {
-            $this->UnregisterVariable("PTZ_HTML");
+            $this->UnregisterVariableIfExists("PTZ_HTML");
         }
 
         // -------- FTP --------
@@ -1839,25 +1977,49 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableBoolean("FTPEnabled", "FTP", "~Switch", 3);
             $this->EnableAction("FTPEnabled");
         } else {
-            $this->UnregisterVariable("FTPEnabled");
+            $this->UnregisterVariableIfExists("FTPEnabled");
         }
 
-        // -------- Bewegungssensitivität (1..50) --------
+        // -------- Bewegungssensitivität (1..50) + AI-Sensitivität (0..100) --------
         if ($this->ReadPropertyBoolean("EnableApiSensitivity")) {
             if (!IPS_VariableProfileExists("REOCAM.Sensitivity50")) {
                 IPS_CreateVariableProfile("REOCAM.Sensitivity50", 1); // Integer
             }
             IPS_SetVariableProfileValues("REOCAM.Sensitivity50", 1, 50, 1);
 
+            if (!IPS_VariableProfileExists("REOCAM.AiSensitivity100")) {
+                IPS_CreateVariableProfile("REOCAM.AiSensitivity100", 1); // Integer
+            }
+            IPS_SetVariableProfileValues("REOCAM.AiSensitivity100", 0, 100, 1);
+
+            $this->RegisterVariableBoolean("MdDetectionArea", "Bewegungserkennung", "~Switch", 4);
+            $this->EnableAction("MdDetectionArea");
+
             $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
+
+            // AI-Sensitivität kommt aus GetAiAlarm und hat laut API einen eigenen Bereich (typisch 0..100).
+            // Wichtig: keine 51-x Umkehrung und keine Begrenzung auf 50.
+            $this->RegisterVariableInteger("AiSensitivityPerson", "AI Sensitivität Person", "REOCAM.AiSensitivity100", 4);
+            $this->EnableAction("AiSensitivityPerson");
+
+            $this->RegisterVariableInteger("AiSensitivityVehicle", "AI Sensitivität Fahrzeug", "REOCAM.AiSensitivity100", 4);
+            $this->EnableAction("AiSensitivityVehicle");
+
+            $this->RegisterVariableInteger("AiSensitivityAnimal", "AI Sensitivität Tier", "REOCAM.AiSensitivity100", 4);
+            $this->EnableAction("AiSensitivityAnimal");
         } else {
-            $this->UnregisterVariable("MdSensitivity");
+            $this->UnregisterVariableIfExists("MdDetectionArea");
+            $this->UnregisterVariableIfExists("MdSensitivity");
+            $this->UnregisterVariableIfExists("AiSensitivityPerson");
+            $this->UnregisterVariableIfExists("AiSensitivityVehicle");
+            $this->UnregisterVariableIfExists("AiSensitivityAnimal");
         }
+
 
         // -------- Sirene--------
         if ($this->ReadPropertyBoolean("EnableApiSiren")) {
-            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 5);
+            $this->RegisterVariableBoolean("SirenEnabled", "Sirene", "~Switch", 6);
             $this->EnableAction("SirenEnabled");
 
             if (!IPS_VariableProfileExists("REOCAM.SirenAction")) {
@@ -1872,40 +2034,44 @@ class Reolink extends IPSModuleStrict
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 4,   "4× abspielen",    "", -1);
                 IPS_SetVariableProfileAssociation("REOCAM.SirenAction", 5,   "5× abspielen",    "", -1);
             
-            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 5);
+            $this->RegisterVariableInteger("SirenAction", "Sirenenaktion", "REOCAM.SirenAction", 6);
             $this->EnableAction("SirenAction");
 
         } else {
-            $this->UnregisterVariable("SirenEnabled");
-            $this->UnregisterVariable("SirenAction");
+            $this->UnregisterVariableIfExists("SirenEnabled");
+            $this->UnregisterVariableIfExists("SirenAction");
         }
 
         // -------- Recording / Schedule --------
         if ($this->ReadPropertyBoolean("EnableApiRecord")) {
-            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 6);
+            $this->RegisterVariableBoolean("RecEnabled", "Kameraaufzeichnung", "~Switch", 7);
             $this->EnableAction("RecEnabled");
         } else {
-            $this->UnregisterVariable("RecEnabled");
+            $this->UnregisterVariableIfExists("RecEnabled");
         }
 
-        // -------- Auto-Tracking --------
+        // -------- Auto-Tracking / AI --------
+        // Wird über denselben Konfigurationsschalter "EnableApiAutoTracking" angelegt/entfernt
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
-            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 7);
+            $this->dbg('API-VARS', 'Erstelle AutoTracking/AI Variablen');
+
+            $this->RegisterVariableBoolean("AutoTracking", "Auto-Tracking", "~Switch", 5);
             $this->EnableAction("AutoTracking");
 
-            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTrackPerson", "Auto-Tracking Person", "~Switch", 5);
             $this->EnableAction("AutoTrackPerson");
 
-            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTrackVehicle", "Auto-Tracking Fahrzeug", "~Switch", 5);
             $this->EnableAction("AutoTrackVehicle");
 
-            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 7);
+            $this->RegisterVariableBoolean("AutoTrackAnimal", "Auto-Tracking Tier", "~Switch", 5);
             $this->EnableAction("AutoTrackAnimal");
         } else {
-            $this->UnregisterVariable("AutoTracking");
-            $this->UnregisterVariable("AutoTrackPerson");
-            $this->UnregisterVariable("AutoTrackVehicle");
-            $this->UnregisterVariable("AutoTrackAnimal");
+            $this->dbg('API-VARS', 'Entferne AutoTracking/AI Variablen');
+            $this->UnregisterVariableIfExists("AutoTracking");
+            $this->UnregisterVariableIfExists("AutoTrackPerson");
+            $this->UnregisterVariableIfExists("AutoTrackVehicle");
+            $this->UnregisterVariableIfExists("AutoTrackAnimal");
         }
 
 
@@ -1914,7 +2080,7 @@ class Reolink extends IPSModuleStrict
             $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 8);
             $this->EnableAction("PushNotify");
         } else {
-            $this->UnregisterVariable("PushNotify");
+            $this->UnregisterVariableIfExists("PushNotify");
         }
 
         // -------- Kamera online --------
@@ -1932,8 +2098,8 @@ class Reolink extends IPSModuleStrict
             
 
         } else {
-            $this->UnregisterVariable("FirmwareUpdateAvailable");
-            $this->UnregisterVariable("FirmwareDownloadUrl");
+            $this->UnregisterVariableIfExists("FirmwareUpdateAvailable");
+            $this->UnregisterVariableIfExists("FirmwareDownloadUrl");
         }
     }
 
@@ -2031,6 +2197,40 @@ class Reolink extends IPSModuleStrict
         }
     }
 
+
+    private function buildApiPollingQueue(): array
+    {
+        $queue = [];
+        foreach (self::API_POLL_MAP as $task => $cfg) {
+            if ($this->ReadPropertyBoolean($cfg['property'])) {
+                $queue[] = $task;
+            }
+        }
+        return $queue;
+    }
+
+    private function hasAnyApiFeatureEnabled(): bool
+    {
+        return $this->buildApiPollingQueue() !== [];
+    }
+
+    private function runApiPollingTask(string $task): void
+    {
+        $cfg = self::API_POLL_MAP[$task] ?? null;
+        if ($cfg === null) {
+            return;
+        }
+
+        if (isset($cfg['domain'])) {
+            $this->apiUpdateMappedFeature($cfg['domain'], strtoupper((string)$task));
+            return;
+        }
+
+        if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
+            $this->{$cfg['method']}(...($cfg['args'] ?? []));
+        }
+    }
+
     public function ExecuteApiRequests(bool $force = false)
     {
         if (!$this->isActive()) {
@@ -2071,18 +2271,7 @@ class Reolink extends IPSModuleStrict
                 $this->WriteAttributeInteger('DevInfoLastRefresh', $now);
             }
 
-            $queue = [];
-
-            if ($this->ReadPropertyBoolean("EnableApiWhiteLed")) $queue[] = 'WhiteLed';
-            if ($this->ReadPropertyBoolean("EnableApiEmail")) $queue[] = 'Email';
-            if ($this->ReadPropertyBoolean("EnableApiPTZ")) $queue[] = 'PTZ';
-            if ($this->ReadPropertyBoolean("EnableApiFTP")) $queue[] = 'FTP';
-            if ($this->ReadPropertyBoolean("EnableApiSensitivity")) $queue[] = 'Sensitivity';
-            if ($this->ReadPropertyBoolean("EnableApiSiren")) $queue[] = 'Siren';
-            if ($this->ReadPropertyBoolean("EnableApiRecord")) $queue[] = 'Record';
-            if ($this->ReadPropertyBoolean("EnableApiIR")) $queue[] = 'IR';
-            if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) $queue[] = 'AutoTracking';
-
+            $queue = $this->buildApiPollingQueue();
             if (empty($queue)) {
                 return;
             }
@@ -2101,35 +2290,7 @@ class Reolink extends IPSModuleStrict
                 'queue' => $queue
             ]);
 
-            switch ($task) {
-                case 'WhiteLed':
-                    $this->UpdateWhiteLedStatus();
-                    break;
-                case 'Email':
-                    $this->EmailApply(null, null, null);
-                    break;
-                case 'PTZ':
-                    $this->CreateOrUpdatePTZHtml(false);
-                    break;
-                case 'FTP':
-                    $this->UpdateFtpStatus();
-                    break;
-                case 'Sensitivity':
-                    $this->UpdateMdSensitivityStatus();
-                    break;
-                case 'Siren':
-                    $this->UpdateSirenStatus();
-                    break;
-                case 'Record':
-                    $this->UpdateRecStatus();
-                    break;
-                case 'IR':
-                    $this->UpdateIrStatus();
-                    break;
-                case 'AutoTracking':
-                    $this->UpdateAutoTrackingStatus();
-                    break;
-            }
+            $this->runApiPollingTask($task);
 
         } finally {
             if (function_exists('IPS_SemaphoreLeave')) {
@@ -2296,271 +2457,465 @@ class Reolink extends IPSModuleStrict
         return $ability;
     }
 
-    private function apiVersionGet(string $domain): ?string {
+    private function apiVersionGet(string $domain): ?string
+    {
         $raw = $this->ReadAttributeString('ApiVersionCache');
         $map = $raw ? @json_decode($raw, true) : [];
-        $now = time();
-        if (!isset($map[$domain])) return null;
-        $age = $now - (int)$map[$domain]['ts'];
-        if ($age > 86400) return null; // 24h
-        return ($map[$domain]['ver'] ?? null);
+        if (!is_array($map) || !isset($map[$domain])) {
+            return null;
+        }
+
+        $age = time() - (int)($map[$domain]['ts'] ?? 0);
+        if ($age > 86400) {
+            return null;
+        }
+
+        $ver = $map[$domain]['ver'] ?? null;
+        return in_array($ver, ['v20', 'legacy', 'unsupported'], true) ? $ver : null;
     }
-    private function apiVersionSet(string $domain, string $ver): void {
+
+    private function apiVersionSet(string $domain, string $ver): void
+    {
+        if (!in_array($ver, ['v20', 'legacy', 'unsupported'], true)) {
+            return;
+        }
+
         $raw = $this->ReadAttributeString('ApiVersionCache');
         $map = $raw ? @json_decode($raw, true) : [];
-        $map[$domain] = ['ver'=>$ver, 'ts'=>time()];
+        if (!is_array($map)) {
+            $map = [];
+        }
+
+        $map[$domain] = ['ver' => $ver, 'ts' => time()];
         $this->WriteAttributeString('ApiVersionCache', json_encode($map));
     }
 
-    private function apiProbe(string $domain, string $cmdV20, string $cmdLegacy, int $action): string {
-        // 1) Cache?
+    private function apiScheduleVersionFromAbility(): ?int
+    {
+        $ability = $this->apiGetAbilityCached();
+        if (empty($ability)) {
+            return null;
+        }
+
+        if (isset($ability['scheduleVersion']) && is_scalar($ability['scheduleVersion'])) {
+            return (int)$ability['scheduleVersion'];
+        }
+
+        if (isset($ability['scheduleVersion']['ver'])) {
+            return (int)$ability['scheduleVersion']['ver'];
+        }
+
+        return null;
+    }
+
+    private function apiProbe(string $domain, string $cmdV20, string $cmdLegacy, int $action): string
+    {
         $cached = $this->apiVersionGet($domain);
-        if ($cached === 'v20' || $cached === 'legacy') return $cached;
+        if ($cached !== null) {
+            return $cached;
+        }
 
-        // 2) Probiere V20
-        $rV20 = $this->apiCall([[ 'cmd'=>$cmdV20, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
-        $okV20 = is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0);
-        if ($okV20) { $this->apiVersionSet($domain, 'v20'); return 'v20'; }
+        // Wenn GetAbility eine scheduleVersion liefert, zuerst diese Richtung prüfen.
+        $scheduleVersion = $this->apiScheduleVersionFromAbility();
 
-        // 3) Probiere Legacy
-        $rLeg = $this->apiCall([[ 'cmd'=>$cmdLegacy, 'action'=>$action, 'param'=>['channel'=>0] ]], strtoupper($domain).'/PROBE', /*suppress*/ true);
-        $okLeg = is_array($rLeg) && (($rLeg[0]['code'] ?? -1) === 0);
-        
-        if ($okLeg) {
-        $this->apiVersionSet($domain, 'legacy');
-        return 'legacy';
+        if ($scheduleVersion === 1) {
+            $res = $this->apiCall([[ 'cmd' => $cmdV20, 'action' => $action, 'param' => ['channel' => 0] ]], strtoupper($domain) . '/PROBE-V20', true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                $this->apiVersionSet($domain, 'v20');
+                return 'v20';
+            }
+        }
+
+        if ($scheduleVersion === 0) {
+            $res = $this->apiCall([[ 'cmd' => $cmdLegacy, 'action' => $action, 'param' => ['channel' => 0] ]], strtoupper($domain) . '/PROBE-LEGACY', true);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                $this->apiVersionSet($domain, 'legacy');
+                return 'legacy';
+            }
+        }
+
+        // Fallback, falls Ability fehlt oder einzelne Modelle falsch melden.
+        $rV20 = $this->apiCall([[ 'cmd' => $cmdV20, 'action' => $action, 'param' => ['channel' => 0] ]], strtoupper($domain) . '/PROBE-V20-FALLBACK', true);
+        if (is_array($rV20) && (($rV20[0]['code'] ?? -1) === 0)) {
+            $this->apiVersionSet($domain, 'v20');
+            return 'v20';
+        }
+
+        $rLegacy = $this->apiCall([[ 'cmd' => $cmdLegacy, 'action' => $action, 'param' => ['channel' => 0] ]], strtoupper($domain) . '/PROBE-LEGACY-FALLBACK', true);
+        if (is_array($rLegacy) && (($rLegacy[0]['code'] ?? -1) === 0)) {
+            $this->apiVersionSet($domain, 'legacy');
+            return 'legacy';
         }
 
         $this->apiVersionSet($domain, 'unsupported');
         return 'unsupported';
     }
 
-    // ---------------------------
-    // Spotlight (White LED)
-    // ---------------------------
-
-    private function whiteLedGet(): ?array 
+    private function apiDef(string $domain): ?array
     {
-    $ver = $this->apiProbe('spot', 'GetWhiteLed', 'GetWhiteLed', 0); // Cmd identisch
-    $res = $this->apiCall([[ 'cmd'=>'GetWhiteLed', 'action'=>0, 'param'=>['channel'=>0] ]], 'SPOT');
-    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
-    
-    private function whiteLedSet(array $payload): bool 
-    {
-        $ver = $this->apiProbe('spot', 'SetWhiteLed', 'SetWhiteLed', 0); // Cmd identisch
-        $res = $this->apiCall([[ 'cmd'=>'SetWhiteLed', 'action'=>0, 'param'=>$payload ]], 'SPOT-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+        return self::API_DEFS[$domain] ?? null;
     }
 
-    private function SendLedRequest(array $ledParams): bool
+    private function apiCmd(string $domain, string $mode): ?string
     {
-       $params = ["WhiteLed" => array_merge($ledParams, ["channel" => 0])];
-        $res = $this->whiteLedSet($params);
-        return (bool)$res;
-    }
-    private function SetWhiteLed(bool $state): bool   { return $this->SendLedRequest(['state' => $state ? 1 : 0]); }
-    private function SetMode(int $mode): bool         { return $this->SendLedRequest(['mode'  => $mode]); }
-    private function SetBrightness(int $b): bool      { return $this->SendLedRequest(['bright'=> $b]); }
-
-    private function UpdateWhiteLedStatus(): void
-    {
-        $resp = $this->whiteLedGet();
-        if (!is_array($resp) || !isset($resp[0]['value']['WhiteLed'])) {
-            $this->dbg('SPOTLIGHT', 'Ungültige Antwort', $resp ?? null);
-            return;
+        $d = $this->apiDef($domain);
+        if ($d === null) {
+            return null;
         }
-        $wl = $resp[0]['value']['WhiteLed'];
-        $state = [
-            'state'  => isset($wl['state'])  ? (int)$wl['state']  : null,
-            'mode'   => isset($wl['mode'])   ? (int)$wl['mode']   : null,
-            'bright' => isset($wl['bright']) ? (int)$wl['bright'] : null,
-        ];
-        $this->ApplyWhiteLedStateToVars($state);
+
+        if (empty($d['versioned'])) {
+            return $d[$mode] ?? null; // get oder set
+        }
+
+        $ver = $this->apiProbe($domain, $d['getV20'], $d['getLegacy'], (int)$d['actionGet']);
+        if ($ver === 'unsupported') {
+            return null;
+        }
+
+        if ($mode === 'get') {
+            return ($ver === 'v20') ? $d['getV20'] : $d['getLegacy'];
+        }
+        if ($mode === 'set') {
+            return ($ver === 'v20') ? $d['setV20'] : $d['setLegacy'];
+        }
+        return null;
     }
 
-    private function ApplyWhiteLedStateToVars(array $led): void
+    private function apiNodeName(string $domain): ?string
     {
-        $map = [
-            'WhiteLed' => array_key_exists('state',  $led) ? (bool)$led['state']   : null,
-            'Mode'     => array_key_exists('mode',   $led) ? (int)$led['mode']     : null,
-            'Bright'   => array_key_exists('bright', $led) ? (int)$led['bright']   : null,
-        ];
+        $d = $this->apiDef($domain);
+        if ($d === null) {
+            return null;
+        }
 
-        foreach ($map as $ident => $newVal) {
-            if ($newVal === null) continue;
-            $id = @$this->GetIDForIdent($ident);
-            if (!$id) continue;
+        if (empty($d['versioned'])) {
+            return $d['node'] ?? null;
+        }
 
-            $oldVal = GetValue($id);
-            if ($oldVal !== $newVal) {
-                $this->SetValue($ident, $newVal);
-                $this->dbg('SPOTLIGHT', 'Var geändert', ['ident' => $ident, 'old' => $oldVal, 'new' => $newVal]);
+        $ver = $this->apiVersionGet($domain);
+        if ($ver === 'v20' && array_key_exists('nodeV20', $d)) {
+            return $d['nodeV20'];
+        }
+        if ($ver === 'legacy' && array_key_exists('nodeLegacy', $d)) {
+            return $d['nodeLegacy'];
+        }
+        return $d['node'] ?? null;
+    }
+
+    private function apiFeatureGet(string $domain, string $topic = ''): ?array
+    {
+        $d = $this->apiDef($domain);
+        if ($d === null) {
+            return null;
+        }
+
+        $cmd = $this->apiCmd($domain, 'get');
+        if ($cmd === null) {
+            return null;
+        }
+
+        $payload = [[
+            'cmd'    => $cmd,
+            'action' => (int)$d['actionGet'],
+        ]];
+        if (array_key_exists('paramGet', $d) && is_array($d['paramGet']) && !empty($d['paramGet'])) {
+            $payload[0]['param'] = $d['paramGet'];
+        }
+
+        $res = $this->apiCall($payload, $topic ?: strtoupper($domain), true);
+        if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+            return $res;
+        }
+
+        // Manche Firmware nimmt GetIrLights nur mit action=1 an.
+        if (isset($d['actionGetFallback'])) {
+            $payload[0]['action'] = (int)$d['actionGetFallback'];
+            $res = $this->apiCall($payload, $topic ?: strtoupper($domain), false);
+            if (is_array($res) && (($res[0]['code'] ?? -1) === 0)) {
+                return $res;
             }
         }
+
+        return null;
+    }
+
+    private function apiFeatureSet(string $domain, array $nodeOrParam, string $topic = ''): bool
+    {
+        $d = $this->apiDef($domain);
+        if ($d === null) {
+            return false;
+        }
+
+        $cmd = $this->apiCmd($domain, 'set');
+        if ($cmd === null) {
+            return false;
+        }
+
+        $nodeName = $this->apiNodeName($domain);
+        if ($nodeName === null || array_key_exists($nodeName, $nodeOrParam)) {
+            $param = $nodeOrParam;
+        } else {
+            $param = [$nodeName => $nodeOrParam];
+        }
+
+        $res = $this->apiCall([[
+            'cmd'    => $cmd,
+            'action' => (int)$d['actionSet'],
+            'param'  => $param,
+        ]], $topic ?: strtoupper($domain) . '-SET', false);
+
+        return is_array($res) && (($res[0]['code'] ?? -1) === 0);
+    }
+
+    private function apiExtractNode(array $res, string $domain): ?array
+    {
+        $nodeName = $this->apiNodeName($domain);
+        $root = $res[0] ?? [];
+
+        if ($nodeName === null) {
+            $node = $root['value'] ?? $root['initial'] ?? null;
+        } else {
+            $node = $root['value'][$nodeName] ?? $root['initial'][$nodeName] ?? null;
+        }
+
+        return is_array($node) ? $node : null;
+    }
+
+    private function apiFeatureNodeGet(string $domain, string $topic = ''): ?array
+    {
+        $res = $this->apiFeatureGet($domain, $topic);
+        if (!is_array($res)) {
+            return null;
+        }
+        return $this->apiExtractNode($res, $domain);
+    }
+
+    private function apiFeatureSetNode(string $domain, array $node, string $topic = ''): bool
+    {
+        return $this->apiFeatureSet($domain, $node, $topic);
+    }
+
+
+    private function apiPathGet(array $data, array $path): mixed
+    {
+        $cur = $data;
+        foreach ($path as $key) {
+            if (!is_array($cur) || !array_key_exists($key, $cur)) {
+                return null;
+            }
+            $cur = $cur[$key];
+        }
+        return $cur;
+    }
+
+    private function apiPathSet(array &$data, array $path, mixed $value): void
+    {
+        $cur =& $data;
+        $last = array_pop($path);
+        foreach ($path as $key) {
+            if (!isset($cur[$key]) || !is_array($cur[$key])) {
+                $cur[$key] = [];
+            }
+            $cur =& $cur[$key];
+        }
+        if ($last !== null) {
+            $cur[$last] = $value;
+        }
+    }
+
+    private function apiFirstMappedValue(array $node, array $cfg): mixed
+    {
+        if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
+            return $this->{$cfg['method']}($node);
+        }
+
+        foreach (($cfg['paths'] ?? []) as $path) {
+            $value = $this->apiPathGet($node, $path);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+        return null;
+    }
+
+    private function apiConvertReadValue(mixed $value, string $type): mixed
+    {
+        return match ($type) {
+            'bool'          => ((int)$value === 1) || $value === true || $value === 'on' || $value === 'On',
+            'int'           => (int)$value,
+            'emailInterval' => is_numeric($value) ? (int)$value : $this->IntervalStringToSeconds((string)$value),
+            'irMode'        => $this->irModeToInt($value),
+            default         => $value,
+        };
+    }
+
+    private function apiConvertWriteValue(mixed $value, string $type): mixed
+    {
+        return match ($type) {
+            'bool'              => $value ? 1 : 0,
+            'int'                 => (int)$value,
+            'emailIntervalString' => $this->IntervalSecondsToString((int)$value),
+            'irModeString'        => $this->irModeIntToString((int)$value),
+            default               => $value,
+        };
+    }
+
+    private function apiUpdateMappedFeature(string $domain, string $topic = ''): bool
+    {
+        $map = self::API_READ_MAP[$domain] ?? null;
+        if (!is_array($map)) {
+            return false;
+        }
+
+        $node = $this->apiFeatureNodeGet($domain, $topic ?: strtoupper($domain));
+        if (!is_array($node)) {
+            return false;
+        }
+
+        foreach ($map as $ident => $cfg) {
+            $raw = $this->apiFirstMappedValue($node, $cfg);
+            if ($raw === null) {
+                continue;
+            }
+
+            $value = $this->apiConvertReadValue($raw, (string)($cfg['type'] ?? 'raw'));
+            if ($value === null) {
+                continue;
+            }
+
+            $this->SetValueIfChanged($ident, $value);
+        }
+
+        return true;
+    }
+
+    private function apiWriteMappedValue(string $domain, string $ident, mixed $value, string $topic = ''): bool
+    {
+        $cfg = self::API_WRITE_MAP[$domain][$ident] ?? null;
+        if (!is_array($cfg)) {
+            return false;
+        }
+
+        if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
+            $result = $this->{$cfg['method']}($value);
+
+            // Spezial-Methoden dürfen den API-Aufruf komplett selbst ausführen.
+            if (is_bool($result)) {
+                return $result;
+            }
+
+            $payloads = is_array($result) ? $result : [];
+        } else {
+            $converted = $this->apiConvertWriteValue($value, (string)($cfg['type'] ?? 'raw'));
+            if ($converted === null) {
+                return false;
+            }
+
+            $payloads = [];
+            foreach (($cfg['payloads'] ?? []) as $payloadDef) {
+                $payload = ['channel' => 0];
+                foreach ($payloadDef as $path) {
+                    $this->apiPathSet($payload, $path, $converted);
+                }
+                $payloads[] = $payload;
+            }
+        }
+
+        foreach ($payloads as $payload) {
+            if ($this->apiFeatureSet($domain, $payload, $topic ?: strtoupper($domain) . '-SET')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function apiReadEmailContentMode(array $email): ?int
+    {
+        if (isset($email['textType']) || isset($email['attachmentType'])) {
+            $text = (int)($email['textType'] ?? 1);
+            $att  = (int)($email['attachmentType'] ?? 0);
+            if ($text === 1 && $att === 0) return 0;
+            if ($text === 0 && $att === 1) return 1;
+            if ($text === 1 && $att === 1) return 2;
+            if ($text === 1 && $att === 2) return 3;
+            return 0;
+        }
+
+        if (isset($email['attachment'])) {
+            return [
+                '0' => 0,
+                'no' => 0,
+                'onlyPicture' => 1,
+                'picture' => 2,
+                'video' => 3,
+            ][(string)$email['attachment']] ?? 0;
+        }
+
+        return null;
+    }
+
+    private function apiWriteEmailContentPayloads(int $mode): array
+    {
+        $m = max(0, min(3, $mode));
+        return [
+            [
+                'channel'        => 0,
+                'textType'       => in_array($m, [0, 2, 3], true) ? 1 : 0,
+                'attachmentType' => ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0))),
+            ],
+            [
+                'channel'    => 0,
+                'attachment' => match ($m) { 1 => 'onlyPicture', 2 => 'picture', 3 => 'video', default => '0' },
+            ],
+        ];
+    }
+
+    private function irModeToInt(mixed $raw): ?int
+    {
+        if (is_int($raw)) {
+            return [0 => 0, 1 => 1, 2 => 2][$raw] ?? null;
+        }
+        if (is_string($raw)) {
+            return match (strtolower($raw)) {
+                'off'  => 0,
+                'on'   => 1,
+                'auto' => 2,
+                default => null,
+            };
+        }
+        return null;
+    }
+
+    private function irModeIntToString(int $mode): ?string
+    {
+        return [0 => 'Off', 1 => 'On', 2 => 'Auto'][$mode] ?? null;
     }
 
     // ---------------------------
     // E-Mail (V20 / Legacy)
     // ---------------------------
 
-    private function emailGet(): ?array 
-    {
-    $ver = $this->apiProbe('email', 'GetEmailV20', 'GetEmail', 0);
-    $cmd = ($ver === 'v20') ? 'GetEmailV20' : 'GetEmail';
-    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'EMAIL');
-    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
-    
-    private function emailSet(array $payload): bool 
-    {
-        $ver = $this->apiProbe('email', 'SetEmailV20', 'SetEmail', 0);
-        $cmd = ($ver === 'v20') ? 'SetEmailV20' : 'SetEmail';
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$payload ]], 'EMAIL-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
-    }
 
     private function IntervalSecondsToString(int $sec): ?string
     {
-        switch ($sec) {
-            case 30: return "30 Seconds";
-            case 60: return "1 Minute";
-            case 300: return "5 Minutes";
-            case 600: return "10 Minutes";
-            case 1800: return "30 Minutes";
-        }
-        return null;
+        return [
+            30   => '30 Seconds',
+            60   => '1 Minute',
+            300  => '5 Minutes',
+            600  => '10 Minutes',
+            1800 => '30 Minutes',
+        ][$sec] ?? null;
     }
+
     private function IntervalStringToSeconds(string $s): ?int
     {
-        $s = trim($s);
-        $map = [ "30 Seconds" => 30, "1 Minute" => 60, "5 Minutes" => 300, "10 Minutes" => 600, "30 Minutes" => 1800 ];
-        return $map[$s] ?? null;
-    }
-
-    private function GetEmailState(): ?array
-    {
-        $res = $this->emailGet();
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
-
-        $e = $res[0]['value']['Email'] ?? $res[0]['initial']['Email'] ?? null;
-        if (!is_array($e)) return null;
-
-        $enabled = null;
-        if (array_key_exists('enable', $e)) {
-            $enabled = ((int)$e['enable'] === 1);
-        } elseif (isset($e['schedule']['enable'])) {
-            $enabled = ((int)$e['schedule']['enable'] === 1);
-        }
-
-        $intervalSec = null;
-        if (isset($e['interval'])) {
-            $map = ['30 Seconds'=>30,'1 Minute'=>60,'5 Minutes'=>300,'10 Minutes'=>600,'30 Minutes'=>1800];
-            $intervalSec = $map[(string)$e['interval']] ?? null;
-        } elseif (isset($e['intervalSec'])) {
-            $intervalSec = (int)$e['intervalSec'];
-        }
-
-        $contentMode = null;
-        if (isset($e['textType']) || isset($e['attachmentType'])) {
-            $text = (int)($e['textType'] ?? 1);
-            $att  = (int)($e['attachmentType'] ?? 0);
-            if ($text === 1 && $att === 0)      $contentMode = 0;
-            elseif ($text === 0 && $att === 1)  $contentMode = 1;
-            elseif ($text === 1 && $att === 1)  $contentMode = 2;
-            elseif ($text === 1 && $att === 2)  $contentMode = 3;
-            else                                $contentMode = 0;
-        } elseif (isset($e['attachment'])) {
-            $contentMode = [
-                '0'=>0, 'no'=>0, 'onlyPicture'=>1, 'picture'=>2, 'video'=>3
-            ][(string)$e['attachment']] ?? 0;
-        }
-
         return [
-            'enabled'     => $enabled,
-            'intervalSec' => $intervalSec,
-            'contentMode' => $contentMode,
-            'raw'         => $e
-        ];
-    }
-
-    private function EmailApply(?bool $enable = null, ?int $intervalSec = null, ?int $contentMode = null): bool
-    {
-        if ($enable === null && $intervalSec === null && $contentMode === null) {
-            if (method_exists($this, 'UpdateEmailStatus')) {
-                $this->UpdateEmailStatus();
-            }
-            return true;
-        }
-
-        $okAll   = true;
-        $touched = false;
-
-        if ($enable !== null) {
-            $touched = true;
-            $ok = $this->emailSet(['Email'=>['channel'=>0, 'enable'=>($enable?1:0)]]);
-            if (!$ok) {
-                $ok = $this->emailSet(['Email'=>['channel'=>0, 'schedule'=>['enable'=>($enable?1:0)]]]);
-            }
-            $okAll = $okAll && $ok;
-        }
-
-        if ($intervalSec !== null) {
-            $touched = true;
-            $map = [30=>'30 Seconds', 60=>'1 Minute', 300=>'5 Minutes', 600=>'10 Minutes', 1800=>'30 Minutes'];
-            $str = $map[(int)$intervalSec] ?? null;
-            $ok  = $str ? $this->emailSet(['Email'=>['channel'=>0, 'interval'=>$str]]) : false;
-            $okAll = $okAll && $ok;
-        }
-
-        if ($contentMode !== null) {
-            $touched = true;
-            $m = (int)$contentMode;
-
-            $payloadV20 = ['Email'=>[
-                'channel'        => 0,
-                'textType'       => in_array($m, [0,2,3], true) ? 1 : 0,
-                'attachmentType' => ($m === 1 ? 1 : ($m === 2 ? 1 : ($m === 3 ? 2 : 0))),
-            ]];
-            $ok = $this->emailSet($payloadV20);
-
-            if (!$ok) {
-                $payloadLegacy = ['Email'=>[
-                    'channel'    => 0,
-                    'attachment' => match ($m) { 1=>'onlyPicture', 2=>'picture', 3=>'video', default=>'0' },
-                ]];
-                $ok = $this->emailSet($payloadLegacy);
-            }
-            $okAll = $okAll && $ok;
-        }
-
-        if (!$touched) return true;
-
-        if (method_exists($this, 'UpdateEmailStatus')) {
-            $this->UpdateEmailStatus();
-        }
-        return $okAll;
-    }
-
-    public function UpdateEmailStatus(): void
-    {
-        $st = $this->GetEmailState();
-        if (!is_array($st)) return;
-
-        $id = @$this->GetIDForIdent('EmailNotify');
-        if ($id !== false && $st['enabled'] !== null && (bool)GetValue($id) !== (bool)$st['enabled']) {
-            $this->SetValue('EmailNotify', (bool)$st['enabled']);
-        }
-
-        $id = @$this->GetIDForIdent('EmailInterval');
-        if ($id !== false && $st['intervalSec'] !== null && (int)GetValue($id) !== (int)$st['intervalSec']) {
-            $this->SetValue('EmailInterval', (int)$st['intervalSec']);
-        }
-
-        $id = @$this->GetIDForIdent('EmailContent');
-        if ($id !== false && $st['contentMode'] !== null && (int)GetValue($id) !== (int)$st['contentMode']) {
-            $this->SetValue('EmailContent', (int)$st['contentMode']);
-        }
+            '30 Seconds' => 30,
+            '1 Minute'   => 60,
+            '5 Minutes'  => 300,
+            '10 Minutes' => 600,
+            '30 Minutes' => 1800,
+        ][trim($s)] ?? null;
     }
 
     // ---------------------------
@@ -3160,292 +3515,330 @@ class Reolink extends IPSModuleStrict
 
 
     // ---------------------------
-    // FTP EIN/AUS
-    // ---------------------------
-
-    private function ftpGet(): ?array
-    {
-        $ver = $this->apiProbe('ftp', 'GetFtpV20', 'GetFtp', 0);
-        if ($ver === 'unsupported') return null;
-
-        $cmd = ($ver === 'v20') ? 'GetFtpV20' : 'GetFtp';
-
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'FTP', /*suppress*/ true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'FTP');
-        }
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
-
-    private function ftpSet(bool $on): bool
-    {
-        $ver = $this->apiProbe('ftp', 'SetFtpV20', 'SetFtp', 0);
-        if ($ver === 'unsupported') return false;
-
-        $cmd = ($ver === 'v20') ? 'SetFtpV20' : 'SetFtp';
-
-        $p1  = [ 'Ftp' => [ 'enable' => ($on ? 1 : 0), 'channel' => 0 ] ];
-        $r1  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
-        $ok1 = is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-        if ($ok1) return true;
-
-        $r1b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p1 ]], 'FTP-SET', /*suppress*/ true);
-        $ok1b = is_array($r1b) && (($r1b[0]['code'] ?? -1) === 0);
-        if ($ok1b) return true;
-
-        $p2  = [ 'Ftp' => [ 'schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0 ] ];
-        $r2  = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>$p2 ]], 'FTP-SET', /*suppress*/ true);
-        $ok2 = is_array($r2) && (($r2[0]['code'] ?? -1) === 0);
-        if ($ok2) return true;
-
-        $r2b = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>$p2 ]], 'FTP-SET');
-        return is_array($r2b) && (($r2b[0]['code'] ?? -1) === 0);
-    }
-
-    private function UpdateFtpStatus(): void
-    {
-        $res = $this->ftpGet();
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
-
-        $ftp = $res[0]['value']['Ftp'] ?? $res[0]['initial']['Ftp'] ?? null;
-        if (!is_array($ftp)) return;
-
-        $enabled = null;
-        if (array_key_exists('enable', $ftp)) $enabled = ((int)$ftp['enable'] === 1);
-        elseif (isset($ftp['schedule']['enable'])) $enabled = ((int)$ftp['schedule']['enable'] === 1);
-        if ($enabled === null) return;
-
-        $id = @$this->GetIDForIdent('FTPEnabled');
-        if ($id !== false && (bool)GetValue($id) !== $enabled) {
-            $this->SetValue('FTPEnabled', (bool)$enabled);
-            $this->dbg('FTP', 'Var geändert', ['old' => (bool)GetValue($id), 'new' => (bool)$enabled]);
-        }
-    }
-
-    private function FtpApply(bool $on): bool
-    {
-        $ok = $this->ftpSet($on);
-        if ($ok) $this->UpdateFtpStatus();
-        else     $this->dbg('FTP', 'Setzen fehlgeschlagen');
-        return $ok;
-    }
-
-    // ---------------------------
     // Sensitivity
     // ---------------------------
 
-    private function sensitivityGet(): ?array 
+    private function GetMdAlarmNodeForScope(string $topic = 'MD-SCOPE', bool $preferInitial = false): ?array
     {
-        $ver = $this->apiProbe('sensitivity', 'GetMdAlarm', 'GetAlarm', 1);
-        $cmd = ($ver === 'v20') ? 'GetMdAlarm' : 'GetAlarm';
-
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'SENS');
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>0, 'param'=>['channel'=>0] ]], 'SENS');
-        }
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
-
-        $root = $res[0];
-        $node = $root['value']['MdAlarm'] ?? $root['initial']['MdAlarm'] ?? $root['value']['Alarm'] ?? $root['initial']['Alarm'] ?? null;
-        if (!is_array($node)) return null;
-
-        $sensDef  = null;
-        $segments = [];
-        if (!empty($node['newSens'])) {
-            $sensDef  = isset($node['newSens']['sensDef']) ? (int)$node['newSens']['sensDef'] : null;
-            $segments = $this->mdNormalizeSegments($node['newSens']['sens'] ?? []);
-        } elseif (!empty($node['sens'])) {
-            $segments = $this->mdNormalizeSegments($node['sens']);
+        $res = $this->apiFeatureGet('sensitivityMd', $topic);
+        if (!is_array($res)) {
+            return null;
         }
 
-        $active = $this->mdPickActiveNow($segments, $sensDef);
-        return [ 'apiVer' => ($ver === 'v20' ? 'V20' : 'LEGACY'), 'sensDef'=>$sensDef, 'segments'=>$segments, 'active'=>$active ];
+        $nodeName = $this->apiNodeName('sensitivityMd') ?? 'MdAlarm';
+        $root = $res[0] ?? [];
+
+        // Für die Erkennungsfläche brauchen wir nur scope.table.
+        // Beim Schreiben wird bewusst nur scope gesendet, damit die MdSensitivity
+        // nicht durch initial/value-Dummywerte der Firmware überschrieben wird.
+        $node = $preferInitial
+            ? ($root['initial'][$nodeName] ?? $root['value'][$nodeName] ?? null)
+            : ($root['value'][$nodeName] ?? $root['initial'][$nodeName] ?? null);
+
+        if (!is_array($node) || !isset($node['scope']) || !is_array($node['scope'])) {
+            return null;
+        }
+
+        $scope = $node['scope'];
+        $cols  = (int)($scope['cols'] ?? 0);
+        $rows  = (int)($scope['rows'] ?? 0);
+        $table = (string)($scope['table'] ?? '');
+
+        if ($cols <= 0 || $rows <= 0 || strlen($table) !== ($cols * $rows)) {
+            $this->dbg($topic, 'Scope ungültig', [
+                'cols' => $cols,
+                'rows' => $rows,
+                'tableLen' => strlen($table),
+                'expected' => max(0, $cols * $rows),
+            ]);
+            return null;
+        }
+
+        return $node;
     }
 
-    private function sensitivitySet(int $levelUi): bool 
+    private function apiWriteMdDetectionArea(bool $enable): bool
     {
-        $levelUi  = max(1, min(50, $levelUi));
-        $levelCam = 51 - $levelUi;
+        return $this->SetMdDetectionAreaEnabled($enable);
+    }
 
-        $state = $this->sensitivityGet();
-        if (!$state) return false;
-
-        $segments = $state['segments'];
-        if (empty($segments)) {
-            $segments = [[ 'beginHour'=>0,'beginMin'=>0,'endHour'=>23,'endMin'=>59,'sensitivity'=>$levelCam ]];
-        } else {
-            foreach ($segments as &$s) { $s['sensitivity'] = $levelCam; }
-            unset($s);
+    private function SetMdDetectionAreaEnabled(bool $enable): bool
+    {
+        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE', false);
+        if (!is_array($node)) {
+            return false;
         }
 
-        $isV20 = ($state['apiVer'] === 'V20');
+        $scope = $node['scope'] ?? [];
+        $cols  = (int)($scope['cols'] ?? 0);
+        $rows  = (int)($scope['rows'] ?? 0);
+        $table = (string)($scope['table'] ?? '');
+        $len   = $cols * $rows;
 
-        if ($isV20) {
-            $payload = [[
-                'cmd'   => 'SetMdAlarm',
-                'param' => [
-                    'MdAlarm' => [
-                        'type'       => 'md',
-                        'useNewSens' => 1,
-                        'newSens'    => [
-                            'sensDef' => $levelCam,
-                            'sens'    => $segments
-                        ],
-                        'channel'    => 0
-                    ]
-                ]
-            ]];
-        } else {
-            $payload = [[
-                'cmd'   => 'SetAlarm',
-                'param' => [
-                    'Alarm' => [
-                        'type'    => 'md',
-                        'sens'    => $segments,
-                        'channel' => 0
-                    ]
-                ]
-            ]];
+        if ($cols <= 0 || $rows <= 0 || strlen($table) !== $len) {
+            return false;
         }
 
-        $res = $this->apiCall($payload, 'SENS-SET');
-        $ok  = (is_array($res) && (($res[0]['code'] ?? -1) === 0));
+        if (!$enable) {
+            if (strpos($table, '1') !== false) {
+                $this->WriteAttributeString('MdAlarmScopeBackup', json_encode([
+                    'cols'  => $cols,
+                    'rows'  => $rows,
+                    'table' => $table,
+                    'ts'    => time(),
+                ]));
+            }
+            $table = str_repeat('0', $len);
+        } else {
+            $backup = @json_decode($this->ReadAttributeString('MdAlarmScopeBackup'), true);
+            if (
+                is_array($backup)
+                && (int)($backup['cols'] ?? 0) === $cols
+                && (int)($backup['rows'] ?? 0) === $rows
+                && is_string($backup['table'] ?? null)
+                && strlen((string)$backup['table']) === $len
+            ) {
+                $table = (string)$backup['table'];
+            } else {
+                $table = str_repeat('1', $len);
+            }
+        }
 
+        $payload = [
+            'channel' => (int)($node['channel'] ?? 0),
+            'scope'   => [
+                'cols'  => $cols,
+                'rows'  => $rows,
+                'table' => $table,
+            ],
+        ];
+
+        $ok = $this->apiFeatureSet('sensitivityMd', $payload, 'MD-SCOPE-SET');
         if ($ok) {
-            $this->UpdateMdSensitivityStatus(); 
+            $this->SetValueIfChanged('MdDetectionArea', $enable);
         }
         return $ok;
     }
 
-    private function GetMdSensitivity(): ?array {
-        return $this->sensitivityGet();
+    private function UpdateMdDetectionAreaStatus(): void
+    {
+        $id = @$this->GetIDForIdent('MdDetectionArea');
+        if ($id === false) {
+            return;
+        }
+
+        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE-STATUS');
+        if (!is_array($node)) {
+            return;
+        }
+
+        $table = (string)($node['scope']['table'] ?? '');
+        $this->SetValueIfChanged('MdDetectionArea', strpos($table, '1') !== false);
     }
 
-    public function SetMdSensitivity(int $level): bool {
-        return $this->sensitivitySet($level);
+    private function GetMdSensitivity(): ?array
+    {
+        $node = $this->apiFeatureNodeGet('sensitivityMd', 'SENS');
+        if (!is_array($node)) {
+            return null;
+        }
+
+        $isV20 = isset($node['newSens']);
+        $sensDef = $isV20 ? (int)($node['newSens']['sensDef'] ?? 10) : null;
+        $segments = $this->mdSegments($isV20 ? ($node['newSens']['sens'] ?? []) : ($node['sens'] ?? []));
+
+        return [
+            'apiVer'   => $isV20 ? 'V20' : 'LEGACY',
+            'isV20'    => $isV20,
+            'sensDef'  => $sensDef,
+            'segments' => $segments,
+            'active'   => $this->mdActive($segments, $sensDef),
+        ];
+    }
+
+    public function SetMdSensitivity(int $level): bool
+    {
+        $levelCam = 51 - max(1, min(50, $level));
+        $st = $this->GetMdSensitivity();
+        if (!$st) {
+            return false;
+        }
+
+        $segments = $st['segments'] ?: [[
+            'beginHour' => 0, 'beginMin' => 0,
+            'endHour' => 23, 'endMin' => 59,
+            'sensitivity' => $levelCam,
+        ]];
+        foreach ($segments as &$segment) {
+            $segment['sensitivity'] = $levelCam;
+        }
+        unset($segment);
+
+        $payload = !empty($st['isV20'])
+            ? ['type' => 'md', 'useNewSens' => 1, 'newSens' => ['sensDef' => $levelCam, 'sens' => $segments], 'channel' => 0]
+            : ['type' => 'md', 'sens' => $segments, 'channel' => 0];
+
+        $ok = $this->apiFeatureSet('sensitivityMd', $payload, 'SENS-SET');
+        if ($ok) {
+            $this->SetValueIfChanged('MdSensitivity', 51 - $levelCam);
+        }
+        return $ok;
     }
 
     private function UpdateMdSensitivityStatus(): void
     {
-        $vid = @$this->GetIDForIdent("MdSensitivity");
-        if (!$vid) return;
-
         $st = $this->GetMdSensitivity();
-        if (!$st) return;
-
-        $lvlCam = max(1, min(50, (int)($st['active'] ?? 0)));
-        $lvlUI  = 51 - $lvlCam;
-
-        if ((int)GetValue($vid) !== $lvlUI) {
-            $this->SetValue("MdSensitivity", $lvlUI);
+        if ($st && $st['active'] !== null) {
+            $this->SetValueIfChanged('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
         }
     }
 
-    private function mdNormalizeSegments($raw): array
+    private function UpdateSensitivityStatus(): void
     {
-        $out = [];
-        $push = function($a) use (&$out) {
-            $out[] = [
-                'beginHour'   => (int)($a['beginHour'] ?? 0),
-                'beginMin'    => (int)($a['beginMin']  ?? 0),
-                'endHour'     => (int)($a['endHour']   ?? 23),
-                'endMin'      => (int)($a['endMin']    ?? 59),
-                'sensitivity' => (int)($a['sensitivity'] ?? ($a['sens'] ?? 0))
-            ];
+        $this->UpdateMdDetectionAreaStatus();
+        $this->UpdateMdSensitivityStatus();
+        $this->UpdateAiSensitivityStatus();
+    }
+
+    private function aiTypeByIdent(string $ident): ?string
+    {
+        return match ($ident) {
+            'AiSensitivityPerson'  => 'people',
+            'AiSensitivityVehicle' => 'vehicle',
+            'AiSensitivityAnimal'  => 'dog_cat',
+            default => null,
         };
-        $walk = function($node) use (&$walk, $push) {
-            if (is_array($node)) {
-                if (isset($node['beginHour']) || isset($node['beginMin']) || isset($node['endHour']) || isset($node['endMin'])) {
-                    $push($node);
-                } else {
-                    foreach ($node as $v) $walk($v);
-                }
-            }
-        };
-        $walk($raw);
+    }
 
-        $filtered = [];
-        foreach ($out as $s) {
-            $bh=$s['beginHour']; $bm=$s['beginMin']; $eh=$s['endHour']; $em=$s['endMin'];
-            if ($bh<0||$bh>23||$eh<0||$eh>23||$bm<0||$bm>59||$em<0||$em>59) continue;
-            if ($s['sensitivity'] < 1 || $s['sensitivity'] > 50) continue;
-            $filtered[] = $s;
+    private function GetAiSensitivity(string $aiType): ?array
+    {
+        $d = $this->apiDef('sensitivityAi');
+        if ($d === null) {
+            return null;
         }
-        return array_values($filtered);
-    }
 
-    private function mdPickActiveNow(array $segments, ?int $sensDef): int
-    {
-        $now = (int)date('G')*60 + (int)date('i');
-        foreach ($segments as $s) {
-            $start = $s['beginHour']*60 + $s['beginMin'];
-            $end   = $s['endHour']*60   + $s['endMin'];
-            if ($start <= $end) {
-                if ($now >= $start && $now <= $end) return (int)$s['sensitivity'];
-            } else {
-                if ($now >= $start || $now <= $end)  return (int)$s['sensitivity'];
-            }
+        $res = $this->apiCall([[
+            'cmd'    => $d['get'],
+            'action' => (int)$d['actionGet'],
+            'param'  => ['channel' => 0, 'ai_type' => $aiType]
+        ]], 'AI-SENS', true);
+
+        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
+            return null;
         }
-        return (int)($sensDef ?? ($segments[0]['sensitivity'] ?? 10));
+
+        $value = $res[0]['value'] ?? null;
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $node = $value['AiAlarm'] ?? $value;
+        return is_array($node) ? $node : null;
     }
 
-    private function apiGetNode(array $resp, string $key)
+    public function SetAiSensitivity(string $ident, int $level): bool
     {
-        $root = $resp[0] ?? [];
-        $v = $root['value'][$key] ?? null;
-        if ($v === null) $v = $root['initial'][$key] ?? null;
-        return is_array($v) ? $v : null;
-    }
+        $aiType = $this->aiTypeByIdent($ident);
+        if ($aiType === null) {
+            return false;
+        }
 
-    // ---------------------------
-    // Sirene ein-aus
-    // ---------------------------
+        $level = max(0, min(100, $level));
+        $node = $this->GetAiSensitivity($aiType);
+        if (!is_array($node)) {
+            return false;
+        }
 
-    private function alarmGet(): ?array 
-    {
-    $ver = $this->apiProbe('alarm', 'GetAudioAlarmV20', 'GetAudioAlarm', 1);
-    $cmd = ($ver === 'v20') ? 'GetAudioAlarmV20' : 'GetAudioAlarm';
-    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'ALARM');
-    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
-    
-    private function alarmSet(array $audioNode): bool 
-    {
-        $ver = $this->apiProbe('alarm', 'SetAudioAlarmV20', 'SetAudioAlarm', 1);
-        $cmd = ($ver === 'v20') ? 'SetAudioAlarmV20' : 'SetAudioAlarm';
-        $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['Audio'=>$audioNode] ]], 'ALARM-SET');
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0));
-    }
+        $node['ai_type'] = $aiType;
+        $node['sensitivity'] = $level;
 
-    public function SetSirenEnabled(bool $on): bool
-    {
-        $res = $this->alarmGet();
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return false;
-        $audio = $res[0]['value']['Audio'] ?? $res[0]['initial']['Audio'] ?? null;
-        if (!is_array($audio)) return false;
+        $d = $this->apiDef('sensitivityAi');
+        if ($d === null) {
+            return false;
+        }
 
-        $audio['enable'] = $on ? 1 : 0;
-        $ok = $this->alarmSet($audio);
+        $res = $this->apiCall([[
+            'cmd'    => $d['set'],
+            'action' => (int)$d['actionSet'],
+            'param'  => [
+                'channel' => 0,
+                'AiAlarm' => $node
+            ]
+        ]], 'AI-SENS-SET');
 
-        if ($ok) $this->UpdateSirenStatus();
+        $ok = is_array($res) && (($res[0]['code'] ?? -1) === 0);
+        if ($ok) {
+            $this->SetValueIfChanged($ident, $level);
+        }
         return $ok;
     }
 
-    private function UpdateSirenStatus(): void
+    private function UpdateAiSensitivityStatus(): void
     {
-        $vid = @$this->GetIDForIdent("SirenEnabled");
-        if (!$vid) return;
-
-        $res = $this->alarmGet();
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
-
-        $audio = $res[0]['value']['Audio'] ?? $res[0]['initial']['Audio'] ?? null;
-        if (!is_array($audio) || !array_key_exists('enable', $audio)) return;
-
-        $enabled = ((int)$audio['enable'] === 1);
-        if ((bool)GetValue($vid) !== $enabled) {
-            $this->SetValue("SirenEnabled", $enabled);
+        foreach (['AiSensitivityPerson', 'AiSensitivityVehicle', 'AiSensitivityAnimal'] as $ident) {
+            $aiType = $this->aiTypeByIdent($ident);
+            if ($aiType === null) {
+                continue;
+            }
+            $node = $this->GetAiSensitivity($aiType);
+            if (is_array($node) && isset($node['sensitivity'])) {
+                $this->SetValueIfChanged($ident, max(0, min(100, (int)$node['sensitivity'])));
+            }
         }
+    }
+
+    private function mdSegments(mixed $raw): array
+    {
+        $segments = [];
+        $walk = function ($node) use (&$walk, &$segments): void {
+            if (!is_array($node)) {
+                return;
+            }
+            if (isset($node['beginHour']) || isset($node['endHour'])) {
+                $segments[] = [
+                    'beginHour'   => max(0, min(23, (int)($node['beginHour'] ?? 0))),
+                    'beginMin'    => max(0, min(59, (int)($node['beginMin'] ?? 0))),
+                    'endHour'     => max(0, min(23, (int)($node['endHour'] ?? 23))),
+                    'endMin'      => max(0, min(59, (int)($node['endMin'] ?? 59))),
+                    'sensitivity' => max(1, min(50, (int)($node['sensitivity'] ?? ($node['sens'] ?? 10)))),
+                    'enable'      => (int)($node['enable'] ?? 1),
+                ];
+                return;
+            }
+            foreach ($node as $child) {
+                $walk($child);
+            }
+        };
+        $walk($raw);
+        return $segments;
+    }
+
+    private function mdActive(array $segments, ?int $fallback = null): ?int
+    {
+        $now = ((int)date('G') * 60) + (int)date('i');
+        $hasEnabledSegment = false;
+
+        foreach ($segments as $s) {
+            // Wenn Reolink die Zeitblöcke mit enable=0 liefert, ist die MD-Erkennung
+            // über die Zeitblöcke deaktiviert. In diesem Zustand darf die Variable
+            // MdSensitivity nicht aus sensDef/Defaultwerten überschrieben werden.
+            if (array_key_exists('enable', $s) && (int)$s['enable'] === 0) {
+                continue;
+            }
+
+            $hasEnabledSegment = true;
+            $start = $s['beginHour'] * 60 + $s['beginMin'];
+            $end   = $s['endHour'] * 60 + $s['endMin'];
+            if (($start <= $end && $now >= $start && $now <= $end) || ($start > $end && ($now >= $start || $now <= $end))) {
+                return (int)$s['sensitivity'];
+            }
+        }
+
+        if (!$hasEnabledSegment) {
+            return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
+        }
+
+        return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
     }
 
 
@@ -3488,146 +3881,6 @@ class Reolink extends IPSModuleStrict
 
 
     // ---------------------------
-    // Record Status
-    // ---------------------------
-
-    private function recordGet(): ?array 
-    {
-    $ver = $this->apiProbe('record', 'GetRecV20', 'GetRec', 1);
-    $cmd = ($ver === 'v20') ? 'GetRecV20' : 'GetRec';
-    $res = $this->apiCall([[ 'cmd'=>$cmd, 'action'=>1, 'param'=>['channel'=>0] ]], 'RECORD');
-    return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-    }
-
-    private function recordSet(array $payload): bool
-    {
-        $ver = $this->apiProbe('record', 'SetRecV20', 'SetRec', 0);
-        $cmd = ($ver === 'v20') ? 'SetRecV20' : 'SetRec';
-
-        $r0  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 0, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ true);
-        $ok0 = is_array($r0) && (($r0[0]['code'] ?? -1) === 0);
-        if ($ok0) return true;
-
-        $r1  = $this->apiCall([[ 'cmd' => $cmd, 'action' => 1, 'param' => $payload ]], 'RECORD-SET', /*suppress*/ false);
-        return is_array($r1) && (($r1[0]['code'] ?? -1) === 0);
-    }
-
-    private function UpdateRecStatus(): void
-    {
-        $vid = @$this->GetIDForIdent("RecEnabled");
-        if (!$vid) return;
-
-        $res = $this->recordGet();
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return;
-
-        $rec = $res[0]['value']['Rec'] ?? $res[0]['initial']['Rec'] ?? null;
-        if (!is_array($rec)) return;
-
-        $enabled = null;
-        if (array_key_exists('enable', $rec)) {
-            $enabled = ((int)$rec['enable'] === 1);
-        } elseif (isset($rec['schedule']['enable'])) {
-            $enabled = ((int)$rec['schedule']['enable'] === 1);
-        }
-        if ($enabled !== null && ((bool)GetValue($vid) !== $enabled)) {
-            $this->SetValue('RecEnabled', $enabled);
-        }
-    }
-
-    public function SetRecEnabled(bool $on): bool
-    {
-        $get = $this->recordGet();
-        if (!is_array($get) || (($get[0]['code'] ?? -1) !== 0)) return false;
-
-        $rec = $get[0]['value']['Rec'] ?? $get[0]['initial']['Rec'] ?? [];
-        if (!is_array($rec)) $rec = [];
-
-        $rec['enable']  = $on ? 1 : 0;
-        $rec['channel'] = 0;
-
-        $ok = $this->recordSet(['Rec' => $rec]);
-
-        if (!$ok) {
-            $param2 = ['Rec' => ['schedule' => ['enable' => ($on ? 1 : 0)], 'channel' => 0]];
-            $ok = $this->recordSet($param2);
-        }
-
-        if ($ok) {
-            $this->UpdateRecStatus();
-        }
-        return $ok;
-    }
-
-    // ---------------------------
-    // Infrared (IR)
-    // ---------------------------
-
-    public function IR_SetModeInt(int $mode): bool
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiIR')) return false;
-        if (!$this->apiEnsureToken()) return false;
-
-        $mode = max(0, min(2, $mode));
-        $map  = [0 => 'Off', 1 => 'On', 2 => 'Auto'];
-
-        $payload = [[
-            'cmd'   => 'SetIrLights',
-            'action'=> 0,
-            'param' => ['IrLights' => [
-                'channel' => 0,
-                'state'   => $map[$mode] 
-            ]]
-        ]];
-
-        $res = $this->apiCall($payload, 'IR-SET');
-        $ok  = is_array($res) && (($res[0]['code'] ?? -1) === 0);
-        if ($ok) { $this->UpdateIrStatus(); }
-        return $ok;
-    }
-
-    private function irGetMode(): ?string
-    {
-        if (!$this->ReadPropertyBoolean('EnableApiIR')) return null;
-        if (!$this->apiEnsureToken()) return null;
-
-        $p0  = [[ 'cmd'=>'GetIrLights', 'action'=>0, 'param'=>['channel'=>0] ]];
-        $res = $this->apiCall($p0, 'IR', /*suppress*/ true);
-        if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) {
-            $p1  = [[ 'cmd'=>'GetIrLights', 'action'=>1, 'param'=>['channel'=>0] ]];
-            $res = $this->apiCall($p1, 'IR');
-            if (!is_array($res) || (($res[0]['code'] ?? -1) !== 0)) return null;
-        }
-
-        $root = $res[0] ?? [];
-        $node = $root['value']['IrLights'] ?? $root['initial']['IrLights'] ?? null;
-        if (!is_array($node)) return null;
-
-        $raw = $node['state'] ?? null;
-        if (is_string($raw)) {
-            $s = strtolower($raw);
-            if (in_array($s, ['off','on','auto'], true)) return $s;
-        }
-        if (is_int($raw)) {
-            return [0=>'off',1=>'on',2=>'auto'][$raw] ?? null;
-        }
-        return null;
-    }
-
-    private function UpdateIrStatus(): void
-    {
-        $mode = $this->irGetMode();
-        if ($mode === null) return;
-
-        $vid = @$this->GetIDForIdent('IRLights');
-        if ($vid !== false) {
-            $val = ($mode === 'off' ? 0 : ($mode === 'on' ? 1 : 2));
-            if ((int)GetValue($vid) !== $val) {
-                $this->SetValue('IRLights', $val);
-            }
-        }
-    }
-
-    // ---------------------------
     // Online-Status
     // ---------------------------
 
@@ -3656,32 +3909,16 @@ class Reolink extends IPSModuleStrict
     }
 
     // ---------------------------
-    // Auto-Tracking
+    // Auto-Tracking / AI-Konfiguration
     // ---------------------------
 
-    private function aiCfgCall(?bool $enabled = null, ?string $trackKey = null, ?bool $trackValue = null): ?array
+    private function apiBuildAiCfgPayload(?bool $masterEnabled = null, ?string $trackKey = null, ?bool $trackValue = null): array
     {
-        if ($enabled === null && $trackKey === null) {
-            $res = $this->apiCall([[
-                'cmd'    => 'GetAiCfg',
-                'action' => 0,
-                'param'  => ['channel' => 0]
-            ]], 'AICFG', true);
+        $node = $this->apiFeatureNodeGet('aiCfg', 'AICFG') ?? [];
 
-            return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
-        }
-
-        $current = $this->aiCfgCall();
-        $node = is_array($current) ? ($current[0]['value'] ?? $current[0]['initial'] ?? []) : [];
-
-        $masterEnabled = $enabled;
         if ($masterEnabled === null) {
             $masterEnabled = ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1);
         }
-
-        $aiDetectType = is_array($node['AiDetectType'] ?? null)
-            ? $node['AiDetectType']
-            : ['people' => 1, 'vehicle' => 1, 'dog_cat' => 1, 'face' => 0];
 
         $trackType = is_array($node['trackType'] ?? null)
             ? $node['trackType']
@@ -3691,69 +3928,55 @@ class Reolink extends IPSModuleStrict
             $trackType[$trackKey] = $trackValue ? 1 : 0;
         }
 
-        $payload = [[
-            'cmd'    => 'SetAiCfg',
-            'action' => 0,
-            'param'  => [
-                'channel'      => 0,
-                'aiTrack'      => $masterEnabled ? 1 : 0,
-                'bSmartTrack'  => $masterEnabled ? 1 : 0,
-                'trackType'    => $trackType,
-                'AiDetectType' => $aiDetectType
-            ]
-        ]];
+        return [
+            'channel'      => 0,
+            'aiTrack'      => $masterEnabled ? 1 : 0,
+            'bSmartTrack'  => $masterEnabled ? 1 : 0,
+            'trackType'    => $trackType,
+            'AiDetectType' => is_array($node['AiDetectType'] ?? null)
+                ? $node['AiDetectType']
+                : ['people' => 1, 'vehicle' => 1, 'dog_cat' => 1, 'face' => 0],
+        ];
+    }
 
-        $res = $this->apiCall($payload, 'AICFG-SET');
+    private function apiWriteAiCfgMasterPayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload((bool)$value)];
+    }
 
-        return (is_array($res) && (($res[0]['code'] ?? -1) === 0)) ? $res : null;
+    private function apiWriteAiCfgPersonPayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload(null, 'people', (bool)$value)];
+    }
+
+    private function apiWriteAiCfgVehiclePayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload(null, 'vehicle', (bool)$value)];
+    }
+
+    private function apiWriteAiCfgAnimalPayloads(mixed $value): array
+    {
+        return [$this->apiBuildAiCfgPayload(null, 'dog_cat', (bool)$value)];
     }
 
     public function SetAutoTracking(bool $enabled): bool
     {
-        $ok = $this->aiCfgCall($enabled) !== null;
-
-        if ($ok) {
-            $this->UpdateAutoTrackingStatus();
-        }
-
-        return $ok;
+        return $this->apiWriteMappedValue('aiCfg', 'AutoTracking', $enabled, 'AICFG-SET');
     }
 
     public function SetAutoTrackingType(string $trackKey, bool $enabled): bool
     {
-        $ok = $this->aiCfgCall(null, $trackKey, $enabled) !== null;
-
-        if ($ok) {
-            $this->UpdateAutoTrackingStatus();
-        }
-
-        return $ok;
+        return match ($trackKey) {
+            'people'  => $this->apiWriteMappedValue('aiCfg', 'AutoTrackPerson', $enabled, 'AICFG-SET'),
+            'vehicle' => $this->apiWriteMappedValue('aiCfg', 'AutoTrackVehicle', $enabled, 'AICFG-SET'),
+            'dog_cat' => $this->apiWriteMappedValue('aiCfg', 'AutoTrackAnimal', $enabled, 'AICFG-SET'),
+            default   => false,
+        };
     }
 
     private function UpdateAutoTrackingStatus(): void
     {
-        $res = $this->aiCfgCall();
-        if (!is_array($res)) {
-            return;
-        }
-
-        $node = $res[0]['value'] ?? $res[0]['initial'] ?? null;
-        if (!is_array($node)) {
-            return;
-        }
-
-        $enabled = (
-            ((int)($node['aiTrack'] ?? 0) === 1) ||
-            ((int)($node['bSmartTrack'] ?? 0) === 1)
-        );
-
-        $this->SetValueIfChanged("AutoTracking", $enabled);
-
-        $trackType = is_array($node['trackType'] ?? null) ? $node['trackType'] : [];
-
-        $this->SetValueIfChanged("AutoTrackPerson",  ((int)($trackType['people']  ?? 0) === 1));
-        $this->SetValueIfChanged("AutoTrackVehicle", ((int)($trackType['vehicle'] ?? 0) === 1));
-        $this->SetValueIfChanged("AutoTrackAnimal",  ((int)($trackType['dog_cat'] ?? 0) === 1));
+        $this->apiUpdateMappedFeature('aiCfg', 'AICFG');
     }
 
     private function SetValueIfChanged(string $ident, mixed $value): void
