@@ -168,7 +168,7 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
         'push' => [
-            'PushNotify' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+            'PushNotify' => ['method' => 'apiReadPushNotify', 'type' => 'bool'],
         ],
         'aiCfg' => [
             'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
@@ -206,7 +206,7 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
         'push' => [
-            'PushNotify' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+            'PushNotify' => ['method' => 'apiWritePushNotify'],
         ],
         'sensitivityMd' => [
             'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
@@ -318,6 +318,7 @@ class Reolink extends IPSModuleStrict
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
         $this->RegisterAttributeInteger('ApiQueueIndex', 0);
         $this->RegisterAttributeString('MdAlarmScopeBackup', '');
+        $this->RegisterAttributeString('PushScheduleBackup', '');
 
         // Hook-Adresse (ohne /hook/)
         $address = 'reolink_' . $this->InstanceID;   
@@ -2827,6 +2828,93 @@ class Reolink extends IPSModuleStrict
             }
         }
         return false;
+    }
+
+
+    private function apiReadPushNotify(array $push): bool
+    {
+        $master = ((int)($push['enable'] ?? 0) === 1);
+        $tables = $push['schedule']['table'] ?? [];
+
+        if (!is_array($tables) || empty($tables)) {
+            return $master;
+        }
+
+        // Der Schalter soll nur aktiv sein, wenn Hauptschalter UND mindestens ein Untermenü/Zeitplan aktiv ist.
+        foreach ($tables as $table) {
+            if (is_string($table) && strpos($table, '1') !== false) {
+                return $master;
+            }
+        }
+
+        return false;
+    }
+
+    private function apiWritePushNotify(bool $enable): bool
+    {
+        $node = $this->apiFeatureNodeGet('push', 'PUSH');
+        if (!is_array($node)) {
+            return false;
+        }
+
+        $node['channel'] = (int)($node['channel'] ?? 0);
+        $node['enable']  = $enable ? 1 : 0;
+
+        $tables = $node['schedule']['table'] ?? [];
+        if (!is_array($tables)) {
+            $tables = [];
+        }
+
+        if (!$enable) {
+            // Aktuellen Untermenü-/Zeitplan-Zustand sichern, damit er beim Einschalten wiederhergestellt werden kann.
+            if (!empty($tables)) {
+                $this->WriteAttributeString('PushScheduleBackup', json_encode([
+                    'table' => $tables,
+                    'ts'    => time()
+                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            }
+
+            foreach ($tables as $key => $table) {
+                if (is_string($table) && $table !== '') {
+                    $tables[$key] = str_repeat('0', strlen($table));
+                }
+            }
+        } else {
+            $backup = @json_decode($this->ReadAttributeString('PushScheduleBackup'), true);
+            $backupTables = is_array($backup) ? ($backup['table'] ?? null) : null;
+
+            if (is_array($backupTables) && !empty($backupTables)) {
+                foreach ($tables as $key => $table) {
+                    if (isset($backupTables[$key]) && is_string($backupTables[$key]) && strlen($backupTables[$key]) === strlen((string)$table)) {
+                        $tables[$key] = $backupTables[$key];
+                    } elseif (is_string($table) && $table !== '') {
+                        $tables[$key] = str_repeat('1', strlen($table));
+                    }
+                }
+
+                // Falls die aktuelle Firmware andere/fehlende Keys liefert, Backup-Keys ergänzen.
+                foreach ($backupTables as $key => $table) {
+                    if (!isset($tables[$key]) && is_string($table) && $table !== '') {
+                        $tables[$key] = $table;
+                    }
+                }
+            } else {
+                foreach ($tables as $key => $table) {
+                    if (is_string($table) && $table !== '') {
+                        $tables[$key] = str_repeat('1', strlen($table));
+                    }
+                }
+            }
+        }
+
+        if (!isset($node['schedule']) || !is_array($node['schedule'])) {
+            $node['schedule'] = ['channel' => 0, 'table' => $tables];
+        } else {
+            $node['schedule']['channel'] = (int)($node['schedule']['channel'] ?? 0);
+            $node['schedule']['table'] = $tables;
+        }
+
+        return $this->apiFeatureSet('push', $node, 'PUSH-SET');
     }
 
     private function apiReadEmailContentMode(array $email): ?int
