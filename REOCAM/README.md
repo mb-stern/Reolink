@@ -101,7 +101,7 @@ Je nach Konfiguration werden automatisch angelegt:
 | LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
 | E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
 | FTP | Boolean | FTP-Upload-Steuerung |
-| Bewegungserkennung / Sensitivität |  Integer / Boolean | Sensitivität für MD (Motion Detection) und AI (Artificial Intelligence) und Bewegungserkennung für MD aktivieren / deaktivieren |
+| Bewegungserkennung / Sensitivität |  Integer / Boolean | Sensitivität für MD (Motion Detection) und AI (Artificial Intelligence) und Bewegungserkennung für MD aktivieren / deaktivieren, die voreingestellten Bereiche werden beibehalten |
 | Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
 | Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
 | Auto-Tracking  | Boolen | Auto-Tracking aktivieren / deaktivieren und anpassen der Objekte welche verfolgt werden sollen |
@@ -160,7 +160,7 @@ Je nach Konfiguration werden automatisch angelegt:
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
 - Code aktualisiert und Konfiguration zentralisiert.
 - Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
-- Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren.
+- Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren, die voreingestellten Bereiche werden beibehalten.
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
