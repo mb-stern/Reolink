@@ -168,7 +168,11 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
         'push' => [
-            'PushNotify' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+            // Push hat bei einigen Reolink-Firmwares zwei Schalter:
+            // 1) Push.enable = Hauptschalter
+            // 2) Push.schedule.enable = Schalter im Push-Untermenü
+            // Die Variable ist nur EIN, wenn beide aktiv sind. Der Zeitplan schedule.table bleibt unangetastet.
+            'PushNotify' => ['method' => 'apiReadPushEffectiveEnabled', 'type' => 'bool'],
         ],
         'aiCfg' => [
             'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
@@ -206,7 +210,9 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
         'push' => [
-            'PushNotify' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+            // Wichtig: nicht als Fallback behandeln. Es müssen Hauptschalter UND Untermenü-Schalter gesetzt werden.
+            // Der eigentliche Zeitplan schedule.table wird nicht verändert.
+            'PushNotify' => ['method' => 'apiWritePushPayloads'],
         ],
         'sensitivityMd' => [
             'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
@@ -2868,6 +2874,95 @@ class Reolink extends IPSModuleStrict
                 'attachment' => match ($m) { 1 => 'onlyPicture', 2 => 'picture', 3 => 'video', default => '0' },
             ],
         ];
+    }
+
+
+    /**
+     * Push-Status lesen.
+     * Reolink trennt bei V20-Firmwares den Hauptschalter Push.enable und
+     * den Untermenü-/Aufgaben-Schalter Push.schedule.enable.
+     * Der IP-Symcon-Schalter soll nur EIN anzeigen, wenn beide EIN sind.
+     * Der Zeitplan schedule.table wird hier bewusst nicht ausgewertet.
+     */
+    private function apiReadPushEffectiveEnabled(array $push): ?bool
+    {
+        $main = null;
+        if (array_key_exists('enable', $push)) {
+            $main = $this->apiConvertReadValue($push['enable'], 'bool');
+        }
+
+        $task = null;
+        if (isset($push['schedule']) && is_array($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
+            $task = $this->apiConvertReadValue($push['schedule']['enable'], 'bool');
+        }
+
+        if ($main !== null && $task !== null) {
+            return $main && $task;
+        }
+
+        return $main ?? $task;
+    }
+
+    /**
+     * Push schreiben ohne den Zeitplan zu ändern.
+     *
+     * Es werden nur diese beiden Schalter geändert:
+     * - Push.enable
+     * - Push.schedule.enable
+     *
+     * schedule.table wird aus dem aktuellen Kamera-Status übernommen und nicht neu aufgebaut.
+     * Damit bleibt der bestehende Push-Zeitplan unverändert.
+     */
+    private function apiWritePushPayloads(mixed $value): bool
+    {
+        $enable = (bool)$value ? 1 : 0;
+
+        $node = $this->apiFeatureNodeGet('push', 'PUSH-GET-BEFORE-SET');
+        if (!is_array($node)) {
+            $node = [];
+        }
+
+        // Bestehende Struktur beibehalten, nur die zwei Schalter ändern.
+        $node['channel'] = (int)($node['channel'] ?? 0);
+        $node['enable']  = $enable;
+
+        if (!isset($node['schedule']) || !is_array($node['schedule'])) {
+            $node['schedule'] = [];
+        }
+        $node['schedule']['channel'] = (int)($node['schedule']['channel'] ?? $node['channel']);
+        $node['schedule']['enable']  = $enable;
+
+        // Erster Versuch: vollständigen vorhandenen Push-Knoten zurückschreiben.
+        // Das bewahrt schedule.table und weitere Felder unverändert.
+        if ($this->apiFeatureSet('push', $node, 'PUSH-SET-BOTH')) {
+            return true;
+        }
+
+        // Zweiter Versuch: Minimal-Payload mit beiden Schaltern, ohne schedule.table.
+        $minimal = [
+            'channel'  => 0,
+            'enable'   => $enable,
+            'schedule' => [
+                'channel' => 0,
+                'enable'  => $enable,
+            ],
+        ];
+        if ($this->apiFeatureSet('push', $minimal, 'PUSH-SET-BOTH-MIN')) {
+            return true;
+        }
+
+        // Letzter Fallback für Firmwarevarianten, die nur Einzelpfade akzeptieren.
+        // Wichtig: Erfolg nur melden, wenn beide Schreibvorgänge erfolgreich waren.
+        $okMain = $this->apiFeatureSet('push', ['channel' => 0, 'enable' => $enable], 'PUSH-SET-MAIN');
+        $okTask = $this->apiFeatureSet('push', [
+            'channel'  => 0,
+            'schedule' => [
+                'channel' => 0,
+                'enable'  => $enable,
+            ],
+        ], 'PUSH-SET-SCHEDULE');
+
+        return $okMain && $okTask;
     }
 
     private function irModeToInt(mixed $raw): ?int
