@@ -98,20 +98,20 @@ Je nach Konfiguration werden automatisch angelegt:
 
 | Variable | Typ | Beschreibung |
 |-----------|-----|--------------|
+| LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
+| E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
+| FTP | Boolean | FTP-Upload-Steuerung |
+| Bewegungserkennung / Sensitivität |  Integer / Boolean | Sensitivität für MD (Motion Detection) und AI (Artificial Intelligence) und Bewegungserkennung für MD aktivieren / deaktivieren |
+| Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
+| Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
+| Auto-Tracking  | Boolen | Auto-Tracking aktivieren / deaktivieren und anpassen der Objekte welche verfolgt werden sollen |
+| PTZ | String | HTML-Element für PTZ-Steuerung |
+| Neue Firmware vorhanden / Firmware Download | Boolean  / String | Firmware gefunden mit Downloadmöglichkeit |
 | Person | Boolean | Bewegung durch Person erkannt |
 | Tier | Boolean | Bewegung durch Tier erkannt |
 | Fahrzeug | Boolean | Bewegung durch Fahrzeug erkannt |
 | Bewegung | Boolean | Allgemeine Bewegung erkannt |
 | Besucher | Boolean | Besucher erkannt (Doorbell) |
-| LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
-| E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
-| PTZ | String | HTML-Element für PTZ-Steuerung |
-| FTP | Boolean | FTP-Upload-Steuerung |
-| Bewegung Sensitivität  | Integer | Bewegungsempfindlichkeit |
-| Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
-| Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
-| Neue Firmware vorhanden / Firmware Download | Boolean  / String | Firmware gefunden mit Downloadmöglichkeit |
-
 
 ### Profile
 
@@ -120,7 +120,8 @@ Je nach Konfiguration werden automatisch angelegt:
 | `REOCAM.WLED` | Integer | LED-Modus (Aus / Auto / Zeit) |
 | `REOCAM.EmailInterval` | Integer | Versandintervall |
 | `REOCAM.EmailContent` | Integer | E-Mail-Inhalt (Text / Bild / Video) |
-| `REOCAM.Sensitivity50` | Integer | Sensitivität 1-50 |
+| `REOCAM.Sensitivity50` | Integer | MD-Sensitivität 1-50 |
+| `REOCAM.AiSensitivity100` | Integer | AI-Sensitivität 0-100 |
 | `REOCAM.SirenAction` | Integer | Sirenensteuerung |
 
 ---
@@ -155,10 +156,11 @@ Je nach Konfiguration werden automatisch angelegt:
 ## 9. Versionen
 
 ### Version 2.18 (14.05.2026)
-- Änderung der API-Afrage. Es wird nun alle 2sec ein Endpunkt abgefragt, um eine Überlastung zu verhindern.
+- Änderung der API-Afrage. Es wird nun alle Endpunkt der Reieh nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
 - Code aktualisiert und Konfiguration zentralisiert.
-- Erkennungsempfindlichkeit (Sensitivität) für die AI-Erkennung hinzugefügt
+- Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
+- Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren.
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
