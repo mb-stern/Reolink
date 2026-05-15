@@ -3652,6 +3652,17 @@ class Reolink extends IPSModuleStrict
 
     private function UpdateMdSensitivityStatus(): void
     {
+        // Wenn die MD-Erkennungsfläche absichtlich deaktiviert ist, darf der
+        // Sensitivity-Poll die eingestellte Empfindlichkeit nicht überschreiben.
+        // Reolink liefert in diesem Zustand je nach Firmware initial/value-Werte,
+        // die nicht der vom Benutzer eingestellten Empfindlichkeit entsprechen.
+        if ($this->ReadPropertyBoolean('EnableApiMdDetectionArea')) {
+            $areaId = @$this->GetIDForIdent('MdDetectionArea');
+            if ($areaId !== false && !GetValueBoolean($areaId)) {
+                return;
+            }
+        }
+
         $st = $this->GetMdSensitivity();
         if ($st) {
             $this->SetValueIfChanged('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
