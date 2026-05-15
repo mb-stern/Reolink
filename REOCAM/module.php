@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, Sensitivität + Bewegungserkennung gemeinsam (v18)
+    // Refactoring-Version: API zentralisiert, MdDetectionArea über API_WRITE_MAP (v21)
 
     /**
      * Zentrale API-Definitionen.
@@ -189,6 +189,9 @@ class Reolink extends IPSModuleStrict
         'ir' => [
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
+        'sensitivityMd' => [
+            'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
+        ],
         'aiCfg' => [
             'AutoTracking'     => ['method' => 'apiWriteAiCfgMasterPayloads'],
             'AutoTrackPerson'  => ['method' => 'apiWriteAiCfgPersonPayloads'],
@@ -212,6 +215,7 @@ class Reolink extends IPSModuleStrict
         'SirenEnabled'  => ['domain' => 'alarm',    'type' => 'bool'],
         'RecEnabled'    => ['domain' => 'record',   'type' => 'bool'],
         'IRLights'      => ['domain' => 'ir',       'type' => 'int'],
+        'MdDetectionArea' => ['domain' => 'sensitivityMd', 'type' => 'bool'],
         'AutoTracking'  => ['domain' => 'aiCfg',    'type' => 'bool'],
         'AutoTrackPerson'  => ['domain' => 'aiCfg', 'type' => 'bool'],
         'AutoTrackVehicle' => ['domain' => 'aiCfg', 'type' => 'bool'],
@@ -394,16 +398,6 @@ class Reolink extends IPSModuleStrict
         }
 
         switch ($Ident) {
-
-            case "MdDetectionArea":
-                $ok = $this->SetMdDetectionAreaEnabled((bool)$Value);
-                if ($ok) {
-                    $this->SetValue($Ident, (bool)$Value);
-                } else {
-                    $this->UpdateMdDetectionAreaStatus();
-                }
-                break;
-
             case "MdSensitivity":
                 $lvl = max(1, min(50, (int)$Value));
                 if ($this->SetMdSensitivity($lvl)) {
@@ -1974,10 +1968,10 @@ class Reolink extends IPSModuleStrict
             }
             IPS_SetVariableProfileValues("REOCAM.AiSensitivity100", 0, 100, 1);
 
-            $this->RegisterVariableBoolean("MdDetectionArea", "MD Bewegungserkennung", "~Switch", 4);
+            $this->RegisterVariableBoolean("MdDetectionArea", "Bewegungserkennung", "~Switch", 4);
             $this->EnableAction("MdDetectionArea");
 
-            $this->RegisterVariableInteger("MdSensitivity", "MD Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
 
             // AI-Sensitivität kommt aus GetAiAlarm und hat laut API einen eigenen Bereich (typisch 0..100).
@@ -2770,7 +2764,14 @@ class Reolink extends IPSModuleStrict
         }
 
         if (isset($cfg['method']) && method_exists($this, $cfg['method'])) {
-            $payloads = $this->{$cfg['method']}($value);
+            $result = $this->{$cfg['method']}($value);
+
+            // Spezial-Methoden dürfen den API-Aufruf komplett selbst ausführen.
+            if (is_bool($result)) {
+                return $result;
+            }
+
+            $payloads = is_array($result) ? $result : [];
         } else {
             $converted = $this->apiConvertWriteValue($value, (string)($cfg['type'] ?? 'raw'));
             if ($converted === null) {
@@ -3521,6 +3522,11 @@ class Reolink extends IPSModuleStrict
         }
 
         return $node;
+    }
+
+    private function apiWriteMdDetectionArea(bool $enable): bool
+    {
+        return $this->SetMdDetectionAreaEnabled($enable);
     }
 
     private function SetMdDetectionAreaEnabled(bool $enable): bool
