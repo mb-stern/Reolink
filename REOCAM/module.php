@@ -3664,7 +3664,7 @@ class Reolink extends IPSModuleStrict
         }
 
         $st = $this->GetMdSensitivity();
-        if ($st) {
+        if ($st && $st['active'] !== null) {
             $this->SetValueIfChanged('MdSensitivity', 51 - max(1, min(50, (int)$st['active'])));
         }
     }
@@ -3777,6 +3777,7 @@ class Reolink extends IPSModuleStrict
                     'endHour'     => max(0, min(23, (int)($node['endHour'] ?? 23))),
                     'endMin'      => max(0, min(59, (int)($node['endMin'] ?? 59))),
                     'sensitivity' => max(1, min(50, (int)($node['sensitivity'] ?? ($node['sens'] ?? 10)))),
+                    'enable'      => (int)($node['enable'] ?? 1),
                 ];
                 return;
             }
@@ -3788,16 +3789,31 @@ class Reolink extends IPSModuleStrict
         return $segments;
     }
 
-    private function mdActive(array $segments, ?int $fallback = null): int
+    private function mdActive(array $segments, ?int $fallback = null): ?int
     {
         $now = ((int)date('G') * 60) + (int)date('i');
+        $hasEnabledSegment = false;
+
         foreach ($segments as $s) {
+            // Wenn Reolink die Zeitblöcke mit enable=0 liefert, ist die MD-Erkennung
+            // über die Zeitblöcke deaktiviert. In diesem Zustand darf die Variable
+            // MdSensitivity nicht aus sensDef/Defaultwerten überschrieben werden.
+            if (array_key_exists('enable', $s) && (int)$s['enable'] === 0) {
+                continue;
+            }
+
+            $hasEnabledSegment = true;
             $start = $s['beginHour'] * 60 + $s['beginMin'];
             $end   = $s['endHour'] * 60 + $s['endMin'];
             if (($start <= $end && $now >= $start && $now <= $end) || ($start > $end && ($now >= $start || $now <= $end))) {
                 return (int)$s['sensitivity'];
             }
         }
+
+        if (!$hasEnabledSegment) {
+            return null;
+        }
+
         return (int)($fallback ?? ($segments[0]['sensitivity'] ?? 10));
     }
 
