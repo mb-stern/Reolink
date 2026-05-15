@@ -3490,9 +3490,27 @@ class Reolink extends IPSModuleStrict
     // Sensitivity
     // ---------------------------
 
-    private function GetMdAlarmNodeForScope(string $topic = 'MD-SCOPE'): ?array
+    private function GetMdAlarmNodeForScope(string $topic = 'MD-SCOPE', bool $preferInitial = false): ?array
     {
-        $node = $this->apiFeatureNodeGet('sensitivityMd', $topic);
+        $res = $this->apiFeatureGet('sensitivityMd', $topic);
+        if (!is_array($res)) {
+            return null;
+        }
+
+        $nodeName = $this->apiNodeName('sensitivityMd') ?? 'MdAlarm';
+        $root = $res[0] ?? [];
+
+        // Wichtig:
+        // Beim Schreiben nehmen wir bevorzugt "initial", weil Reolink bei GetMdAlarm
+        // in "value.newSens.sens" teilweise Dummy-Werte mit sensitivity=0 liefert.
+        // Diese werden von SetMdAlarm nicht sauber akzeptiert. Die echte, gültige
+        // Konfiguration steht in "initial".
+        if ($preferInitial) {
+            $node = $root['initial'][$nodeName] ?? $root['value'][$nodeName] ?? null;
+        } else {
+            $node = $root['value'][$nodeName] ?? $root['initial'][$nodeName] ?? null;
+        }
+
         if (!is_array($node)) {
             return null;
         }
@@ -3521,7 +3539,7 @@ class Reolink extends IPSModuleStrict
 
     private function SetMdDetectionAreaEnabled(bool $enable): bool
     {
-        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE');
+        $node = $this->GetMdAlarmNodeForScope('MD-SCOPE', true);
         if (!is_array($node)) {
             return false;
         }
