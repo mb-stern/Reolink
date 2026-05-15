@@ -168,7 +168,11 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
         'push' => [
-            'PushNotify' => ['paths' => [['enable'], ['schedule', 'enable']], 'type' => 'bool'],
+            // Reolink hat bei Push oft zwei Ebenen:
+            // 1) Hauptschalter: Push.enable
+            // 2) Untermenü/Zeitplan: Push.schedule.table je Erkennungstyp
+            // Der effektive Status ist nur EIN, wenn Hauptschalter und mindestens ein Zeitplan aktiv sind.
+            'PushNotify' => ['method' => 'apiReadPushEffectiveEnabled', 'type' => 'bool'],
         ],
         'aiCfg' => [
             'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
@@ -206,7 +210,9 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
         'push' => [
-            'PushNotify' => ['payloads' => [[['enable']], [['schedule', 'enable']]], 'type' => 'bool'],
+            // Nicht als zwei getrennte Payloads senden, sonst wird nur der erste erfolgreiche Schalter gesetzt.
+            // Stattdessen Hauptschalter UND Untermenü/Zeitplan gemeinsam aus dem aktuellen Push-Block ableiten.
+            'PushNotify' => ['method' => 'apiWritePushPayloads'],
         ],
         'sensitivityMd' => [
             'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
@@ -2827,6 +2833,110 @@ class Reolink extends IPSModuleStrict
             }
         }
         return false;
+    }
+
+    /**
+     * Push effektiv lesen.
+     *
+     * Hintergrund:
+     * Reolink trennt Push je nach Firmware in einen Hauptschalter und einen
+     * Untermenü-/Zeitplanbereich. Nur enable oder nur schedule.enable reicht
+     * deshalb nicht zuverlässig aus.
+     */
+    private function apiReadPushEffectiveEnabled(array $push): ?bool
+    {
+        $main = null;
+        if (array_key_exists('enable', $push)) {
+            $main = $this->apiConvertReadValue($push['enable'], 'bool');
+        }
+
+        $scheduleEnable = null;
+        if (isset($push['schedule']) && is_array($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
+            $scheduleEnable = $this->apiConvertReadValue($push['schedule']['enable'], 'bool');
+        }
+
+        $tableEnabled = null;
+        $table = $push['schedule']['table'] ?? null;
+        if (is_array($table)) {
+            $tableEnabled = false;
+            foreach ($table as $entry) {
+                if (is_string($entry) && strpos($entry, '1') !== false) {
+                    $tableEnabled = true;
+                    break;
+                }
+                if (is_array($entry)) {
+                    foreach ($entry as $subEntry) {
+                        if (is_string($subEntry) && strpos($subEntry, '1') !== false) {
+                            $tableEnabled = true;
+                            break 2;
+                        }
+                    }
+                }
+            }
+        }
+
+        $parts = [];
+        if ($main !== null) {
+            $parts[] = (bool)$main;
+        }
+        if ($scheduleEnable !== null) {
+            $parts[] = (bool)$scheduleEnable;
+        }
+        if ($tableEnabled !== null) {
+            $parts[] = (bool)$tableEnabled;
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        // Sobald mehrere Ebenen vorhanden sind, müssen alle aktiven Ebenen EIN sein.
+        foreach ($parts as $part) {
+            if (!$part) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Push schreiben: Hauptschalter und Untermenü/Zeitplan gemeinsam setzen.
+     *
+     * Wichtig:
+     * Das alte generische Mapping sendete erst enable und danach schedule.enable
+     * als Fallback. Da apiWriteMappedValue() nach dem ersten erfolgreichen Payload
+     * beendet, wurde der Untermenü-Schalter nie sicher mitgeschaltet.
+     */
+    private function apiWritePushPayloads(mixed $value): array
+    {
+        $enable = (bool)$value;
+
+        $node = $this->apiFeatureNodeGet('push', 'PUSH-GET-BEFORE-SET');
+        if (!is_array($node)) {
+            $node = [];
+        }
+
+        $node['channel'] = 0;
+        $node['enable']  = $enable ? 1 : 0;
+
+        $schedule = isset($node['schedule']) && is_array($node['schedule']) ? $node['schedule'] : [];
+        $schedule['channel'] = 0;
+        $schedule['enable']  = $enable ? 1 : 0;
+
+        $table = isset($schedule['table']) && is_array($schedule['table']) ? $schedule['table'] : [];
+
+        // Bekannte Reolink-Push-Untermenüs. Bestehende String-Längen werden erhalten,
+        // damit 168-Stunden- und firmwareabhängige Tabellenformate nicht verkürzt werden.
+        foreach (['AI_DOG_CAT', 'AI_PEOPLE', 'AI_VEHICLE', 'MD'] as $key) {
+            $old = isset($table[$key]) && is_string($table[$key]) ? $table[$key] : '';
+            $len = strlen($old) > 0 ? strlen($old) : 168;
+            $table[$key] = str_repeat($enable ? '1' : '0', $len);
+        }
+
+        $schedule['table'] = $table;
+        $node['schedule'] = $schedule;
+
+        return [$node];
     }
 
     private function apiReadEmailContentMode(array $email): ?int
