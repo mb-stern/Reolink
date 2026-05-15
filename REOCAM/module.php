@@ -86,9 +86,9 @@ class Reolink extends IPSModuleStrict
             'paramGet'   => ['channel' => 0],
             'versioned'  => false,
         ],
-        'sensitivity' => [
+        'sensitivityMd' => [
             'prop'       => 'EnableApiSensitivity',
-            'label'      => 'Sensitivität',
+            'label'      => 'MD-Sensitivität',
             'getV20'     => 'GetMdAlarm',
             'setV20'     => 'SetMdAlarm',
             'getLegacy'  => 'GetAlarm',
@@ -101,7 +101,7 @@ class Reolink extends IPSModuleStrict
             'paramGet'   => ['channel' => 0],
             'versioned'  => true,
         ],
-        'aiAlarm' => [
+        'sensitivityAi' => [
             'prop'       => 'EnableApiSensitivity',
             'label'      => 'AI-Sensitivität',
             'get'        => 'GetAiAlarm',
@@ -353,7 +353,7 @@ class Reolink extends IPSModuleStrict
 
         $this->CreateOrUpdateApiVariablesUnified();
 
-        $this->SetTimerInterval("ApiRequestTimer", 1 * 1000);
+        $this->SetTimerInterval("ApiRequestTimer", 2 * 1000);
         if ($anyFeatureOn) {
             $this->GetToken();
             $this->ExecuteApiRequests(true);
@@ -1191,7 +1191,8 @@ class Reolink extends IPSModuleStrict
             'ir'          => (($chn['irLights']['ver'] ?? 0) > 0) || (($chn['led']['ver'] ?? 0) > 0),
             'email'       => (int)($ability['supportEmailEnable'] ?? 0) === 1,
             'ftp'         => (($chn['ftp']['ver'] ?? 0) > 0),
-            'sensitivity' => (($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0),
+            'sensitivityMd' => (($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0),
+            'sensitivityAi' => true, // GetAiAlarm ist je nach Modell/Firmware nicht sauber in Ability gemeldet
             'alarm'       => (($chn['AudioAlarm']['ver'] ?? 0) > 0) || (($chn['audioAlarm']['ver'] ?? 0) > 0),
             'record'      => (($chn['recCfg']['ver'] ?? 0) > 0),
             'aiCfg'       => true, // nicht hart aus Ability ausblenden: GetAiCfg ist je nach Modell/Firmware unterschiedlich gemeldet
@@ -1233,7 +1234,11 @@ class Reolink extends IPSModuleStrict
             if ($supported && !empty($d['versioned']) && $this->apiProbeDomain($domain) === 'unsupported') {
                 $supported = false;
             }
-            $support[$prop] = $supported;
+
+            // Mehrere API-Domains können denselben Konfigurationsschalter verwenden,
+            // z.B. EnableApiSensitivity für MD- und AI-Sensitivität.
+            // Dann darf ein späterer Teilbereich den Schalter nicht wieder ausblenden.
+            $support[$prop] = ($support[$prop] ?? false) || $supported;
         }
 
         $support['EnableApiPTZ'] = $this->apiAbilitySupportsDomain('ptz', $ability);
@@ -1957,9 +1962,11 @@ class Reolink extends IPSModuleStrict
             }
             IPS_SetVariableProfileValues("REOCAM.AiSensitivity100", 0, 100, 1);
 
-            $this->RegisterVariableInteger("MdSensitivity", "MD Sensitivität", "REOCAM.Sensitivity50", 4);
+            $this->RegisterVariableInteger("MdSensitivity", "Bewegung Sensitivität", "REOCAM.Sensitivity50", 4);
             $this->EnableAction("MdSensitivity");
 
+            // AI-Sensitivität kommt aus GetAiAlarm und hat laut API einen eigenen Bereich (typisch 0..100).
+            // Wichtig: keine 51-x Umkehrung und keine Begrenzung auf 50.
             $this->RegisterVariableInteger("AiSensitivityPerson", "AI Sensitivität Person", "REOCAM.AiSensitivity100", 4);
             $this->EnableAction("AiSensitivityPerson");
 
@@ -3462,7 +3469,7 @@ class Reolink extends IPSModuleStrict
 
     private function GetMdSensitivity(): ?array
     {
-        $node = $this->apiFeatureNodeGet('sensitivity', 'SENS');
+        $node = $this->apiFeatureNodeGet('sensitivityMd', 'SENS');
         if (!is_array($node)) {
             return null;
         }
@@ -3502,7 +3509,7 @@ class Reolink extends IPSModuleStrict
             ? ['type' => 'md', 'useNewSens' => 1, 'newSens' => ['sensDef' => $levelCam, 'sens' => $segments], 'channel' => 0]
             : ['type' => 'md', 'sens' => $segments, 'channel' => 0];
 
-        $ok = $this->apiFeatureSet('sensitivity', $payload, 'SENS-SET');
+        $ok = $this->apiFeatureSet('sensitivityMd', $payload, 'SENS-SET');
         if ($ok) {
             $this->SetValueIfChanged('MdSensitivity', 51 - $levelCam);
         }
@@ -3535,9 +3542,14 @@ class Reolink extends IPSModuleStrict
 
     private function GetAiSensitivity(string $aiType): ?array
     {
+        $d = $this->apiDef('sensitivityAi');
+        if ($d === null) {
+            return null;
+        }
+
         $res = $this->apiCall([[
-            'cmd'    => 'GetAiAlarm',
-            'action' => 0,
+            'cmd'    => $d['get'],
+            'action' => (int)$d['actionGet'],
             'param'  => ['channel' => 0, 'ai_type' => $aiType]
         ]], 'AI-SENS', true);
 
@@ -3570,9 +3582,14 @@ class Reolink extends IPSModuleStrict
         $node['ai_type'] = $aiType;
         $node['sensitivity'] = $level;
 
+        $d = $this->apiDef('sensitivityAi');
+        if ($d === null) {
+            return false;
+        }
+
         $res = $this->apiCall([[
-            'cmd'    => 'SetAiAlarm',
-            'action' => 0,
+            'cmd'    => $d['set'],
+            'action' => (int)$d['actionSet'],
             'param'  => [
                 'channel' => 0,
                 'AiAlarm' => $node
