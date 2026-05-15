@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 class Reolink extends IPSModuleStrict
 {
-    // Refactoring-Version: API zentralisiert, Push integriert (v24)
-
     /**
      * Zentrale API-Definitionen.
      * versioned=true: V20/Legacy wird über apiProbe() erkannt.
@@ -86,6 +84,22 @@ class Reolink extends IPSModuleStrict
             'paramGet'   => ['channel' => 0],
             'versioned'  => false,
         ],
+        'push' => [
+            'prop'       => 'EnableApiPush',
+            'label'      => 'Push-Benachrichtigung',
+            'getV20'     => 'GetPushV20',
+            'setV20'     => 'SetPushV20',
+            'getLegacy'  => 'GetPush',
+            'setLegacy'  => 'SetPush',
+            'node'       => 'Push',
+            'actionGet'  => 1,
+            'actionSet'  => 0,
+            'paramGet'   => [],
+            'versioned'  => true,
+        ],
+        'push' => [
+            'PushNotify' => ['method' => 'apiWritePushNotifyPayloads'],
+        ],
         'sensitivityMd' => [
             'prop'       => 'EnableApiSensitivity',
             'label'      => 'MD-Sensitivität',
@@ -113,17 +127,7 @@ class Reolink extends IPSModuleStrict
             'versioned'  => false,
         ],
         'push' => [
-            'prop'       => 'EnableApiPush',
-            'label'      => 'Push-Benachrichtigung',
-            'getV20'     => 'GetPushV20',
-            'setV20'     => 'SetPushV20',
-            'getLegacy'  => 'GetPush',
-            'setLegacy'  => 'SetPush',
-            'node'       => 'Push',
-            'actionGet'  => 0,
-            'actionSet'  => 0,
-            'paramGet'   => ['channel' => 0],
-            'versioned'  => true,
+            'PushNotify' => ['method' => 'apiReadPushNotify', 'type' => 'bool'],
         ],
         'aiCfg' => [
             'prop'       => 'EnableApiAutoTracking',
@@ -167,9 +171,6 @@ class Reolink extends IPSModuleStrict
         'ir' => [
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
-        'push' => [
-            'PushNotify' => ['method' => 'apiReadPushNotify', 'type' => 'bool'],
-        ],
         'aiCfg' => [
             'AutoTracking'     => ['paths' => [['aiTrack'], ['bSmartTrack']], 'type' => 'bool'],
             'AutoTrackPerson'  => ['paths' => [['trackType', 'people']],     'type' => 'bool'],
@@ -204,9 +205,6 @@ class Reolink extends IPSModuleStrict
         ],
         'ir' => [
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
-        ],
-        'push' => [
-            'PushNotify' => ['method' => 'apiWritePushNotify'],
         ],
         'sensitivityMd' => [
             'MdDetectionArea' => ['method' => 'apiWriteMdDetectionArea'],
@@ -246,7 +244,7 @@ class Reolink extends IPSModuleStrict
 
     /**
      * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
-     * im 2-Sekunden-Round-Robin ausgeführt wird.
+     * im Sekunden-Round-Robin ausgeführt wird.
      */
     private const API_POLL_MAP = [
         'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'domain' => 'whiteLed'],
@@ -318,7 +316,6 @@ class Reolink extends IPSModuleStrict
         $this->RegisterAttributeInteger('LastTokenErrorTs', 0);
         $this->RegisterAttributeInteger('ApiQueueIndex', 0);
         $this->RegisterAttributeString('MdAlarmScopeBackup', '');
-        $this->RegisterAttributeString('PushScheduleBackup', '');
 
         // Hook-Adresse (ohne /hook/)
         $address = 'reolink_' . $this->InstanceID;   
@@ -1221,11 +1218,11 @@ class Reolink extends IPSModuleStrict
             'ir'          => (($chn['irLights']['ver'] ?? 0) > 0) || (($chn['led']['ver'] ?? 0) > 0),
             'email'       => (int)($ability['supportEmailEnable'] ?? 0) === 1,
             'ftp'         => (($chn['ftp']['ver'] ?? 0) > 0),
+            'push'        => true, // Push ist je nach Modell/Firmware nicht sauber in Ability gemeldet
             'sensitivityMd' => (($chn['alarmMd']['ver'] ?? 0) > 0) || (($chn['md']['ver'] ?? 0) > 0),
             'sensitivityAi' => true, // GetAiAlarm ist je nach Modell/Firmware nicht sauber in Ability gemeldet
             'alarm'       => (($chn['AudioAlarm']['ver'] ?? 0) > 0) || (($chn['audioAlarm']['ver'] ?? 0) > 0),
             'record'      => (($chn['recCfg']['ver'] ?? 0) > 0),
-            'push'        => true, // GetPush/GetPushV20 ist je nach Modell/Firmware nicht sauber in Ability gemeldet
             'aiCfg'       => true, // nicht hart aus Ability ausblenden: GetAiCfg ist je nach Modell/Firmware unterschiedlich gemeldet
             'ptz'         => (($chn['ptz']['ver'] ?? 0) > 0),
             default       => true,
@@ -1966,6 +1963,15 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("EmailContent");
         }
 
+
+        // -------- Push-Benachrichtigung --------
+        if ($this->ReadPropertyBoolean("EnableApiPush")) {
+            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 8);
+            $this->EnableAction("PushNotify");
+        } else {
+            $this->UnregisterVariableIfExists("PushNotify");
+        }
+
         // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
@@ -2073,15 +2079,6 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("AutoTrackPerson");
             $this->UnregisterVariableIfExists("AutoTrackVehicle");
             $this->UnregisterVariableIfExists("AutoTrackAnimal");
-        }
-
-
-        // -------- Push-Benachrichtigung --------
-        if ($this->ReadPropertyBoolean("EnableApiPush")) {
-            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 8);
-            $this->EnableAction("PushNotify");
-        } else {
-            $this->UnregisterVariableIfExists("PushNotify");
         }
 
         // -------- Kamera online --------
@@ -2830,93 +2827,6 @@ class Reolink extends IPSModuleStrict
         return false;
     }
 
-
-    private function apiReadPushNotify(array $push): bool
-    {
-        $master = ((int)($push['enable'] ?? 0) === 1);
-        $tables = $push['schedule']['table'] ?? [];
-
-        if (!is_array($tables) || empty($tables)) {
-            return $master;
-        }
-
-        // Der Schalter soll nur aktiv sein, wenn Hauptschalter UND mindestens ein Untermenü/Zeitplan aktiv ist.
-        foreach ($tables as $table) {
-            if (is_string($table) && strpos($table, '1') !== false) {
-                return $master;
-            }
-        }
-
-        return false;
-    }
-
-    private function apiWritePushNotify(bool $enable): bool
-    {
-        $node = $this->apiFeatureNodeGet('push', 'PUSH');
-        if (!is_array($node)) {
-            return false;
-        }
-
-        $node['channel'] = (int)($node['channel'] ?? 0);
-        $node['enable']  = $enable ? 1 : 0;
-
-        $tables = $node['schedule']['table'] ?? [];
-        if (!is_array($tables)) {
-            $tables = [];
-        }
-
-        if (!$enable) {
-            // Aktuellen Untermenü-/Zeitplan-Zustand sichern, damit er beim Einschalten wiederhergestellt werden kann.
-            if (!empty($tables)) {
-                $this->WriteAttributeString('PushScheduleBackup', json_encode([
-                    'table' => $tables,
-                    'ts'    => time()
-                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-            }
-
-            foreach ($tables as $key => $table) {
-                if (is_string($table) && $table !== '') {
-                    $tables[$key] = str_repeat('0', strlen($table));
-                }
-            }
-        } else {
-            $backup = @json_decode($this->ReadAttributeString('PushScheduleBackup'), true);
-            $backupTables = is_array($backup) ? ($backup['table'] ?? null) : null;
-
-            if (is_array($backupTables) && !empty($backupTables)) {
-                foreach ($tables as $key => $table) {
-                    if (isset($backupTables[$key]) && is_string($backupTables[$key]) && strlen($backupTables[$key]) === strlen((string)$table)) {
-                        $tables[$key] = $backupTables[$key];
-                    } elseif (is_string($table) && $table !== '') {
-                        $tables[$key] = str_repeat('1', strlen($table));
-                    }
-                }
-
-                // Falls die aktuelle Firmware andere/fehlende Keys liefert, Backup-Keys ergänzen.
-                foreach ($backupTables as $key => $table) {
-                    if (!isset($tables[$key]) && is_string($table) && $table !== '') {
-                        $tables[$key] = $table;
-                    }
-                }
-            } else {
-                foreach ($tables as $key => $table) {
-                    if (is_string($table) && $table !== '') {
-                        $tables[$key] = str_repeat('1', strlen($table));
-                    }
-                }
-            }
-        }
-
-        if (!isset($node['schedule']) || !is_array($node['schedule'])) {
-            $node['schedule'] = ['channel' => 0, 'table' => $tables];
-        } else {
-            $node['schedule']['channel'] = (int)($node['schedule']['channel'] ?? 0);
-            $node['schedule']['table'] = $tables;
-        }
-
-        return $this->apiFeatureSet('push', $node, 'PUSH-SET');
-    }
-
     private function apiReadEmailContentMode(array $email): ?int
     {
         if (isset($email['textType']) || isset($email['attachmentType'])) {
@@ -2956,6 +2866,76 @@ class Reolink extends IPSModuleStrict
                 'attachment' => match ($m) { 1 => 'onlyPicture', 2 => 'picture', 3 => 'video', default => '0' },
             ],
         ];
+    }
+
+
+    private function apiReadPushNotify(array $push): ?int
+    {
+        // Legacy GetPush:
+        // Push.schedule.enable = Push-Untermenü / Alarm-Push aktiv
+        if (isset($push['schedule']) && is_array($push['schedule']) && array_key_exists('enable', $push['schedule'])) {
+            return (int)$push['schedule']['enable'];
+        }
+
+        // V20 GetPushV20:
+        // Push.enable = Hauptschalter; schedule.table bleibt der Zeitplan
+        if (array_key_exists('enable', $push)) {
+            return (int)$push['enable'];
+        }
+
+        return null;
+    }
+
+    private function apiWritePushNotifyPayloads(bool $enable): array
+    {
+        $value = $enable ? 1 : 0;
+
+        // Aktuelle Struktur lesen und nur den laut API vorgesehenen Schalter ändern.
+        // Wichtig: schedule.table nicht auf 0 setzen und nicht verändern.
+        $node = $this->apiFeatureNodeGet('push', 'PUSH-READ-BEFORE-SET');
+        if (!is_array($node)) {
+            $node = [];
+        }
+
+        $ver = $this->apiVersionGet('push');
+        if ($ver === null || $ver === 'unsupported') {
+            $ver = $this->apiProbe('push', 'GetPushV20', 'GetPush', 1);
+        }
+
+        if ($ver === 'legacy') {
+            $schedule = $node['schedule'] ?? [];
+            if (!is_array($schedule)) {
+                $schedule = [];
+            }
+
+            // Legacy laut API: Push.schedule.enable + Push.schedule.table
+            $schedule['enable'] = $value;
+
+            if (!isset($schedule['table']) || !is_string($schedule['table']) || $schedule['table'] === '') {
+                $schedule['table'] = str_repeat('1', 168);
+            }
+
+            return [[
+                'schedule' => $schedule
+            ]];
+        }
+
+        // V20 laut API: Push.enable + Push.schedule.table
+        $schedule = $node['schedule'] ?? [];
+        if (!is_array($schedule)) {
+            $schedule = [];
+        }
+        if (!isset($schedule['channel'])) {
+            $schedule['channel'] = 0;
+        }
+        if (!isset($schedule['table'])) {
+            $schedule['table'] = ['MD' => str_repeat('1', 168)];
+        }
+
+        return [[
+            'enable'   => $value,
+            'schedule' => $schedule
+        ]];
     }
 
     private function irModeToInt(mixed $raw): ?int
