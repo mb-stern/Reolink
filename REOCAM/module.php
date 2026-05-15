@@ -255,7 +255,7 @@ class Reolink extends IPSModuleStrict
         'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
         'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
         'Push'         => ['property' => 'EnableApiPush',         'domain' => 'push'],
-        'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'domain' => 'aiCfg'],
+        'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'method' => 'UpdateAutoTrackingStatus'],
     ];
 
     public function Create(): void
@@ -677,7 +677,7 @@ class Reolink extends IPSModuleStrict
                         ['type' => 'CheckBox', 'name' => 'EnableApiSiren',          'caption' => 'Sirene'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiRecord',         'caption' => 'Kameraaufzeichnung'],
                         ['type' => 'CheckBox', 'name' => 'EnableApiPTZ',            'caption' => 'PTZ / Presets / Zoom'],
-                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking', 'caption' => 'Auto-Tracking'],
+                        ['type' => 'CheckBox', 'name' => 'EnableApiAutoTracking',   'caption' => 'Auto-Tracking'],
                         ['type' => 'CheckBox', 'name' => 'EnableFirmwareVariables', 'caption' => 'Firmware-Variablen'],
                         [
                             'type'    => 'Button',
@@ -3992,7 +3992,18 @@ class Reolink extends IPSModuleStrict
 
     private function UpdateAutoTrackingStatus(): void
     {
-        $this->apiUpdateMappedFeature('aiCfg', 'AICFG');
+        $node = $this->apiFeatureNodeGet('aiCfg', 'AUTOTRACKING');
+        if (!is_array($node)) {
+            return;
+        }
+
+        $this->SetValueIfChanged('AutoTracking', ((int)($node['aiTrack'] ?? $node['bSmartTrack'] ?? 0) === 1));
+
+        $trackType = is_array($node['trackType'] ?? null) ? $node['trackType'] : [];
+
+        $this->SetValueIfChanged('AutoTrackPerson',  ((int)($trackType['people'] ?? 0) === 1));
+        $this->SetValueIfChanged('AutoTrackVehicle', ((int)($trackType['vehicle'] ?? 0) === 1));
+        $this->SetValueIfChanged('AutoTrackAnimal',  ((int)($trackType['dog_cat'] ?? 0) === 1));
     }
 
     private function SetValueIfChanged(string $ident, mixed $value): void
