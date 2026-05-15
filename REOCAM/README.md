@@ -106,6 +106,7 @@ Je nach Konfiguration werden automatisch angelegt:
 | Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
 | Auto-Tracking  | Boolen | Auto-Tracking aktivieren / deaktivieren und anpassen der Objekte welche verfolgt werden sollen |
 | PTZ | String | HTML-Element für PTZ-Steuerung |
+| Push-Benachrichtigung | Boolean | Aktivieren / Deaktivieren der Pushbenachrichtigung. Vorsicht, ist diese Funkion deaktiviert, empfängt das Modul auch die bewegungserkennungen über den Webhook nicht mehr |
 | Neue Firmware vorhanden / Firmware Download | Boolean  / String | Firmware gefunden mit Downloadmöglichkeit |
 | Person | Boolean | Bewegung durch Person erkannt |
 | Tier | Boolean | Bewegung durch Tier erkannt |
@@ -155,12 +156,13 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
-### Version 2.18 (14.05.2026)
-- Änderung der API-Afrage. Es wird nun alle Endpunkt der Reieh nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
+### Version 3.0 (15.05.2026)
+- Massiver interner Umbau mit Zentralisierung der API-Konfiguration.
+- Änderung der API-Afrage. Es wird nun alle Endpunkt der Reihe nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
-- Code aktualisiert und Konfiguration zentralisiert.
 - Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
 - Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren, die voreingestellten Bereiche werden beibehalten.
+- Push-Benachrichtigung lässt sich aktivieren und deaktivieren. Vorsicht, deaktiviert auch die Bewegungserkennung von der Kamera über Webhook
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
