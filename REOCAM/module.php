@@ -1962,11 +1962,12 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("EmailContent");
         }
 
-        // -------- PTZ (HTML Box) --------
-        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
-            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
+        // -------- Push-Benachrichtigung --------
+        if ($this->ReadPropertyBoolean("EnableApiPush")) {
+            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 2);
+            $this->EnableAction("PushNotify");
         } else {
-            $this->UnregisterVariableIfExists("PTZ_HTML");
+            $this->UnregisterVariableIfExists("PushNotify");
         }
 
         // -------- FTP --------
@@ -2044,6 +2045,13 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("RecEnabled");
         }
 
+                // -------- PTZ (HTML Box) --------
+        if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
+            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
+        } else {
+            $this->UnregisterVariableIfExists("PTZ_HTML");
+        }
+
         // -------- Auto-Tracking / AI --------
         if ($this->ReadPropertyBoolean("EnableApiAutoTracking")) {
             $this->dbg('API-VARS', 'Erstelle AutoTracking/AI Variablen');
@@ -2065,15 +2073,6 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("AutoTrackPerson");
             $this->UnregisterVariableIfExists("AutoTrackVehicle");
             $this->UnregisterVariableIfExists("AutoTrackAnimal");
-        }
-
-
-        // -------- Push-Benachrichtigung --------
-        if ($this->ReadPropertyBoolean("EnableApiPush")) {
-            $this->RegisterVariableBoolean("PushNotify", "Push-Benachrichtigung", "~Switch", 8);
-            $this->EnableAction("PushNotify");
-        } else {
-            $this->UnregisterVariableIfExists("PushNotify");
         }
 
         // -------- Kamera online --------
@@ -2940,9 +2939,11 @@ class Reolink extends IPSModuleStrict
 
     private function CreateOrUpdatePTZHtml(bool $reloadPresets = false): void
     {
-        if (!@$this->GetIDForIdent("PTZ_HTML")) {
-            $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 9);
+        $id = @$this->GetIDForIdent("PTZ_HTML");
+        if ($id === false) {
+            return;
         }
+        
         $hook = $this->ReadAttributeString("CurrentHook");
        
         $presets = [];
