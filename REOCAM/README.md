@@ -15,7 +15,7 @@
 ## 1. Funktionsumfang
 
 Dieses Modul integriert **Reolink-Kameras** vollständig in **IP-Symcon**, mit Schwerpunkt auf der **Webhook-Integration**.  
-Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, Tier, Fahrzeug, Besucher) in Echtzeit an IP-Symcon zu übertragen — ohne Polling und nahezu verzögerungsfrei.
+Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, Tier, Fahrzeug, Besucher) in Echtzeit an IP-Symcon zu übertragen — ohne Polling und nahezu verzögerungsfrei. Dazu ist es wichtig, dass die Push-Benachrichtigung im Modul aktiviert ist.
 
 ### Hauptfunktionen
 - **Echtzeit-Verarbeitung über Webhook**: Auslösen bei Personen-, Tier-, Fahrzeug- und Bewegungsereignissen  
@@ -26,7 +26,16 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 - **API-Funktionen** zur Kamerasteuerung:
   - LED-Licht (Ein/Aus, Helligkeit, Automatik)
   - E-Mail-Benachrichtigung
-  - PTZ-Steuerung mit Presets und Zoom  
+  - PTZ-Steuerung mit Presets und Zoom
+  - IR-Beleuchtung
+  - Push-Benachrichtigung
+  - FTP-Upload
+  - Sirene / Audio-Alarm
+  - Kameraaufzeichnung
+  - Bewegungserkennung und Sensitivität
+  - AI-Sensitivität (Person, Fahrzeug, Tier)
+  - Auto-Tracking
+  - Firmware-Prüfung mit Online-Abgleich
 - **Automatische Webhook-Erstellung** in IP-Symcon  
 - **Optimierte IP-Adress-Erkennung** (Sollte nun auch unter Linux-Systemen funktionieren)
 
@@ -43,8 +52,7 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 | Reolink Duo 2V PoE | ✅ | Voll unterstützt |
 
 
-> ⚠️ **Akkubetriebene Modelle** (z. B. *Argus-Reihe*) unterstützen keine Webhooks.  
-> Diese können nur über Polling angebunden werden (eingeschränkt getestet).
+> ⚠️ **Akkubetriebene Modelle** (z. B. *Argus-Reihe*) sind nicht konstant mit dem WLAN verbunden, unterstützen keine Webhooks und sind daher nicht mit dem Modul kompatibel.
 
 ---
 
@@ -98,20 +106,21 @@ Je nach Konfiguration werden automatisch angelegt:
 
 | Variable | Typ | Beschreibung |
 |-----------|-----|--------------|
+| LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
+| E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
+| FTP | Boolean | FTP-Upload-Steuerung |
+| Bewegungserkennung / Sensitivität |  Integer / Boolean | Sensitivität für MD (Motion Detection) und AI (Artificial Intelligence) und Bewegungserkennung für MD aktivieren / deaktivieren, die voreingestellten Bereiche werden beibehalten |
+| Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
+| Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
+| Auto-Tracking  | Boolen | Auto-Tracking aktivieren / deaktivieren und anpassen der Objekte welche verfolgt werden sollen |
+| PTZ | String | HTML-Element für PTZ-Steuerung |
+| Push-Benachrichtigung | Boolean | Aktivieren / Deaktivieren der Pushbenachrichtigung. Vorsicht, ist diese Funkion deaktiviert, empfängt das Modul auch die bewegungserkennungen über den Webhook nicht mehr |
+| Neue Firmware vorhanden / Firmware Download | Boolean  / String | Firmware gefunden mit Downloadmöglichkeit |
 | Person | Boolean | Bewegung durch Person erkannt |
 | Tier | Boolean | Bewegung durch Tier erkannt |
 | Fahrzeug | Boolean | Bewegung durch Fahrzeug erkannt |
 | Bewegung | Boolean | Allgemeine Bewegung erkannt |
 | Besucher | Boolean | Besucher erkannt (Doorbell) |
-| LED Status / LED Modus / LED Helligkeit | Integer / Boolean | LED-Licht-Parameter |
-| E-Mail Alarm / E-Mail Inhalt / E-Mail Intervall | Integer / Boolean | E-Mail-Steuerung |
-| PTZ | String | HTML-Element für PTZ-Steuerung |
-| FTP | Boolean | FTP-Upload-Steuerung |
-| Bewegung Sensitivität  | Integer | Bewegungsempfindlichkeit |
-| Sirene / Sirenenaktion | Integer / Boolean | Sirenen-Steuerung |
-| Kameraaufzeichnung | Boolean | Aufnahme-Steuerung |
-| Neue Firmware vorhanden / Firmware Download | Boolean  / String | Firmware gefunden mit Downloadmöglichkeit |
-
 
 ### Profile
 
@@ -120,7 +129,8 @@ Je nach Konfiguration werden automatisch angelegt:
 | `REOCAM.WLED` | Integer | LED-Modus (Aus / Auto / Zeit) |
 | `REOCAM.EmailInterval` | Integer | Versandintervall |
 | `REOCAM.EmailContent` | Integer | E-Mail-Inhalt (Text / Bild / Video) |
-| `REOCAM.Sensitivity50` | Integer | Sensitivität 1-50 |
+| `REOCAM.Sensitivity50` | Integer | MD-Sensitivität 1-50 |
+| `REOCAM.AiSensitivity100` | Integer | AI-Sensitivität 0-100 |
 | `REOCAM.SirenAction` | Integer | Sirenensteuerung |
 
 ---
@@ -153,6 +163,14 @@ Je nach Konfiguration werden automatisch angelegt:
 ---
 
 ## 9. Versionen
+
+### Version 3.0 (16.05.2026)
+- Massiver interner Umbau mit Zentralisierung der API-Konfiguration.
+- Änderung der API-Abfrage. Es wird nun alle Endpunkt der Reihe nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
+- Verbesserung der V20-Erkennung (neuere Bereiche in der API).
+- Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
+- Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren, die voreingestellten Bereiche werden beibehalten.
+- Push-Benachrichtigung lässt sich aktivieren und deaktivieren. Vorsicht, diese Funktion deaktiviert auch die komplette Bewegungserkennung von der Kamera über Webhook, nicht nur die Benachrichtigung in der Reolink-App.
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
