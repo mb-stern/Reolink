@@ -243,19 +243,19 @@ class Reolink extends IPSModuleStrict
 
     /**
      * Zentrale Polling-Definition: Property steuert, welche Statusfunktion
-     * im 2-Sekunden-Round-Robin ausgeführt wird.
+     * im Sekunden-Round-Robin ausgeführt wird.
      */
     private const API_POLL_MAP = [
+        'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
         'WhiteLed'     => ['property' => 'EnableApiWhiteLed',     'domain' => 'whiteLed'],
         'Email'        => ['property' => 'EnableApiEmail',        'domain' => 'email'],
-        'PTZ'          => ['property' => 'EnableApiPTZ',          'method' => 'CreateOrUpdatePTZHtml', 'args' => [false]],
+        'Push'         => ['property' => 'EnableApiPush',         'domain' => 'push'],
         'FTP'          => ['property' => 'EnableApiFTP',          'domain' => 'ftp'],
         'Sensitivity'  => ['property' => 'EnableApiSensitivity',  'method' => 'UpdateSensitivityStatus'],
         'Siren'        => ['property' => 'EnableApiSiren',        'domain' => 'alarm'],
         'Record'       => ['property' => 'EnableApiRecord',       'domain' => 'record'],
-        'IR'           => ['property' => 'EnableApiIR',           'domain' => 'ir'],
-        'Push'         => ['property' => 'EnableApiPush',         'domain' => 'push'],
         'AutoTracking' => ['property' => 'EnableApiAutoTracking', 'method' => 'UpdateAutoTrackingStatus'],
+        'PTZ'          => ['property' => 'EnableApiPTZ',          'method' => 'CreateOrUpdatePTZHtml', 'args' => [false]],
     ];
 
     public function Create(): void
