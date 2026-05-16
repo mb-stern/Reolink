@@ -170,7 +170,7 @@ Je nach Konfiguration werden automatisch angelegt:
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
 - Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
 - Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren, die voreingestellten Bereiche werden beibehalten.
-- Push-Benachrichtigung lässt sich aktivieren und deaktivieren. Vorsicht, deaktiviert auch die Bewegungserkennung von der Kamera über Webhook
+- Push-Benachrichtigung lässt sich aktivieren und deaktivieren. Vorsicht, deaktiviert die komplette Bewegungserkennung von der Kamera über Webhook.
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
