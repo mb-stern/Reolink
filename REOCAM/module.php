@@ -164,8 +164,6 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['paths' => [['state']], 'type' => 'irMode'],
         ],
         'push' => [
-            // V28: Der reale Dump dieser Kamera zeigt bei GetPushV20 nur Push.enable und schedule.table.
-            // Deshalb wird nur Push.enable als Status ausgewertet; der Zeitplan bleibt unangetastet.
             'PushNotify' => ['paths' => [['enable']], 'type' => 'bool'],
         ],
         'aiCfg' => [
@@ -204,7 +202,6 @@ class Reolink extends IPSModuleStrict
             'IRLights' => ['payloads' => [[['state']]], 'type' => 'irModeString'],
         ],
         'push' => [
-            // V28: Nur Push.enable setzen. Kein schedule.enable, keine schedule.table-Änderung.
             'PushNotify' => ['method' => 'apiWritePushPayloads'],
         ],
         'sensitivityMd' => [
