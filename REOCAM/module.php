@@ -2082,8 +2082,6 @@ class Reolink extends IPSModuleStrict
         if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
             $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware vorhanden", "~Switch", 12);
             $this->RegisterVariableString("FirmwareDownloadUrl", "Firmware Download", "~HTMLBox", 13);
-            
-
         } else {
             $this->UnregisterVariableIfExists("FirmwareUpdateAvailable");
             $this->UnregisterVariableIfExists("FirmwareDownloadUrl");
