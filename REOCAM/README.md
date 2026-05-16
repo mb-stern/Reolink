@@ -26,7 +26,16 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 - **API-Funktionen** zur Kamerasteuerung:
   - LED-Licht (Ein/Aus, Helligkeit, Automatik)
   - E-Mail-Benachrichtigung
-  - PTZ-Steuerung mit Presets und Zoom  
+  - PTZ-Steuerung mit Presets und Zoom
+  - IR-Beleuchtung
+  - Push-Benachrichtigung
+  - FTP-Upload
+  - Sirene / Audio-Alarm
+  - Kameraaufzeichnung
+  - Bewegungserkennung und Sensitivität
+  - AI-Sensitivität (Person, Fahrzeug, Tier)
+  - Auto-Tracking
+  - Firmware-Prüfung mit Online-Abgleich
 - **Automatische Webhook-Erstellung** in IP-Symcon  
 - **Optimierte IP-Adress-Erkennung** (Sollte nun auch unter Linux-Systemen funktionieren)
 
@@ -43,8 +52,7 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 | Reolink Duo 2V PoE | ✅ | Voll unterstützt |
 
 
-> ⚠️ **Akkubetriebene Modelle** (z. B. *Argus-Reihe*) unterstützen keine Webhooks.  
-> Diese können nur über Polling angebunden werden (eingeschränkt getestet).
+> ⚠️ **Akkubetriebene Modelle** (z. B. *Argus-Reihe*) sind nicht konstant mit dem WLAN verbunden, unterstützen keine Webhooks und sind daher nicht mit dem Modul kompatibel.
 
 ---
 
@@ -158,7 +166,7 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ### Version 3.0 (16.05.2026)
 - Massiver interner Umbau mit Zentralisierung der API-Konfiguration.
-- Änderung der API-Afrage. Es wird nun alle Endpunkt der Reihe nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
+- Änderung der API-Abfrage. Es wird nun alle Endpunkt der Reihe nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
 - Verbesserung der V20-Erkennung (neuere Bereiche in der API).
 - Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
 - Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren, die voreingestellten Bereiche werden beibehalten.
