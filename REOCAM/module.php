@@ -676,6 +676,7 @@ class Reolink extends IPSModuleStrict
                             ],
                         ],
                     ],
+                    ],
                 ],
                 [
                     'type'    => 'ExpansionPanel',
