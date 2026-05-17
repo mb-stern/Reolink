@@ -617,48 +617,65 @@ class Reolink extends IPSModuleStrict
         }
 
         $form = [
-            'elements' => [
+           'elements' => [
                 [
-                    'type'    => 'Label',
-                    'caption' => ''
-                ],
-                [
-                    'type'    => 'Label',
-                    'name'    => 'WebhookFull',
-                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'InstanceStatus',
-                    'caption' => 'Instanz aktivieren'
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'UseHttps',
-                    'caption' => 'HTTPS verwenden'
-                ],
-                [
-                    'type'    => 'ValidationTextBox',
-                    'name'    => 'CameraIP',
-                    'caption' => 'Kamera IP'
-                ],
-                [
-                    'type'    => 'ValidationTextBox',
-                    'name'    => 'Username',
-                    'caption' => 'Benutzername'
-                ],
-                [
-                    'type'    => 'PasswordTextBox',
-                    'name'    => 'Password',
-                    'caption' => 'Passwort'
-                ],
-                [
-                    'type'    => 'Select',
-                    'name'    => 'StreamType',
-                    'caption' => 'Stream-Typ',
-                    'options' => [
-                        ['caption' => 'Mainstream', 'value' => 'main'],
-                        ['caption' => 'Substream',  'value' => 'sub'],
+                    'type'  => 'RowLayout',
+                    'items' => [
+                        [
+                            'type'  => 'ColumnLayout',
+                            'items' => [
+                                [
+                                    'type'    => 'Label',
+                                    'name'    => 'WebhookFull',
+                                    'caption' => 'Webhook-Pfad: ' . $webhookFull
+                                ],
+                                [
+                                    'type'    => 'CheckBox',
+                                    'name'    => 'InstanceStatus',
+                                    'caption' => 'Instanz aktivieren'
+                                ],
+                                [
+                                    'type'    => 'CheckBox',
+                                    'name'    => 'UseHttps',
+                                    'caption' => 'HTTPS verwenden'
+                                ],
+                                [
+                                    'type'    => 'ValidationTextBox',
+                                    'name'    => 'CameraIP',
+                                    'caption' => 'Kamera IP'
+                                ],
+                                [
+                                    'type'    => 'ValidationTextBox',
+                                    'name'    => 'Username',
+                                    'caption' => 'Benutzername'
+                                ],
+                                [
+                                    'type'    => 'PasswordTextBox',
+                                    'name'    => 'Password',
+                                    'caption' => 'Passwort'
+                                ],
+                                [
+                                    'type'    => 'Select',
+                                    'name'    => 'StreamType',
+                                    'caption' => 'Stream-Typ',
+                                    'options' => [
+                                        ['caption' => 'Mainstream', 'value' => 'main'],
+                                        ['caption' => 'Substream',  'value' => 'sub'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        [
+                            'type'  => 'ColumnLayout',
+                            'items' => [
+                                $deviceHeaderElement,
+                                [
+                                    'type'    => 'Label',
+                                    'name'    => 'FirmwareCheck',
+                                    'caption' => $firmwareCheckMessage
+                                ],
+                            ],
+                        ],
                     ],
                 ],
                 [
@@ -737,16 +754,6 @@ class Reolink extends IPSModuleStrict
             ],
 
                 'actions' => [
-                [
-                    'type'    => 'Label',
-                    'name'    => 'FirmwareCheck',
-                    'caption' => $firmwareCheckMessage
-                ],
-                $deviceHeaderElement,
-                [
-                    'type'    => 'Label',
-                    'caption' => ''
-                ],
                 [
                     'type'  => 'RowLayout',
                     'items' => [

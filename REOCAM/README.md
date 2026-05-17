@@ -171,6 +171,7 @@ Je nach Konfiguration werden automatisch angelegt:
 - Sensitivität nun für MD (Motion Detection) und AI (Artificial Intelligence) einstellbar.
 - Bewegungserkennung für MD (Motion Detection) lässt sich aktivieren und deaktivieren, die voreingestellten Bereiche werden beibehalten.
 - Push-Benachrichtigung lässt sich aktivieren und deaktivieren. Vorsicht, diese Funktion deaktiviert auch die komplette Bewegungserkennung von der Kamera über Webhook, nicht nur die Benachrichtigung in der Reolink-App.
+- Konfigurationsformalar überarbeitet.
 
 ### Version 2.17 (02.05.2026)
 - Die Auto-Tracking Funktion lässt sich nun ein- und ausschalten und der Tracking-Typ bestimmen.
