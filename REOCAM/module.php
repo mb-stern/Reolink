@@ -626,14 +626,6 @@ class Reolink extends IPSModuleStrict
                 'items' => [
                     [
                         'type'    => 'Label',
-                        'caption' => ' '
-                    ],
-                    [
-                        'type'    => 'Label',
-                        'caption' => ' '
-                    ],
-                    [
-                        'type'    => 'Label',
                         'name'    => 'WebhookFull',
                         'caption' => 'Webhook -Pfad: ' . $webhookFull
                     ],
@@ -674,18 +666,21 @@ class Reolink extends IPSModuleStrict
                 ],
             ],
             [
-                'type'  => 'ColumnLayout',
-                'items' => [
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'FirmwareCheck',
-                        'caption' => $firmwareCheckMessage
+            'type'  => 'ColumnLayout',
+            'items' => [
+                [
+                    'type'    => 'Label',
+                    'name'    => 'FirmwareCheck',
+                    'caption' => $firmwareCheckMessage
+                ],
+                [
+                    'type'  => 'RowLayout',
+                    'items' => [
+                        $deviceHeaderElement
                     ],
-                    $deviceHeaderElement,
                 ],
             ],
         ],
-    ],
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'API-Funktionen',
