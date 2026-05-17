@@ -670,6 +670,10 @@ class Reolink extends IPSModuleStrict
                 'items' => [
                     [
                         'type'    => 'Label',
+                        'caption' => ' '
+                    ],
+                    [
+                        'type'    => 'Label',
                         'name'    => 'FirmwareCheck',
                         'caption' => $firmwareCheckMessage
                     ],
