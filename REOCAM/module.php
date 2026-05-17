@@ -619,20 +619,16 @@ class Reolink extends IPSModuleStrict
         $form = [
             'elements' => [
     [
-        'type'    => 'Label',
-        'caption' => ''
-    ],
-    [
-        'type'    => 'Label',
-        'name'    => 'WebhookFull',
-        'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
-    ],
-    [
         'type'  => 'RowLayout',
         'items' => [
             [
                 'type'  => 'ColumnLayout',
                 'items' => [
+                    [
+                        'type'    => 'Label',
+                        'name'    => 'WebhookFull',
+                        'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
+                    ],
                     [
                         'type'    => 'CheckBox',
                         'name'    => 'InstanceStatus',
