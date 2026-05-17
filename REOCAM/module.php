@@ -627,7 +627,7 @@ class Reolink extends IPSModuleStrict
                     [
                         'type'    => 'Label',
                         'name'    => 'WebhookFull',
-                        'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
+                        'caption' => 'Webhook -Pfad: ' . $webhookFull
                     ],
                     [
                         'type'    => 'CheckBox',
