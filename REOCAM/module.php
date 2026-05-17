@@ -624,7 +624,11 @@ class Reolink extends IPSModuleStrict
             [
                 'type'  => 'ColumnLayout',
                 'items' => [
-                     [
+                    [
+                        'type'    => 'Label',
+                        'caption' => ' '
+                    ],
+                    [
                         'type'    => 'Label',
                         'caption' => ' '
                     ],
