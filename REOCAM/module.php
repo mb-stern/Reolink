@@ -624,6 +624,10 @@ class Reolink extends IPSModuleStrict
             [
                 'type'  => 'ColumnLayout',
                 'items' => [
+                     [
+                        'type'    => 'Label',
+                        'caption' => ' '
+                    ],
                     [
                         'type'    => 'Label',
                         'name'    => 'WebhookFull',
@@ -668,10 +672,6 @@ class Reolink extends IPSModuleStrict
             [
                 'type'  => 'ColumnLayout',
                 'items' => [
-                    [
-                        'type'    => 'Label',
-                        'caption' => ' '
-                    ],
                     [
                         'type'    => 'Label',
                         'name'    => 'FirmwareCheck',
