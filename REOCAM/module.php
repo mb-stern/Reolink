@@ -666,19 +666,13 @@ class Reolink extends IPSModuleStrict
                             ],
                         ],
                         [
-                            'type'  => 'ColumnLayout',
-                            'items' => [
-                                [
-                                    'type'  => 'RowLayout',
-                                    'items' => [
-                                        $deviceHeaderElement
-                                    ],
-                                ],
-                                [
-                                    'type'    => 'Label',
-                                    'name'    => 'FirmwareCheck',
-                                    'caption' => $firmwareCheckMessage
-                                ],
+                        'type'  => 'ColumnLayout',
+                        'items' => [
+                            $deviceHeaderElement,
+                            [
+                                'type'    => 'Label',
+                                'name'    => 'FirmwareCheck',
+                                'caption' => $firmwareCheckMessage
                             ],
                         ],
                     ],
