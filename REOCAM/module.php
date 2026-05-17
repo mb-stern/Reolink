@@ -617,71 +617,72 @@ class Reolink extends IPSModuleStrict
         }
 
         $form = [
-            'elements' => [
-    [
-        'type'  => 'RowLayout',
-        'items' => [
-            [
-                'type'  => 'ColumnLayout',
-                'items' => [
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'WebhookFull',
-                        'caption' => 'Webhook -Pfad: ' . $webhookFull
-                    ],
-                    [
-                        'type'    => 'CheckBox',
-                        'name'    => 'InstanceStatus',
-                        'caption' => 'Instanz aktivieren'
-                    ],
-                    [
-                        'type'    => 'CheckBox',
-                        'name'    => 'UseHttps',
-                        'caption' => 'HTTPS verwenden'
-                    ],
-                    [
-                        'type'    => 'ValidationTextBox',
-                        'name'    => 'CameraIP',
-                        'caption' => 'Kamera IP'
-                    ],
-                    [
-                        'type'    => 'ValidationTextBox',
-                        'name'    => 'Username',
-                        'caption' => 'Benutzername'
-                    ],
-                    [
-                        'type'    => 'PasswordTextBox',
-                        'name'    => 'Password',
-                        'caption' => 'Passwort'
-                    ],
-                    [
-                        'type'    => 'Select',
-                        'name'    => 'StreamType',
-                        'caption' => 'Stream-Typ',
-                        'options' => [
-                            ['caption' => 'Mainstream', 'value' => 'main'],
-                            ['caption' => 'Substream',  'value' => 'sub'],
+           'elements' => [
+                [
+                    'type'  => 'RowLayout',
+                    'items' => [
+                        [
+                            'type'  => 'ColumnLayout',
+                            'items' => [
+                                [
+                                    'type'    => 'Label',
+                                    'name'    => 'WebhookFull',
+                                    'caption' => 'Webhook-Pfad: ' . $webhookFull
+                                ],
+                                [
+                                    'type'    => 'CheckBox',
+                                    'name'    => 'InstanceStatus',
+                                    'caption' => 'Instanz aktivieren'
+                                ],
+                                [
+                                    'type'    => 'CheckBox',
+                                    'name'    => 'UseHttps',
+                                    'caption' => 'HTTPS verwenden'
+                                ],
+                                [
+                                    'type'    => 'ValidationTextBox',
+                                    'name'    => 'CameraIP',
+                                    'caption' => 'Kamera IP'
+                                ],
+                                [
+                                    'type'    => 'ValidationTextBox',
+                                    'name'    => 'Username',
+                                    'caption' => 'Benutzername'
+                                ],
+                                [
+                                    'type'    => 'PasswordTextBox',
+                                    'name'    => 'Password',
+                                    'caption' => 'Passwort'
+                                ],
+                                [
+                                    'type'    => 'Select',
+                                    'name'    => 'StreamType',
+                                    'caption' => 'Stream-Typ',
+                                    'options' => [
+                                        ['caption' => 'Mainstream', 'value' => 'main'],
+                                        ['caption' => 'Substream',  'value' => 'sub'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        [
+                            'type'  => 'ColumnLayout',
+                            'items' => [
+                                [
+                                    'type'    => 'Label',
+                                    'name'    => 'FirmwareCheck',
+                                    'caption' => $firmwareCheckMessage
+                                ],
+                                [
+                                    'type'  => 'RowLayout',
+                                    'items' => [
+                                        $deviceHeaderElement
+                                    ],
+                                ],
+                            ],
                         ],
                     ],
                 ],
-            ],
-            [
-                'type'  => 'ColumnLayout',
-                'items' => [
-                    [
-                        'type'    => 'Label',
-                        'name'    => 'FirmwareCheck',
-                        'caption' => $firmwareCheckMessage
-                    ],
-                   [
-                    'type'  => 'RowLayout',
-                    'items' => [
-                        $deviceHeaderElement
-                    ],
-                ],
-            ],
-        ],
-    ],
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'API-Funktionen',
