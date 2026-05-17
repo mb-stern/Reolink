@@ -617,7 +617,7 @@ class Reolink extends IPSModuleStrict
         }
 
         $form = [
-            ' elements' => [
+            'elements' => [
     [
         'type'    => 'Label',
         'caption' => ''
