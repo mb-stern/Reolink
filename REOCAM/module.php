@@ -617,48 +617,65 @@ class Reolink extends IPSModuleStrict
         }
 
         $form = [
-            'elements' => [
+           'elements' => [
                 [
-                    'type'    => 'Label',
-                    'caption' => ''
-                ],
-                [
-                    'type'    => 'Label',
-                    'name'    => 'WebhookFull',
-                    'caption' => 'Webhook für Kamerakonfiguration: ' . $webhookFull
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'InstanceStatus',
-                    'caption' => 'Instanz aktivieren'
-                ],
-                [
-                    'type'    => 'CheckBox',
-                    'name'    => 'UseHttps',
-                    'caption' => 'HTTPS verwenden'
-                ],
-                [
-                    'type'    => 'ValidationTextBox',
-                    'name'    => 'CameraIP',
-                    'caption' => 'Kamera IP'
-                ],
-                [
-                    'type'    => 'ValidationTextBox',
-                    'name'    => 'Username',
-                    'caption' => 'Benutzername'
-                ],
-                [
-                    'type'    => 'PasswordTextBox',
-                    'name'    => 'Password',
-                    'caption' => 'Passwort'
-                ],
-                [
-                    'type'    => 'Select',
-                    'name'    => 'StreamType',
-                    'caption' => 'Stream-Typ',
-                    'options' => [
-                        ['caption' => 'Mainstream', 'value' => 'main'],
-                        ['caption' => 'Substream',  'value' => 'sub'],
+                    'type'  => 'RowLayout',
+                    'items' => [
+                        [
+                            'type'  => 'ColumnLayout',
+                            'items' => [
+                                [
+                                    'type'    => 'Label',
+                                    'name'    => 'WebhookFull',
+                                    'caption' => 'Webhook-Pfad: ' . $webhookFull
+                                ],
+                                [
+                                    'type'    => 'CheckBox',
+                                    'name'    => 'InstanceStatus',
+                                    'caption' => 'Instanz aktivieren'
+                                ],
+                                [
+                                    'type'    => 'CheckBox',
+                                    'name'    => 'UseHttps',
+                                    'caption' => 'HTTPS verwenden'
+                                ],
+                                [
+                                    'type'    => 'ValidationTextBox',
+                                    'name'    => 'CameraIP',
+                                    'caption' => 'Kamera IP'
+                                ],
+                                [
+                                    'type'    => 'ValidationTextBox',
+                                    'name'    => 'Username',
+                                    'caption' => 'Benutzername'
+                                ],
+                                [
+                                    'type'    => 'PasswordTextBox',
+                                    'name'    => 'Password',
+                                    'caption' => 'Passwort'
+                                ],
+                                [
+                                    'type'    => 'Select',
+                                    'name'    => 'StreamType',
+                                    'caption' => 'Stream-Typ',
+                                    'options' => [
+                                        ['caption' => 'Mainstream', 'value' => 'main'],
+                                        ['caption' => 'Substream',  'value' => 'sub'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        [
+                            'type'  => 'ColumnLayout',
+                            'items' => [
+                                $deviceHeaderElement,
+                                [
+                                    'type'    => 'Label',
+                                    'name'    => 'FirmwareCheck',
+                                    'caption' => $firmwareCheckMessage
+                                ],
+                            ],
+                        ],
                     ],
                 ],
                 [
@@ -737,16 +754,6 @@ class Reolink extends IPSModuleStrict
             ],
 
                 'actions' => [
-                [
-                    'type'    => 'Label',
-                    'name'    => 'FirmwareCheck',
-                    'caption' => $firmwareCheckMessage
-                ],
-                $deviceHeaderElement,
-                [
-                    'type'    => 'Label',
-                    'caption' => ''
-                ],
                 [
                     'type'  => 'RowLayout',
                     'items' => [
@@ -2042,7 +2049,7 @@ class Reolink extends IPSModuleStrict
             $this->UnregisterVariableIfExists("RecEnabled");
         }
 
-                // -------- PTZ (HTML Box) --------
+        // -------- PTZ (HTML Box) --------
         if ($this->ReadPropertyBoolean("EnableApiPTZ")) {
             $this->RegisterVariableString("PTZ_HTML", "PTZ", "~HTMLBox", 8);
         } else {
@@ -2076,16 +2083,12 @@ class Reolink extends IPSModuleStrict
         if (!@$this->GetIDForIdent('KameraOnline')) {
             $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
             $this->SetValue('KameraOnline', false);
-        } else {
-            $this->RegisterVariableBoolean('KameraOnline', 'Kamera online', '~Alert.Reversed', 11);
         }
 
         // -------- Firmwarevariablen--------
         if ($this->ReadPropertyBoolean("EnableFirmwareVariables")) {
             $this->RegisterVariableBoolean("FirmwareUpdateAvailable", "Neue Firmware vorhanden", "~Switch", 12);
             $this->RegisterVariableString("FirmwareDownloadUrl", "Firmware Download", "~HTMLBox", 13);
-            
-
         } else {
             $this->UnregisterVariableIfExists("FirmwareUpdateAvailable");
             $this->UnregisterVariableIfExists("FirmwareDownloadUrl");
