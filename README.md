@@ -16,4 +16,4 @@ Das Modul kann folgendes:
 - Die intelligente Bewegungserkennung als Variable darstellen.
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
 - Main- oder Substream angezeigt.
-- API-Funktionen, aktuell Ansteuerung des LED-Scheinwerfers.
+- Verschiedene API-Funktionen auaführen
