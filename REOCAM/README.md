@@ -81,7 +81,7 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 
 | Name | Beschreibung |
 |------|---------------|
-| **Webhook** | Wird automatisch erzeugt. Dieser Pfad muss exakt im Kamera-Menü unter *Push → Webhook* eingetragen werden. Der Pfad ist nur im Webinterface der Kamera ersichtlich. |
+| **Webhook** | Wird automatisch erzeugt. Dieser Pfad muss exakt im Kamera-Menü unter *Push → Webhook* eingetragen werden. Der Menupunkt ist nur im Webinterface der Kamera ersichtlich. |
 | **Instanz aktivieren** | Deaktiviert die Instanz temporär, um Fehlermeldungen zu vermeiden. |
 | **Instanz aktivieren** | Kommunikation kann zwischen HTTP und HTTPS gewählt werden. |
 | **IP-Adresse** | IP-Adresse der Kamera. |
