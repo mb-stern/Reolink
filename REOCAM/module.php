@@ -1792,7 +1792,7 @@ class Reolink extends IPSModuleStrict
         $password = urlencode($this->ReadPropertyString("Password"));
         $streamType = $this->ReadPropertyString("StreamType");
         return $streamType === "main"
-            ? "rtsp://$username:$password@$cameraIP:554"
+            ? "rtsp://$username:$password@$cameraIP:554/h264Preview_01_main"
             : "rtsp://$username:$password@$cameraIP:554/h264Preview_01_sub";
     }
 
