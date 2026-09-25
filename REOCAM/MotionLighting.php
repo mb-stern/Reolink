@@ -37,8 +37,8 @@ trait ReolinkMotionLighting
                 ]],
                 ['type' => 'NumberSpinner', 'name' => 'MotionLightDelay', 'caption' => 'Nachlaufzeit ab letzter Erkennung', 'suffix' => ' Sekunden', 'minimum' => 1, 'maximum' => 86400],
                 ['type' => 'Label', 'caption' => 'Erkennungsarten beliebig kombinieren. Die eigenen Kamera-Variablen werden automatisch verwendet. Helligkeitsvariable und Schwellwert müssen Werte in lux verwenden.'],
-                ['type' => 'Label', 'caption' => 'Jede erneute Erkennung verlängert die Nachlaufzeit. Die bestehenden 5-Sekunden-Timer bleiben unverändert.'],
-                ['type' => 'Label', 'caption' => 'Bereits eingeschaltete Ziele werden nicht übernommen. Beim Deaktivieren wird ein durch diese Automatik eingeschaltetes Ziel ausgeschaltet.'],
+                ['type' => 'Label', 'caption' => 'Weitere Erkennungen verlängern die Nachlaufzeit nur, solange die Helligkeit unter dem eingestellten Schwellwert liegt. Die bestehenden 5-Sekunden-Timer bleiben unverändert.'],
+                ['type' => 'Label', 'caption' => 'Ein bereits eingeschaltetes Licht bleibt unverändert. Wird das Licht durch die Automatik eingeschaltet, wird es beim Deaktivieren der Automatik wieder ausgeschaltet.'],
                 ['type' => 'Label', 'caption' => 'Konfiguration: ' . ($this->MotionLightingError() ?? 'gültig')],
             ],
         ];
