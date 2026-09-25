@@ -17,3 +17,6 @@ Das Modul kann folgendes:
 - Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
 - Main- oder Substream angezeigt.
 - Verschiedene API-Funktionen auaführen
+
+## Version 3.1
+Bewegungsmelder-/Lichtsteuerung ergänzt – vielen Dank an [**Sol-IoTiv**](https://community.symcon.de/u/sol-iotiv) für die Umsetzung.
