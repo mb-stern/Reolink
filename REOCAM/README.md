@@ -164,6 +164,9 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ## 9. Versionen
 
+### Version 3.1 (25.09.2026)
+- Bewegungsmelder-/Lichtsteuerung ergänzt – vielen Dank an [**Sol-IoTiv**](https://community.symcon.de/u/sol-iotiv) für die Umsetzung.
+
 ### Version 3.0 (16.05.2026)
 - Massiver interner Umbau mit Zentralisierung der API-Konfiguration.
 - Änderung der API-Abfrage. Es wird nun alle Endpunkt der Reihe nach im Sekunden-Abstand abgefragt, um eine Überlastung der API zu verhindern.
