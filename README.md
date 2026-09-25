@@ -1,19 +1,21 @@
 # Reolink für IP-Symcon
 
 Folgende Module beinhaltet das Reolink Repository:
-- __Reolink__ ([Dokumentation](REOCAM))   
+- __Reolink__ ([Dokumentation](REOCAM))
 
-Integration von Reolink-Kameras in IP Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrmals installiert werden. Dies ist kein ONVIF-Fähiges Modul. Der Hauptnutzen dieses Moduls ist es, die intelligente Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge zu nutzen, was über ONVIF aktuell nicht funktioniert. 
-Dieses Modul ist optimal für Reolink Kameras ausgelegt, welche Webhook unterstützen, funktioniert aber auch mit anderen Reolink-Kameras. 
-Daher ist immer die aktuellste Firmware aufzuspielen. Die neuste Firmware muss im Reolink Download-Center gesucht werden, da die App meist keine Neue anzeigt.
-Der Webhook ist nur über das Webinterface der Kamera sichtbar, in der App für Windows ist diese Funktion ausgeblendet.
-Beherrscht die Kamera kein Webhook, kann sie aktiv gepollt werden. Dies bringt aber je nach Polling-Intervall eine kleine Verzögerung mit sich.
+Integration von Reolink-Kameras in IP-Symcon. Bei Verwendung mehrerer Reolink-Kameras kann das Modul mehrfach installiert werden.
 
-Das Modul kann folgendes:
+Der Schwerpunkt des Moduls liegt auf der intelligenten Bewegungserkennung für Personen, Tiere, Besucher und Fahrzeuge sowie der Verarbeitung dieser Ereignisse über Webhook oder Polling. Zusätzlich stehen verschiedene Funktionen zur Kamerasteuerung und eine optionale Bewegungsmelder-/Lichtsteuerung zur Verfügung.
 
-- Schnappschüsse bei Bewegungen aufnehmen (Allgemeine Bewegungen, Personen, Tiere, Fahrzeuge und Besucher (Doorbell)).
-- Ein Schnappschuss-Archiv zu den jeweiligen Bewegungen erstellen und die Anzahl der darin gespeicherten Bilder definieren.
-- Die intelligente Bewegungserkennung als Variable darstellen.
-- Den Pfad zum RTSP-Stream erstellen, um das Live-Bild darzustellen.
-- Main- oder Substream angezeigt.
-- Verschiedene API-Funktionen auaführen
+Das Modul ist für Reolink-Kameras mit Webhook-Unterstützung optimiert, funktioniert aber auch mit unterstützten Kameras ohne Webhook über Polling. Für den bestmöglichen Funktionsumfang sollte die Kamera mit der aktuellen Firmware betrieben werden.
+
+Das Modul kann unter anderem:
+
+- Bewegungen, Personen, Tiere, Fahrzeuge und Besucher (Doorbell) erkennen und als IP-Symcon-Variablen bereitstellen.
+- Bei erkannten Ereignissen automatisch Schnappschüsse aufnehmen.
+- Schnappschuss-Archive mit einstellbarer Anzahl gespeicherter Bilder erstellen.
+- Einen RTSP-Stream als Main- oder Substream für das Live-Bild bereitstellen.
+- Verschiedene Reolink-API-Funktionen zur Kamerasteuerung verwenden.
+- Eine zusätzliche Bewegungsmelder-/Lichtsteuerung nutzen, die abhängig von Mensch, Tier oder Fahrzeug sowie einem Helligkeitsschwellwert ein Licht schalten kann.
+
+Eine ausführliche Beschreibung aller Funktionen und Einstellungen befindet sich in der [Dokumentation](REOCAM).
