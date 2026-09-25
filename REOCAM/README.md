@@ -8,7 +8,10 @@
 5. [Statusvariablen und Profile](#5-statusvariablen-und-profile)  
 6. [WebFront](#6-webfront)  
 7. [Webhook](#7-webhook)  
-8. [Versionen](#8-versionen)
+8. [Erweiterte Instanzfunktionen](#8-erweiterte-instanzfunktionen)  
+9. [Bewegungsmelder / Lichtsteuerung](#9-bewegungsmelder--lichtsteuerung)  
+10. [Versionen](#10-versionen)  
+11. [Lizenz](#11-lizenz)
 
 ---
 
@@ -22,6 +25,7 @@ Die Webhook-Funktion erlaubt es, Ereignisse der Kamera (z. B. Bewegung, Person, 
 - **Automatische Schnappschüsse** bei jeder erkannten Bewegung  
 - **Bildarchiv-Funktion** mit frei definierbarer Anzahl gespeicherter Bilder  
 - **Intelligente Bewegungserkennung** (Person, Tier, Fahrzeug, Besucher) als IP-Symcon-Variablen  
+- **Zusätzliche Bewegungsmelder-/Lichtsteuerung** mit frei wählbaren Auslösern (Mensch, Tier, Fahrzeug), Helligkeitsschwellwert und Nachlaufzeit  
 - **RTSP-Stream-Integration** (Main- oder Substream auswählbar)  
 - **API-Funktionen** zur Kamerasteuerung:
   - LED-Licht (Ein/Aus, Helligkeit, Automatik)
@@ -96,6 +100,12 @@ Das Modul kann direkt über den **IP-Symcon Module Store** installiert werden.
 | **Anzahl Archivbilder** | Maximale Bildanzahl pro Archiv (Standard 20). |
 | **Test-Elemente anzeigen** | Fügt Test-Variablen und Test-Snapshots hinzu (nur zur Diagnose). |
 | **Besucher-Erkennung** | Aktiviert Klingel-Erkennung (nur Doorbell-Modelle). |
+| **Zusätzlichen Bewegungsmelder aktivieren** | Aktiviert die zusätzliche Lichtsteuerung. Die normale Kamera-Erkennung bleibt davon unabhängig. |
+| **Mensch / Tier / Fahrzeug als Auslöser** | Legt fest, welche Erkennungsarten die Lichtsteuerung auslösen dürfen. Mehrere Arten können kombiniert werden. |
+| **Schaltvariable** | Boolean-Variable mit Standardaktion oder Aktionsskript. Sie wird über `RequestAction` ein- und ausgeschaltet. |
+| **Helligkeitsvariable** | Numerische Variable eines Helligkeitssensors in lux. |
+| **Einschalten unter Schwellwert** | Einschalten und Verlängern der Nachlaufzeit erfolgt nur bei einer Helligkeit unterhalb dieses Werts. Standard: 30 lux. |
+| **Nachlaufzeit** | Zeit seit der letzten passenden Erkennung bis zum Ausschalten. Standard: 120 Sekunden. |
 
 ---
 
@@ -121,6 +131,7 @@ Je nach Konfiguration werden automatisch angelegt:
 | Fahrzeug | Boolean | Bewegung durch Fahrzeug erkannt |
 | Bewegung | Boolean | Allgemeine Bewegung erkannt |
 | Besucher | Boolean | Besucher erkannt (Doorbell) |
+| Bewegungsmelder aktiv | Boolean | Reine Statusanzeige der zusätzlichen Lichtsteuerung. An, wenn der Hauptschalter und mindestens eine Erkennungsart aktiviert sind. |
 
 ### Profile
 
@@ -162,7 +173,42 @@ Je nach Konfiguration werden automatisch angelegt:
 
 ---
 
-## 9. Versionen
+## 9. Bewegungsmelder / Lichtsteuerung
+
+Die zusätzliche Bewegungsmelder-/Lichtsteuerung verwendet die vorhandenen Erkennungen der Reolink-Kamera, um eine beliebige Boolean-Schaltvariable in IP-Symcon zu steuern. Die bestehende Kamera-Erkennung, die 5-Sekunden-Rücksetztimer, Schnappschüsse und Archive bleiben unverändert.
+
+### Einrichtung
+
+1. **Zusätzlichen Bewegungsmelder aktivieren** einschalten.
+2. Gewünschte Auslöser **Mensch**, **Tier** und/oder **Fahrzeug** auswählen. Die entsprechenden Erkennungsvariablen der Kamera müssen in der Modulkonfiguration aktiviert sein.
+3. Eine **Boolean-Schaltvariable** mit Standardaktion oder Aktionsskript auswählen.
+4. Eine numerische **Helligkeitsvariable** in lux auswählen und den gewünschten Schwellwert festlegen.
+5. Die **Nachlaufzeit** in Sekunden einstellen und die Änderungen übernehmen.
+
+### Funktionsweise
+
+- Eine positive Erkennung schaltet das Ziel nur ein, wenn die gemessene Helligkeit **unter** dem eingestellten Schwellwert liegt.
+- Weitere passende Erkennungen verlängern die Nachlaufzeit ebenfalls nur unterhalb des Helligkeitsschwellwerts.
+- Webhook-Erkennungen und positive Polling-Antworten werden berücksichtigt.
+- Negative Erkennungen und die normalen 5-Sekunden-Rücksetzungen der Kamera schalten das Licht nicht aus und verlängern die Nachlaufzeit nicht.
+- Helligkeitsänderungen allein schalten das Licht nicht ein; dafür ist eine neue passende Erkennung erforderlich.
+- Ein bereits eingeschaltetes Licht bleibt unverändert und wird von der Automatik nicht übernommen.
+- Wird das Licht durch die Automatik eingeschaltet, wird es nach Ablauf der Nachlaufzeit wieder ausgeschaltet.
+- Wird die Automatik oder die Reolink-Instanz deaktiviert, wird ein von dieser Automatik eingeschaltetes Licht ausgeschaltet.
+- Ein Symcon-Neustart erhält eine noch ausstehende Ausschaltung.
+- Kann das Ausschalten nicht ausgeführt werden, versucht das Modul es nach fünf Sekunden erneut und schreibt den Fehler in den Debug der Instanz.
+
+> **Hinweis zur manuellen Bedienung:** Wird ein von der Automatik eingeschaltetes Licht während der Nachlaufzeit manuell bedient, bleibt die geplante automatische Ausschaltung bestehen.
+
+### Beispiel
+
+Für ein Einfahrtslicht können **Mensch** und **Fahrzeug** als Auslöser aktiviert und **Tier** deaktiviert werden. Bei einem Schwellwert von 30 lux und einer Nachlaufzeit von 120 Sekunden schaltet eine erkannte Person oder ein erkanntes Fahrzeug das zuvor ausgeschaltete Licht nur unter 30 lux ein. Jede weitere passende Erkennung unter 30 lux startet die 120 Sekunden erneut. Danach wird das Licht automatisch ausgeschaltet.
+
+Die Boolean-Variable **Bewegungsmelder aktiv** ist nur eine Statusanzeige. Sie zeigt an, dass der Hauptschalter und mindestens eine Erkennungsart aktiviert sind; sie zeigt weder eine aktuelle Bewegung noch den Lichtzustand oder die vollständige Betriebsbereitschaft an.
+
+---
+
+## 10. Versionen
 
 ### Version 3.1 (25.09.2026)
 - Bewegungsmelder-/Lichtsteuerung ergänzt – vielen Dank an [**Sol-IoTiv**](https://community.symcon.de/u/sol-iotiv) für die Umsetzung.
