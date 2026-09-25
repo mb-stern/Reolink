@@ -189,16 +189,13 @@ Die zusätzliche Bewegungsmelder-/Lichtsteuerung verwendet die vorhandenen Erken
 
 - Eine positive Erkennung schaltet das Ziel nur ein, wenn die gemessene Helligkeit **unter** dem eingestellten Schwellwert liegt.
 - Weitere passende Erkennungen verlängern die Nachlaufzeit ebenfalls nur unterhalb des Helligkeitsschwellwerts.
-- Webhook-Erkennungen und positive Polling-Antworten werden berücksichtigt.
 - Negative Erkennungen und die normalen 5-Sekunden-Rücksetzungen der Kamera schalten das Licht nicht aus und verlängern die Nachlaufzeit nicht.
 - Helligkeitsänderungen allein schalten das Licht nicht ein; dafür ist eine neue passende Erkennung erforderlich.
 - Ein bereits eingeschaltetes Licht bleibt unverändert und wird von der Automatik nicht übernommen.
 - Wird das Licht durch die Automatik eingeschaltet, wird es nach Ablauf der Nachlaufzeit wieder ausgeschaltet.
 - Wird die Automatik oder die Reolink-Instanz deaktiviert, wird ein von dieser Automatik eingeschaltetes Licht ausgeschaltet.
-- Ein Symcon-Neustart erhält eine noch ausstehende Ausschaltung.
-- Kann das Ausschalten nicht ausgeführt werden, versucht das Modul es nach fünf Sekunden erneut und schreibt den Fehler in den Debug der Instanz.
 
-> **Hinweis zur manuellen Bedienung:** Wird ein von der Automatik eingeschaltetes Licht während der Nachlaufzeit manuell bedient, bleibt die geplante automatische Ausschaltung bestehen.
+> **Hinweis:** Wird ein von der Automatik eingeschaltetes Licht während der Nachlaufzeit manuell bedient, bleibt die geplante automatische Ausschaltung bestehen.
 
 ### Beispiel
 
