@@ -1,7 +1,10 @@
 <?php
 
+require_once __DIR__ . '/MotionLighting.php';
+
 class Reolink extends IPSModuleStrict
 {
+    use ReolinkMotionLighting;
     /**
      * Zentrale API-Definitionen.
      * versioned=true: V20/Legacy wird über apiProbe() erkannt.
@@ -258,6 +261,7 @@ class Reolink extends IPSModuleStrict
     public function Create(): void
     {
         parent::Create();
+        $this->CreateMotionLighting();
 
         // Basis
         $this->RegisterPropertyString("CameraIP", "");
@@ -335,6 +339,7 @@ class Reolink extends IPSModuleStrict
     public function ApplyChanges(): void
     {
         parent::ApplyChanges();
+        $this->ApplyMotionLighting();
 
         $enabled = $this->ReadPropertyBoolean("InstanceStatus");
         if (!$enabled) {
@@ -751,6 +756,7 @@ class Reolink extends IPSModuleStrict
                         ],
                     ],
                 ],
+                $this->MotionLightingForm(),
             ],
 
                 'actions' => [
@@ -1448,6 +1454,8 @@ class Reolink extends IPSModuleStrict
     {
         if (!isset($data['alarm']['type'])) return;
         $type = $data['alarm']['type'];
+        $motionIdent = ['PEOPLE' => 'Person', 'ANIMAL' => 'Tier', 'VEHICLE' => 'Fahrzeug'][$type] ?? null;
+        if ($motionIdent !== null) $this->MotionLightingCameraDetection($motionIdent);
 
         switch ($type) {
             case "PEOPLE":
@@ -1857,6 +1865,7 @@ class Reolink extends IPSModuleStrict
         if (!isset($mapping[$type])) return;
 
         $ident = $mapping[$type];
+        if ($state === 1) $this->MotionLightingCameraDetection($ident);
         $variableID = @$this->GetIDForIdent($ident);
         if (!$variableID) return;
 
