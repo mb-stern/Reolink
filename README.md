@@ -16,6 +16,6 @@ Das Modul kann unter anderem:
 - Schnappschuss-Archive mit einstellbarer Anzahl gespeicherter Bilder erstellen.
 - Einen RTSP-Stream als Main- oder Substream für das Live-Bild bereitstellen.
 - Verschiedene Reolink-API-Funktionen zur Kamerasteuerung verwenden.
-- Eine zusätzliche Bewegungsmelder-/Lichtsteuerung nutzen, die abhängig von Mensch, Tier oder Fahrzeug sowie einem Helligkeitsschwellwert ein Licht schalten kann.
+- Eine zusätzliche Bewegungsmelder-/Lichtsteuerung nutzen, die abhängig von Mensch, Tier oder Fahrzeug sowie optional einem Helligkeitsschwellwert ein Licht schalten kann.
 
 Eine ausführliche Beschreibung aller Funktionen und Einstellungen befindet sich in der [Dokumentation](REOCAM).
