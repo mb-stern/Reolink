@@ -208,7 +208,7 @@ Die Boolean-Variable **Bewegungsmelder aktiv** ist nur eine Statusanzeige. Sie z
 
 ## 10. Versionen
 
-### Unveröffentlicht
+### Version 3.2 (10.10.2026)
 - Fehler behoben: Die Helligkeitsvariable der Lichtsteuerung ist optional. Ohne Auswahl wird unabhängig von der Helligkeit eingeschaltet und nachgetriggert. Ausgewählte ungültige Sensoren bleiben Konfigurationsfehler.
 
 ### Version 3.1 (25.09.2026)
