@@ -182,13 +182,14 @@ Die zusätzliche Bewegungsmelder-/Lichtsteuerung verwendet die vorhandenen Erken
 1. **Zusätzlichen Bewegungsmelder aktivieren** einschalten.
 2. Gewünschte Auslöser **Mensch**, **Tier** und/oder **Fahrzeug** auswählen. Die entsprechenden Erkennungsvariablen der Kamera müssen in der Modulkonfiguration aktiviert sein.
 3. Eine **Boolean-Schaltvariable** mit Standardaktion oder Aktionsskript auswählen.
-4. Eine numerische **Helligkeitsvariable** in lux auswählen und den gewünschten Schwellwert festlegen.
+4. Optional eine numerische **Helligkeitsvariable** in lux auswählen und den gewünschten Schwellwert festlegen. Bei **Kein(e)** entfällt die Helligkeitsprüfung; der Schwellwert wird ignoriert.
 5. Die **Nachlaufzeit** in Sekunden einstellen und die Änderungen übernehmen.
 
 ### Funktionsweise
 
-- Eine positive Erkennung schaltet das Ziel nur ein, wenn die gemessene Helligkeit **unter** dem eingestellten Schwellwert liegt.
-- Weitere passende Erkennungen verlängern die Nachlaufzeit ebenfalls nur unterhalb des Helligkeitsschwellwerts.
+- Ohne ausgewählte Helligkeitsvariable schaltet eine passende Erkennung das Ziel unabhängig von der Helligkeit ein und verlängert die Nachlaufzeit. Nach Ablauf wird wie gewohnt ausgeschaltet.
+- Mit ausgewählter Helligkeitsvariable schaltet eine positive Erkennung das Ziel nur ein, wenn die gemessene Helligkeit **unter** dem eingestellten Schwellwert liegt.
+- Bei ausgewählter Helligkeitsvariable verlängern weitere passende Erkennungen die Nachlaufzeit ebenfalls nur unterhalb des Helligkeitsschwellwerts.
 - Negative Erkennungen und die normalen 5-Sekunden-Rücksetzungen der Kamera schalten das Licht nicht aus und verlängern die Nachlaufzeit nicht.
 - Helligkeitsänderungen allein schalten das Licht nicht ein; dafür ist eine neue passende Erkennung erforderlich.
 - Ein bereits eingeschaltetes Licht bleibt unverändert und wird von der Automatik nicht übernommen.
@@ -206,6 +207,9 @@ Die Boolean-Variable **Bewegungsmelder aktiv** ist nur eine Statusanzeige. Sie z
 ---
 
 ## 10. Versionen
+
+### Unveröffentlicht
+- Fehler behoben: Die Helligkeitsvariable der Lichtsteuerung ist optional. Ohne Auswahl wird unabhängig von der Helligkeit eingeschaltet und nachgetriggert. Ausgewählte ungültige Sensoren bleiben Konfigurationsfehler.
 
 ### Version 3.1 (25.09.2026)
 - Bewegungsmelder-/Lichtsteuerung ergänzt – vielen Dank an [**Sol-IoTiv**](https://community.symcon.de/u/sol-iotiv) für die Umsetzung.
