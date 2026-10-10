@@ -32,12 +32,12 @@ trait ReolinkMotionLighting
                 ['type' => 'CheckBox', 'name' => 'MotionLightUseVehicle', 'caption' => 'Fahrzeug als Auslöser verwenden'],
                 ['type' => 'SelectVariable', 'name' => 'MotionLightTarget', 'caption' => 'Schaltvariable (Boolean mit Aktion)'],
                 ['type' => 'RowLayout', 'items' => [
-                    ['type' => 'SelectVariable', 'name' => 'MotionLightBrightness', 'caption' => 'Helligkeitsvariable (lux)'],
+                    ['type' => 'SelectVariable', 'name' => 'MotionLightBrightness', 'caption' => 'Helligkeitsvariable (lux, optional)'],
                     ['type' => 'NumberSpinner', 'name' => 'MotionLightThreshold', 'caption' => 'Einschalten unter Schwellwert', 'digits' => 0, 'suffix' => ' lux'],
                 ]],
                 ['type' => 'NumberSpinner', 'name' => 'MotionLightDelay', 'caption' => 'Nachlaufzeit ab letzter Erkennung', 'suffix' => ' Sekunden', 'minimum' => 1, 'maximum' => 86400],
-                ['type' => 'Label', 'caption' => 'Erkennungsarten beliebig kombinieren. Die eigenen Kamera-Variablen werden automatisch verwendet. Helligkeitsvariable und Schwellwert müssen Werte in lux verwenden.'],
-                ['type' => 'Label', 'caption' => 'Weitere Erkennungen verlängern die Nachlaufzeit nur, solange die Helligkeit unter dem eingestellten Schwellwert liegt. Die bestehenden 5-Sekunden-Timer bleiben unverändert.'],
+                ['type' => 'Label', 'caption' => 'Erkennungsarten beliebig kombinieren. Die eigenen Kamera-Variablen werden automatisch verwendet. Ohne Helligkeitsvariable wird unabhängig von der Helligkeit geschaltet. Bei ausgewähltem Sensor müssen Helligkeitsvariable und Schwellwert Werte in lux verwenden.'],
+                ['type' => 'Label', 'caption' => 'Weitere passende Erkennungen verlängern die Nachlaufzeit ohne Sensor immer, mit Sensor nur unterhalb des Schwellwerts. Die bestehenden 5-Sekunden-Timer bleiben unverändert.'],
                 ['type' => 'Label', 'caption' => 'Ein bereits eingeschaltetes Licht bleibt unverändert. Wird das Licht durch die Automatik eingeschaltet, wird es beim Deaktivieren der Automatik wieder ausgeschaltet.'],
                 ['type' => 'Label', 'caption' => 'Konfiguration: ' . ($this->MotionLightingError() ?? 'gültig')],
             ],
@@ -74,13 +74,13 @@ trait ReolinkMotionLighting
             return 'Die Schaltvariable benötigt eine Standardaktion oder ein Aktionsskript.';
         }
         $brightness = $this->ReadPropertyInteger('MotionLightBrightness');
-        if (!IPS_VariableExists($brightness) || !in_array(IPS_GetVariable($brightness)['VariableType'], [1, 2], true)) {
+        if ($brightness !== 0 && (!IPS_VariableExists($brightness) || !in_array(IPS_GetVariable($brightness)['VariableType'], [1, 2], true))) {
             return 'Eine numerische Helligkeitsvariable auswählen.';
         }
         if (in_array($target, $sources, true)) return 'Schaltvariable und Erkennungsvariable müssen verschieden sein.';
         $delay = $this->ReadPropertyInteger('MotionLightDelay');
         if ($delay < 1 || $delay > 86400) return 'Nachlaufzeit muss zwischen 1 und 86400 Sekunden liegen.';
-        if (!is_finite($this->ReadPropertyFloat('MotionLightThreshold'))) return 'Ungültiger Helligkeitsschwellwert.';
+        if ($brightness !== 0 && !is_finite($this->ReadPropertyFloat('MotionLightThreshold'))) return 'Ungültiger Helligkeitsschwellwert.';
         return null;
     }
 
@@ -149,9 +149,12 @@ trait ReolinkMotionLighting
             $owned = $this->ReadAttributeInteger('MotionLightOwnedTarget');
             // Finish an old target before acquiring a newly configured target.
             if ($owned !== 0 && $owned !== $target && !$this->MotionLightingRelease()) return;
-            // Brightness gates both starting and extending the follow-up time.
-            $brightness = (float)GetValue($this->ReadPropertyInteger('MotionLightBrightness'));
-            if (!is_finite($brightness) || $brightness >= $this->ReadPropertyFloat('MotionLightThreshold')) return;
+            // An unselected sensor disables brightness gating for starting and extending.
+            $brightnessID = $this->ReadPropertyInteger('MotionLightBrightness');
+            if ($brightnessID !== 0) {
+                $brightness = (float)GetValue($brightnessID);
+                if (!is_finite($brightness) || $brightness >= $this->ReadPropertyFloat('MotionLightThreshold')) return;
+            }
             if ($this->ReadAttributeInteger('MotionLightOwnedTarget') === $target) {
                 $this->WriteAttributeInteger('MotionLightLastDetection', time());
                 $this->SetTimerInterval('MotionLightTimer', 1000);
